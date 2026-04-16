@@ -14,7 +14,7 @@
 ## Встановлення
 
 ```bash
-git clone https://github.com/kozaksv/claude-wiki-skill.git && mkdir -p ~/.claude/skills && ln -sfn "$(pwd)/claude-wiki-skill" ~/.claude/skills/wiki
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
 
 ## Ініціалізація wiki у проєкті
@@ -35,8 +35,10 @@ git clone https://github.com/kozaksv/claude-wiki-skill.git && mkdir -p ~/.claude
 
 ## Оновлення
 
+Запустіть ту саму команду — скрипт оновить автоматично:
+
 ```bash
-cd <шлях-до-claude-wiki-skill> && git pull
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
 
 ## Видалення
