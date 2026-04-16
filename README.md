@@ -1,34 +1,51 @@
 # Claude Wiki Skill
 
-A Claude Code skill that adds an LLM Wiki knowledge base (Karpathy pattern) to any project. Instead of re-discovering knowledge each session, the wiki accumulates synthesized understanding across conversations.
+Скіл для Claude Code, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
-## What it does
+## Що робить
 
-Three operations:
-- **ingest** — process a source (spec, feature, code change) into wiki pages
-- **query** — search the wiki to answer questions about the project
-- **lint** — health-check for staleness, contradictions, orphan pages
+Три операції:
+- **ingest** — обробити джерело (spec, фічу, зміну коду) у wiki-сторінки
+- **query** — шукати у wiki відповіді на питання про проєкт
+- **lint** — перевірка здоров'я wiki (застарілість, суперечності, сироти)
 
-Trigger words: `ingest`, `wiki query`, `wiki lint`, `додай до wiki`, `оновити wiki`, `що каже wiki про...`
+Тригери: `ingest`, `wiki query`, `wiki lint`, `додай до wiki`, `оновити wiki`, `що каже wiki про...`
 
-## Install
+## Встановлення
 
 ```bash
 git clone git@github.com:kozaksv/claude-wiki-skill.git && ln -s "$(pwd)/claude-wiki-skill" ~/.claude/skills/wiki
 ```
 
-## Update
+## Ініціалізація wiki у проєкті
 
-```bash
-cd <path-to-claude-wiki-skill> && git pull
+Після встановлення скіла, відкрийте свій проєкт у Claude Code і скажіть:
+
+```
+додай до wiki
 ```
 
-## Uninstall
+або будь-яку іншу wiki-команду. При першому запуску скіл:
+
+1. Знайде `CLAUDE.md` у корені проєкту
+2. Створить `docs/wiki/` з `index.md` та `log.md`
+3. Додасть секцію `## Wiki` в `CLAUDE.md` — це реєструє wiki в проєкті, щоб Claude знаходив її у кожній наступній сесії
+4. Запитає, що ви хочете додати першим
+
+Після ініціалізації wiki працює автоматично у всіх сесіях цього проєкту.
+
+## Оновлення
+
+```bash
+cd <шлях-до-claude-wiki-skill> && git pull
+```
+
+## Видалення
 
 ```bash
 rm ~/.claude/skills/wiki
 ```
 
-## Requirements
+## Вимоги
 
 - [Claude Code](https://claude.ai/claude-code)
