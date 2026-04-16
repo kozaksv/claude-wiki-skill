@@ -14,7 +14,7 @@
 ## Встановлення
 
 ```bash
-git clone https://github.com/kozaksv/claude-wiki-skill.git && ln -s "$(pwd)/claude-wiki-skill" ~/.claude/skills/wiki
+git clone https://github.com/kozaksv/claude-wiki-skill.git && mkdir -p ~/.claude/skills && ln -s "$(pwd)/claude-wiki-skill" ~/.claude/skills/wiki
 ```
 
 ## Ініціалізація wiki у проєкті
