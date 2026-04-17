@@ -27,7 +27,7 @@ This skill is **project-agnostic** — it discovers the wiki location automatica
 2. **Read CLAUDE.md's Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
 3. **Verify wiki exists** — check that the discovered directory contains `index.md`
 4. **If no Wiki section in CLAUDE.md** — search for `docs/wiki/index.md` relative to CLAUDE.md location
-5. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then create `docs/wiki/` with `index.md` and `log.md` next to CLAUDE.md, and add a Wiki section to CLAUDE.md.
+5. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (absent / v1 / current), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and adds schema sections to `CLAUDE.md`.
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
