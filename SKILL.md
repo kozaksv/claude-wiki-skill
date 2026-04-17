@@ -2,15 +2,15 @@
 name: wiki
 description: >
   Use when managing a project's LLM Wiki knowledge base (Karpathy pattern).
-  TRIGGER on: "ingest", "додай до wiki", "додай до вікі", "wiki lint", "вікі лінт",
-  "wiki query", "оновити wiki", "оновити вікі", "перевір wiki", "перевір вікі",
-  "що каже wiki про...", "що каже вікі про...", "знайди у вікі",
-  or any request to update/search/maintain project documentation.
-  "вікі" = "wiki" — users may use either form interchangeably.
-  Also use PROACTIVELY after completing significant features, specs, or architectural changes —
-  if new patterns, gotchas, or decisions emerged during implementation, they belong in the wiki.
-  Three operations: ingest (process source → update wiki pages + index + log),
-  query (read index → find pages → synthesize answer), lint (health-check for staleness/contradictions/orphans).
+  Three layers: concepts (themes/synthesis), entities (specific things),
+  transcripts (full text of binaries). Binaries live in archive/ (gitignored).
+  TRIGGER on: "ingest", "додай до wiki/вікі", "wiki/вікі lint", "wiki/вікі query",
+  "оновити wiki/вікі", "перевір wiki/вікі", "що каже wiki про...",
+  "знайди у вікі", any binary in tmp/.
+  "вікі" = "wiki" — interchangeable.
+  Also use PROACTIVELY after completing features or when binaries appear in tmp/.
+  Six operations: init (bootstrap-aware), ingest-source, ingest-binary,
+  query, lint, cleanup.
 ---
 
 # LLM Wiki (Karpathy Pattern)
@@ -33,17 +33,42 @@ All paths below use `{wiki}` as placeholder for the discovered wiki directory (e
 
 **CRITICAL: Never create a second wiki.** If you find an existing wiki, use it. If CLAUDE.md references a wiki path, trust it. Only create a new wiki when none exists anywhere in the project.
 
-## Three Layers
+## Three Layers (within Wiki)
+
+The wiki itself has three internal layers:
 
 ```
-Raw Sources (immutable)     →  declared in CLAUDE.md Wiki section
-Wiki (LLM-maintained)       →  {wiki}/
-Schema (conventions)        →  CLAUDE.md "Wiki" section
+{wiki}/concepts/         → themes, processes, rules (synthesis)
+{wiki}/entities/         → specific things (people, contracts, objects, ...)
+{wiki}/transcripts/      → full text of binaries (for grep / LLM context)
 ```
 
-- **Raw Sources**: design specs, articles, external docs. Claude reads but NEVER modifies.
-- **Wiki**: structured markdown pages with `[[wikilinks]]`. Claude writes and maintains. Human reads and curates.
-- **Schema**: CLAUDE.md defines conventions. This skill defines operations.
+Plus external layers:
+
+```
+Raw Binaries (immutable) → archive/ (gitignored, outside wiki)
+Schema (conventions)     → CLAUDE.md "Wiki", "Entity Categories",
+                           "Document Types", "File Naming" sections
+```
+
+**Concepts** — the existing layer. Themes, gotchas, architectural decisions.
+
+**Entities** — hub pages for specific things. Each entity page has:
+- Frontmatter with `type: entity`, `category`, `key`, project-specific fields
+- Synthesis (what this is, why it matters)
+- Cross-refs (to other entities, concepts, transcripts, binaries)
+
+**Lazy entity creation:** create an entity page only when a document or
+operation actually references the entity. Don't pre-populate from inventories.
+
+**Transcripts** — auto-generated MD with full text of a binary. Frontmatter
+links back to source binary and corresponding entity page. No synthesis,
+no editing — pure raw text for grep and LLM context.
+
+**Naming** — for documents:  `{YYYY-MM-DD}_{type}_{slug}.{ext}`.
+For templates: `template_{type}_{slug}.{ext}`.
+For abstract entities: `{slug}.md`.
+Cyrillic OK. Spaces → `-`. Forbidden: `/\?*<>:|`, quotes, dots (except before ext).
 
 ## Navigation Files
 
@@ -56,7 +81,7 @@ Schema (conventions)        →  CLAUDE.md "Wiki" section
 
 ---
 
-## Operation: Ingest
+## Operation: Ingest-Source
 
 Process a new source (spec, feature, code change) into the wiki.
 
@@ -157,6 +182,45 @@ When updating documentation after implementing a feature:
 
 ---
 
+## Operation: Ingest-Binary
+
+Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
+
+### When to Ingest-Binary
+
+- User drops a file into `tmp/`
+- User says "ingest this PDF/DOCX/file", "додай цей документ"
+- A new signed contract / certificate / letter arrives
+
+### Process
+
+1. **Detect / ask category** — suggest from `Entity Categories` in CLAUDE.md;
+   if user wants new category, add a row to CLAUDE.md
+2. **Detect / ask type** — suggest from `Document Types` in CLAUDE.md;
+   if new type, add a row to CLAUDE.md
+3. **Propose slug** — from filename + date + parties;
+   ask user to confirm or edit
+4. **Extract text → transcript:**
+   - PDF: prefer `pdftotext` if available, else use Read tool (LLM PDF support)
+   - DOCX: use Python `zipfile` + XML parse, or `pandoc` if available
+   - Images: prefer Tesseract OCR; if absent, ask user to install or skip with placeholder
+5. **Move binary → `archive/{path}/{slug}.{ext}`** (per File Naming convention)
+6. **Create entity page → `entities/{category}/{slug}.md`:**
+   - Frontmatter (type=entity, category, key, binary, transcript, project-specific fields)
+   - Synthesis (LLM proposes — user edits)
+   - Cross-refs: scan transcript for mentions of other entities;
+     if entity exists → link; if not → lazy-create stub and link
+7. **Update related entity pages** — for each entity touched, append to its
+   "Documents" section a link to this new entity page
+8. **Update concepts** — if new info changes a concept (e.g., new exception
+   for `discrepancies`), propose update; ask user to confirm
+9. **Update navigation:**
+   - `entities/index.md` (or wiki/index.md Entities section): append row
+   - `transcripts/index.md`: append row
+   - `log.md`: append `## [YYYY-MM-DD] ingest-binary | <description>`
+
+---
+
 ## Operation: Query
 
 Search the wiki to answer a question about the project.
@@ -229,7 +293,27 @@ Run through each check and report findings:
 - Is the page too long (>200 lines → consider splitting)?
 - Is the description in index.md still accurate?
 
-**7. Suggest New Questions** — Think proactively:
+**7. Trinity Integrity** — for each agreement/document entity:
+- Does the binary referenced in frontmatter actually exist in `archive/`?
+- Does the transcript exist?
+- Does the transcript's `entity_page` field point back to this entity?
+
+**8. Orphans:**
+- Binaries in `archive/` not referenced by any entity page
+- Transcripts without a matching entity page
+- Entities with `binary:` set but file missing
+
+**9. Frontmatter Validity:**
+- Every entity page has `type: entity`, `category`, `key`
+- Every transcript has `type: transcript`, `key`, `source_binary`
+- Entity `key` matches filename (without `.md`)
+
+**10. Schema Drift:**
+- Are all categories used in `entities/` declared in CLAUDE.md `## Entity Categories`?
+- Are all types in slugs declared in CLAUDE.md `## Document Types`?
+- If drift found — propose updating CLAUDE.md
+
+**11. Suggest New Questions** — Think proactively:
 - What sources are missing that would strengthen the wiki?
 - What topics need deeper exploration?
 - Are there areas where the wiki says "TODO" or is thin on detail?
@@ -264,27 +348,78 @@ After presenting the report, offer to fix all issues.
 
 ---
 
-## Operation: Init
+## Operation: Init (bootstrap-aware)
 
-Set up a wiki in a project that doesn't have one yet.
+Set up wiki, OR detect existing structure and propose migration.
 
 ### When to Init
 
 - User asks to create/initialize a wiki
 - Wiki discovery (Step 0) found no existing wiki
+- User asks to "bootstrap" / "migrate" / "reorganize" project around wiki
+
+### Discovery
+
+1. **Find CLAUDE.md** (walk up dirs from cwd)
+2. **Determine wiki state:**
+   - `absent` — no `docs/wiki/` exists
+   - `v1` — `docs/wiki/` exists but no `concepts/entities/transcripts/` substructure
+   - `current` — full three-layer structure
+3. **Scan project for migration candidates** (only if state ≠ current):
+   - Raw binaries (PDF, DOCX, images, spreadsheets) in non-hidden, non-wiki dirs
+   - Analytical MDs (README, analysis, notes) outside `docs/wiki/`
+   - Existing concept-like MDs that should move to `concepts/`
+   - Duplicate MDs (raw README that overlap wiki content)
+
+### Plan (interactive)
+
+Before any move, present:
+- Concept candidates → list of MDs to move into `concepts/`
+- Entity candidates → suggest stubs from mentions in existing wiki
+- Binary candidates → list of binaries to move to `archive/` + create transcript
+- Dupes → list of MDs to delete (with justification)
+- Stale folders → list to remove after content migrated
+
+Ask per group: "Migrate these? [y/N/per-file]". User retains veto on each.
+
+### Execute
+
+After consent:
+
+1. Create missing dirs: `concepts/`, `entities/{categories}/`, `transcripts/`, `archive/{paths}/`
+2. Add `archive/` to `.gitignore`
+3. Move concept MDs → `concepts/`
+4. For each binary:
+   - Move to `archive/{path}/{naming-convention}.{ext}`
+   - Generate transcript → `transcripts/{slug}.md`
+   - Create entity page stub → `entities/{category}/{slug}.md`
+5. Create entity stubs for entities mentioned in concepts (lazy: only key/recurring ones)
+6. Update `CLAUDE.md` with schema sections (Entity Categories, Document Types, File Naming)
+7. Delete approved duplicates
+8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
+9. Append `log.md` with migration record
+
+---
+
+## Operation: Cleanup
+
+Post-migration / periodic housekeeping.
+
+### When to Cleanup
+
+- After init/bootstrap completes
+- User says "wiki cleanup", "почисть wiki/вікі"
+- Periodically (every ~10 sessions or after major changes)
 
 ### Process
 
-1. Find CLAUDE.md location (project root)
-2. Create `docs/wiki/` directory relative to CLAUDE.md
-3. Create `docs/wiki/index.md` with empty category structure
-4. Create `docs/wiki/log.md` with initial entry
-5. Add Wiki section to CLAUDE.md (schema layer) with:
-   - Layer descriptions (raw sources, wiki, schema)
-   - Navigation file locations
-   - Operation summaries (ingest/query/lint)
-   - Page conventions
-6. Ask the user what to ingest first
+1. Remove empty directories under `docs/wiki/` and `archive/`
+2. Verify `archive/` is in `.gitignore`; add if missing
+3. Verify all schema sections exist in CLAUDE.md (`## Wiki`, `## Entity Categories`,
+   `## Document Types`, `## File Naming`); create if missing
+4. Find unused entity stubs (entity pages with no cross-refs from anywhere) — propose deletion
+5. Find concept pages not in `index.md` and vice versa — propose fixes
+6. Append cleanup actions to `log.md`
 
 ---
 
