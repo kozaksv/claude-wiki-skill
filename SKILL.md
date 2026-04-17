@@ -200,10 +200,33 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    if new type, add a row to CLAUDE.md
 3. **Propose slug** — from filename + date + parties;
    ask user to confirm or edit
-4. **Extract text → transcript:**
-   - PDF: prefer `pdftotext` if available, else use Read tool (LLM PDF support)
-   - DOCX: use Python `zipfile` + XML parse, or `pandoc` if available
-   - Images: prefer Tesseract OCR; if absent, ask user to install or skip with placeholder
+4. **Extract text → transcript (via `doc-extract` skill):**
+
+   Call:
+   ```bash
+   bash ~/.claude/skills/doc-extract/bin/extract.sh <source_file> \
+     --out <wiki>/transcripts/<slug>.md \
+     --format md
+   ```
+
+   Handle exit code:
+   - `0` — transcript created, proceed.
+   - `10` (extraction_failed) — STOP. Read stderr method_chain;
+     tell user: "doc-extract пройшов каскад [методи], вийшло N символів.
+     Варіанти: (1) вручну → summary, (2) Read tool (LLM, дорого),
+     (3) пропустити". Wait for user decision.
+   - `20` (missing_dependency) — STOP. Run
+     `bash ~/.claude/skills/doc-extract/bin/doctor.sh`, show output,
+     ask user to install missing deps, then retry.
+   - `30` (unsupported_format) — ask user to skip or convert first.
+   - `40/50` — caller bug, show stderr.
+
+   **Важливо:** wiki більше НЕ падає на Read tool (LLM vision) сам.
+   Єдиний шлях до LLM — явне рішення юзера у відповідь на exit 10.
+   Це уникає дорогих silent fallback'ів.
+
+   Если `doc-extract` скіл відсутній — повідом юзера, покажи
+   install-команду: `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-doc-extract-skill/main/install.sh | bash`
 5. **Move binary → `archive/{path}/{slug}.{ext}`** (per File Naming convention)
 6. **Create entity page → `entities/{category}/{slug}.md`:**
    - Frontmatter (type=entity, category, key, binary, transcript, project-specific fields)
