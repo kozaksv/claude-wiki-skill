@@ -222,6 +222,7 @@ One-paragraph description of what this page covers.
 | Gotchas that have bitten us | Ephemeral task details |
 | Architectural decisions and their rationale | Debugging session logs |
 | Cross-cutting concerns spanning multiple files | One-off fix recipes |
+| Semantic labels (a commit/migration/version identifier paired with what it meant) | Derivable counts / inventories — test counts, migration counts, route counts, endpoint counts (use `ls`/`grep`/`wc`) |
 
 ### IMPORTANT: Wiki vs. CLAUDE.md
 
@@ -345,6 +346,7 @@ Run through each check and report findings:
 - Do described flows match current implementation?
 - Are entity relationships accurate?
 - Has the data model changed since last update?
+- **Is the stale item a count or inventory (e.g., "N tests", "N migrations", "N routes")? → propose DELETE, not UPDATE.** Derivable counts drift faster than any maintenance cadence can catch; deleting them pushes the read to `ls`/`grep`/`wc` which is always current. Keep semantic labels that pair an identifier with what it meant; drop inventory numbers.
 
 **2. Contradictions** — Cross-check between pages:
 - Does page A say X while page B says Y?
