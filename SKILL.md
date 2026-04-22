@@ -1,16 +1,13 @@
 ---
 name: wiki
 description: >
-  Use when managing a project's LLM Wiki knowledge base (Karpathy pattern).
-  Three layers: concepts (themes/synthesis), entities (specific things),
-  transcripts (full text of binaries). Binaries live in archive/ (gitignored).
-  TRIGGER on: "ingest", "додай до wiki/вікі", "wiki/вікі lint", "wiki/вікі query",
-  "оновити wiki/вікі", "перевір wiki/вікі", "що каже wiki про...",
-  "знайди у вікі", any binary in tmp/.
-  "вікі" = "wiki" — interchangeable.
-  Also use PROACTIVELY after completing features or when binaries appear in tmp/.
-  Six operations: init (bootstrap-aware), ingest-source, ingest-binary,
-  query, lint, cleanup.
+  Manage a project's LLM Wiki (Karpathy pattern) — three layers (concepts,
+  entities, transcripts) plus archive/ for binaries. Seven operations:
+  init, ingest-source, ingest-binary, query, lint, cleanup, split.
+  Triggers: "ingest"/"додай до wiki/вікі", "wiki/вікі lint/query/cleanup",
+  "оновити/перевір wiki/вікі", "що каже wiki про...", "знайди у вікі",
+  any binary in tmp/. "вікі" = "wiki". Also use PROACTIVELY after feat/
+  refactor commits and when binaries land in tmp/.
 ---
 
 # LLM Wiki (Karpathy Pattern)
@@ -19,19 +16,68 @@ A persistent, compounding knowledge base maintained by Claude. Instead of re-dis
 
 This skill is **project-agnostic** — it discovers the wiki location automatically.
 
-## Step 0: Discover Wiki Location
+## Philosophy
 
-**Before any operation**, locate the wiki. Follow this sequence:
+From Karpathy's original pattern (https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
+
+> _"the LLM is rediscovering knowledge from scratch on every question. There's no accumulation."_
+
+> _"The tedious part of maintaining a knowledge base is not the reading or the thinking — it's the bookkeeping. Humans abandon wikis because the maintenance burden grows faster than the value. LLMs don't get bored, don't forget to update a cross-reference, and can touch 15 files in one pass."_
+
+> _"connections between documents are as valuable as the documents themselves"_ (Vannevar Bush's Memex)
+
+The wiki is not documentation. It is synthesized understanding that compounds across sessions. Cross-references are first-class — a page with no `[[wikilinks]]` is suspect.
+
+## Division of Labor
+
+Karpathy draws a sharp line: the human curates and directs; the LLM does everything mechanical.
+
+| Human | LLM |
+|---|---|
+| Curate sources (decide what's worth ingesting) | Read and synthesize those sources |
+| Direct the analysis (ask good questions) | Summarize, cross-reference, update pages |
+| Think about what it all means | All bookkeeping: index, log, `[[wikilinks]]`, `## See also` |
+| Veto LLM proposals on init / cleanup / schema changes | Propose, never execute destructive ops without consent |
+
+> _"You never (or rarely) write the wiki yourself — the LLM writes and maintains all of it."_
+
+If you catch yourself hand-editing wiki pages page-by-page, it's a skill failure — prefer running the relevant operation.
+
+## Modularity
+
+> _"Everything mentioned above is optional and modular — pick what's useful, ignore what isn't."_
+
+Not every project needs every layer or operation:
+
+- **No binary documents (PDFs, contracts, images)?** → skip `entities/` and `transcripts/`. Run only `concepts/`. Skip `ingest-binary` and `doc-extract` dependency.
+- **Small wiki (< 20 pages)?** → lint once per quarter, not every 10 sessions. Skip `split` entirely.
+- **No raw sources dir?** → `ingest-source` still works from code diffs and conversation context; don't force a `specs/` folder.
+- **Schema minimal?** → `schema.md` can be 10 lines. No need for populated Entity Categories or Document Types until the project actually has categories.
+
+The seven operations are a **palette**, not a checklist. A code project might use only `ingest-source` + `query` + `lint`. A research project might lean heavily on `ingest-binary`. Adapt.
+
+## Step 0: Discover Wiki Location and Schema
+
+**Before any operation**, locate both the wiki directory and its schema. Follow this sequence:
 
 1. **Find CLAUDE.md** — look in the current working directory, then walk up parent directories until found
 2. **Read CLAUDE.md's Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
 3. **Verify wiki exists** — check that the discovered directory contains `index.md`
 4. **If no Wiki section in CLAUDE.md** — search for `docs/wiki/index.md` relative to CLAUDE.md location
-5. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (absent / v1 / current), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and adds schema sections to `CLAUDE.md`.
+5. **Locate schema** — wiki schema (layers, operations, conventions, `Entity Categories`, `Document Types`, `File Naming`) lives in exactly one of:
+   - **Preferred (v3+):** `{wiki}/schema.md` — canonical location, keeps wiki metadata out of CLAUDE.md resident context
+   - **Legacy (v1–v2):** sections inside `CLAUDE.md` itself (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
+
+   Try `{wiki}/schema.md` first. Fall back to CLAUDE.md sections. When both exist, prefer `schema.md` and flag the duplication during next lint.
+6. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (absent / v1 / current), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
 **CRITICAL: Never create a second wiki.** If you find an existing wiki, use it. If CLAUDE.md references a wiki path, trust it. Only create a new wiki when none exists anywhere in the project.
+
+**Why schema.md is preferred over CLAUDE.md sections:** CLAUDE.md loads into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
+
+_Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the CLAUDE.md fallback._
 
 ## Three Layers (within Wiki)
 
@@ -47,8 +93,8 @@ Plus external layers:
 
 ```
 Raw Binaries (immutable) → archive/ (gitignored, outside wiki)
-Schema (conventions)     → CLAUDE.md "Wiki", "Entity Categories",
-                           "Document Types", "File Naming" sections
+Schema (conventions)     → {wiki}/schema.md (preferred, v3+)
+                         → CLAUDE.md sections (legacy, v1–v2)
 ```
 
 **Concepts** — the existing layer. Themes, gotchas, architectural decisions.
@@ -75,7 +121,7 @@ Cyrillic OK. Spaces → `-`. Forbidden: `/\?*<>:|`, quotes, dots (except before 
 | File | Purpose | Format |
 |------|---------|--------|
 | `{wiki}/index.md` | Catalog of all pages, organized by category | `- [[page-name]] — one-line description` |
-| `{wiki}/log.md` | Chronological record of all operations | `## [YYYY-MM-DD] operation \| Subject` |
+| `{wiki}/log.md` | Chronological record of all operations | `## [YYYY-MM-DD] operation \| Subject` + optional `touched: [[page-a]], [[page-b]]` line for searchability |
 
 **Read `index.md` FIRST** for any wiki operation — it's your map.
 
@@ -132,7 +178,12 @@ Process a new source (spec, feature, code change) into the wiki.
 - Updated: list of pages touched
 - Created: list of new pages (if any)
 - Key changes: 1-2 sentences on what's new
+- touched: [[page-a]], [[page-b]], [[page-c]]
 ```
+
+The `touched:` line enables `grep -l 'page-name' log.md` searches like
+"when did we last update purchase-flow?" — purely operational metadata,
+no synthesis. Optional but recommended for non-trivial ingests.
 
 ### Page Template
 
@@ -194,10 +245,11 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
 
 ### Process
 
-1. **Detect / ask category** — suggest from `Entity Categories` in CLAUDE.md;
-   if user wants new category, add a row to CLAUDE.md
-2. **Detect / ask type** — suggest from `Document Types` in CLAUDE.md;
-   if new type, add a row to CLAUDE.md
+1. **Detect / ask category** — suggest from `Entity Categories` in schema
+   (`{wiki}/schema.md`, fallback to CLAUDE.md). If user wants a new category,
+   add a row to schema.md (or CLAUDE.md for legacy v1–v2 layout)
+2. **Detect / ask type** — suggest from `Document Types` in schema
+   (same fallback order). If new type, add a row to schema.md (or CLAUDE.md legacy)
 3. **Propose slug** — from filename + date + parties;
    ask user to confirm or edit
 4. **Extract text → transcript (via `doc-extract` skill):**
@@ -332,11 +384,24 @@ Run through each check and report findings:
 - Entity `key` matches filename (without `.md`)
 
 **10. Schema Drift:**
-- Are all categories used in `entities/` declared in CLAUDE.md `## Entity Categories`?
-- Are all types in slugs declared in CLAUDE.md `## Document Types`?
-- If drift found — propose updating CLAUDE.md
+- Are all categories used in `entities/` declared in schema (`{wiki}/schema.md` preferred, CLAUDE.md legacy)?
+- Are all types in slugs declared in schema `## Document Types`?
+- Is schema split between `{wiki}/schema.md` AND CLAUDE.md sections (duplication)? → propose collapsing to schema.md only
+- Does CLAUDE.md still carry full schema instead of a 1-line pointer? → propose migration
+- If drift found — propose updating schema
 
-**11. Suggest New Questions** — Think proactively:
+**11. CLAUDE.md Drift** — CLAUDE.md is resident context; wiki is lazy. Detect migration candidates:
+- CLAUDE.md > ~150 lines total → flag for review (each line is paid on every session)
+- Individual lines > 400 chars describing component names, file paths, API specifics, or implementation behavior (e.g. "URL state syncs via `useUrlState()` hook at `hooks/useUrlState.ts`, converted pages: ...") → propose moving to the targeted wiki page (`[[ui-components]]`, `[[navigation]]`, etc.)
+- For each `[[wikilink]]` in CLAUDE.md: verify the target page actually covers the cross-linked topic (otherwise CLAUDE.md carries content that's "linked but duplicated")
+- "X removed" / "Y migrated" history notes in CLAUDE.md → belong in git log / wiki log.md, not resident context
+- Conversely: wiki pages that contradict CLAUDE.md convention lines (e.g. navigation structure described two different ways) → update the stale side
+
+**12. Wiki Page Size** — pages grow. Flag for [[#Operation-Split]]:
+- Pages > 200 lines → candidates for split
+- Pages covering 2+ visibly independent topics (H2 boundaries) → candidates even if < 200 lines
+
+**13. Suggest New Questions** — Think proactively:
 - What sources are missing that would strengthen the wiki?
 - What topics need deeper exploration?
 - Are there areas where the wiki says "TODO" or is thin on detail?
@@ -368,6 +433,41 @@ N issues found: X stale, Y contradictions, Z orphans, W gaps
 ```
 
 After presenting the report, offer to fix all issues.
+
+---
+
+## Operation: Split
+
+Break an over-grown wiki page into focused successors. Lint flags candidates (check #12); this operation executes the split cleanly.
+
+### When to Split
+
+- Page > ~200 lines (soft limit from Page Conventions)
+- Page covers 2+ independent topics with visible H2 boundaries
+- Lint item #12 fires
+
+### Process
+
+1. **Identify boundaries** — usually H2 sections. Propose N successor pages with titles and which sections land in each.
+2. **Confirm with user** — present the split plan before touching files. User may merge sections, rename successors, or abort.
+3. **Create successor pages** using the Page Template. Each inherits relevant `## Sources` from the original.
+4. **Rewrite or delete original** — either keep it as a hub page (just a list of `[[successor]]` links if the umbrella topic still makes sense) or delete it outright.
+5. **Rewire cross-references** — scan wiki for `[[old-page]]` and replace with the correct `[[new-page]]`. Grep the whole `{wiki}/` tree.
+6. **Update `## See also`** on every page that referenced the original — point to the specific successor, not the generic replacement.
+7. **Update `{wiki}/index.md`** — remove old entry, add N new entries with one-line descriptions.
+8. **Append to `log.md`:**
+```markdown
+## [YYYY-MM-DD] split | old-page → new-a + new-b
+- Reason: lint check #12 flagged 247 lines / 3 independent topics
+- Successors: [[new-a]] (topic X), [[new-b]] (topic Y)
+- Cross-refs updated: N pages
+```
+
+### Anti-Patterns
+
+- **Don't split for size alone.** A focused 210-line page is fine. Size is a heuristic, not a rule.
+- **Don't leave a bait-and-switch hub** (original title, but just a list of links) unless the umbrella topic has standalone value. Prefer deletion + cross-ref rewire.
+- **Don't forget the log.md entry.** Future lint runs need to know the split happened, so they don't re-flag stubs.
 
 ---
 
@@ -417,7 +517,7 @@ After consent:
    - Generate transcript → `transcripts/{slug}.md`
    - Create entity page stub → `entities/{category}/{slug}.md`
 5. Create entity stubs for entities mentioned in concepts (lazy: only key/recurring ones)
-6. Update `CLAUDE.md` with schema sections (Entity Categories, Document Types, File Naming)
+6. Create `{wiki}/schema.md` with layers, operations summary, `Entity Categories`, `Document Types`, `File Naming`. Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
 9. Append `log.md` with migration record
@@ -426,20 +526,20 @@ After consent:
 
 ## Operation: Cleanup
 
-Post-migration / periodic housekeeping.
+Post-migration / periodic housekeeping AND structural reorganization of existing content.
 
 ### When to Cleanup
 
 - After init/bootstrap completes
 - User says "wiki cleanup", "почисть wiki/вікі"
 - Periodically (every ~10 sessions or after major changes)
+- **When migrating content between CLAUDE.md and wiki** (e.g. extracting implementation details, consolidating duplicates). This is the canonical home for "wiki refactor" — not `ingest-source` (no new material entering) and not `lint` (not read-only report). Use the log tag `cleanup` with a descriptive subject.
 
 ### Process
 
 1. Remove empty directories under `docs/wiki/` and `archive/`
 2. Verify `archive/` is in `.gitignore`; add if missing
-3. Verify all schema sections exist in CLAUDE.md (`## Wiki`, `## Entity Categories`,
-   `## Document Types`, `## File Naming`); create if missing
+3. Verify schema exists at `{wiki}/schema.md` (preferred). If schema lives in CLAUDE.md sections instead, propose migration: move to `{wiki}/schema.md`, leave a 1-line pointer in CLAUDE.md. If both exist — propose collapsing into schema.md only.
 4. Find unused entity stubs (entity pages with no cross-refs from anywhere) — propose deletion
 5. Find concept pages not in `index.md` and vice versa — propose fixes
 6. Append cleanup actions to `log.md`
@@ -448,15 +548,23 @@ Post-migration / periodic housekeeping.
 
 ## Proactive Wiki Maintenance
 
-Beyond explicit commands, maintain wiki awareness during normal work:
+Beyond explicit commands, maintain wiki awareness during normal work. Tie triggers to git activity — it's concrete, whereas "after a feature" is vague.
 
-**After implementing a feature:** "I notice this introduced [new pattern/gotcha/flow]. Should I ingest this into the wiki?"
+**Commit scope `feat(`** → suggest `ingest-source`. New capability = new synthesis to capture.
 
-**After discovering a gotcha:** If you hit a non-obvious behavior while coding, suggest adding it to the gotchas page.
+**Commit scope `refactor(`** → suggest `lint` on concepts mentioning the touched paths. Refactors invalidate wiki facts; lint surfaces the stale ones. No full lint — just the relevant pages.
 
-**After reading wiki during work:** If you notice stale info while consulting the wiki for a task, fix it immediately — don't leave known-stale content.
+**Commit scope `docs(`** touching `docs/superpowers/specs/` (or equivalent raw-sources dir) → `ingest-source` is mandatory. Specs are the primary wiki feedstock.
 
-**Before committing:** Check if CLAUDE.md wiki schema or wiki pages need updates (per project conventions).
+**Commit touches CLAUDE.md** → check whether added/edited lines are convention (keep) vs implementation detail (propose `cleanup` to migrate into wiki). This is the counterpart to Lint check #11 but catches drift at commit time, before it accumulates.
+
+**Binary file appears in `tmp/`** → suggest `ingest-binary` (already covered by description triggers).
+
+**After discovering a gotcha during coding:** If a non-obvious behavior bit you, append to the gotchas page. Don't wait for the next feature.
+
+**After reading wiki during work:** If you notice stale info while consulting the wiki, fix it immediately — don't leave known-stale content.
+
+**Before committing:** Check whether wiki schema (`{wiki}/schema.md`) or concept pages need updates.
 
 ---
 
@@ -475,3 +583,5 @@ Beyond explicit commands, maintain wiki awareness during normal work:
 | Ingesting without reading existing pages first | ALWAYS read index + relevant pages before writing. Integrate, don't duplicate. |
 | Leaving stale info when updating | When adding new info, also check and fix outdated facts on the same page. |
 | Using hardcoded wiki paths | ALWAYS discover wiki location via CLAUDE.md first. |
+| Writing wiki schema into CLAUDE.md on init | Schema belongs in `{wiki}/schema.md`. CLAUDE.md only gets a 1-line pointer. |
+| Maintaining duplicate schema in both locations | Collapse to `{wiki}/schema.md` only. Leave 1-line pointer in CLAUDE.md. |
