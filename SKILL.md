@@ -1,16 +1,13 @@
 ---
 name: wiki
 description: >
-  Use when managing a project's LLM Wiki knowledge base (Karpathy pattern).
-  Three layers: concepts (themes/synthesis), entities (specific things),
-  transcripts (full text of binaries). Binaries live in archive/ (gitignored).
-  TRIGGER on: "ingest", "додай до wiki/вікі", "wiki/вікі lint", "wiki/вікі query",
-  "оновити wiki/вікі", "перевір wiki/вікі", "що каже wiki про...",
-  "знайди у вікі", any binary in tmp/.
-  "вікі" = "wiki" — interchangeable.
-  Also use PROACTIVELY after completing features or when binaries appear in tmp/.
-  Six operations: init (bootstrap-aware), ingest-source, ingest-binary,
-  query, lint, cleanup.
+  Manage a project's LLM Wiki (Karpathy pattern) — three layers (concepts,
+  entities, transcripts) plus archive/ for binaries. Seven operations:
+  init, ingest-source, ingest-binary, query, lint, cleanup, split.
+  Triggers: "ingest"/"додай до wiki/вікі", "wiki/вікі lint/query/cleanup",
+  "оновити/перевір wiki/вікі", "що каже wiki про...", "знайди у вікі",
+  any binary in tmp/. "вікі" = "wiki". Also use PROACTIVELY after feat/
+  refactor commits and when binaries land in tmp/.
 ---
 
 # LLM Wiki (Karpathy Pattern)
@@ -82,7 +79,7 @@ Cyrillic OK. Spaces → `-`. Forbidden: `/\?*<>:|`, quotes, dots (except before 
 | File | Purpose | Format |
 |------|---------|--------|
 | `{wiki}/index.md` | Catalog of all pages, organized by category | `- [[page-name]] — one-line description` |
-| `{wiki}/log.md` | Chronological record of all operations | `## [YYYY-MM-DD] operation \| Subject` |
+| `{wiki}/log.md` | Chronological record of all operations | `## [YYYY-MM-DD] operation \| Subject` + optional `touched: [[page-a]], [[page-b]]` line for searchability |
 
 **Read `index.md` FIRST** for any wiki operation — it's your map.
 
@@ -139,7 +136,12 @@ Process a new source (spec, feature, code change) into the wiki.
 - Updated: list of pages touched
 - Created: list of new pages (if any)
 - Key changes: 1-2 sentences on what's new
+- touched: [[page-a]], [[page-b]], [[page-c]]
 ```
+
+The `touched:` line enables `grep -l 'page-name' log.md` searches like
+"when did we last update purchase-flow?" — purely operational metadata,
+no synthesis. Optional but recommended for non-trivial ingests.
 
 ### Page Template
 
@@ -482,13 +484,14 @@ After consent:
 
 ## Operation: Cleanup
 
-Post-migration / periodic housekeeping.
+Post-migration / periodic housekeeping AND structural reorganization of existing content.
 
 ### When to Cleanup
 
 - After init/bootstrap completes
 - User says "wiki cleanup", "почисть wiki/вікі"
 - Periodically (every ~10 sessions or after major changes)
+- **When migrating content between CLAUDE.md and wiki** (e.g. extracting implementation details, consolidating duplicates). This is the canonical home for "wiki refactor" — not `ingest-source` (no new material entering) and not `lint` (not read-only report). Use the log tag `cleanup` with a descriptive subject.
 
 ### Process
 
@@ -503,15 +506,23 @@ Post-migration / periodic housekeeping.
 
 ## Proactive Wiki Maintenance
 
-Beyond explicit commands, maintain wiki awareness during normal work:
+Beyond explicit commands, maintain wiki awareness during normal work. Tie triggers to git activity — it's concrete, whereas "after a feature" is vague.
 
-**After implementing a feature:** "I notice this introduced [new pattern/gotcha/flow]. Should I ingest this into the wiki?"
+**Commit scope `feat(`** → suggest `ingest-source`. New capability = new synthesis to capture.
 
-**After discovering a gotcha:** If you hit a non-obvious behavior while coding, suggest adding it to the gotchas page.
+**Commit scope `refactor(`** → suggest `lint` on concepts mentioning the touched paths. Refactors invalidate wiki facts; lint surfaces the stale ones. No full lint — just the relevant pages.
 
-**After reading wiki during work:** If you notice stale info while consulting the wiki for a task, fix it immediately — don't leave known-stale content.
+**Commit scope `docs(`** touching `docs/superpowers/specs/` (or equivalent raw-sources dir) → `ingest-source` is mandatory. Specs are the primary wiki feedstock.
 
-**Before committing:** Check if CLAUDE.md wiki schema or wiki pages need updates (per project conventions).
+**Commit touches CLAUDE.md** → check whether added/edited lines are convention (keep) vs implementation detail (propose `cleanup` to migrate into wiki). This is the counterpart to Lint check #11 but catches drift at commit time, before it accumulates.
+
+**Binary file appears in `tmp/`** → suggest `ingest-binary` (already covered by description triggers).
+
+**After discovering a gotcha during coding:** If a non-obvious behavior bit you, append to the gotchas page. Don't wait for the next feature.
+
+**After reading wiki during work:** If you notice stale info while consulting the wiki, fix it immediately — don't leave known-stale content.
+
+**Before committing:** Check whether wiki schema (`{wiki}/schema.md`) or concept pages need updates.
 
 ---
 
