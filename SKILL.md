@@ -346,7 +346,18 @@ Run through each check and report findings:
 - Does CLAUDE.md still carry full schema instead of a 1-line pointer? → propose migration
 - If drift found — propose updating schema
 
-**11. Suggest New Questions** — Think proactively:
+**11. CLAUDE.md Drift** — CLAUDE.md is resident context; wiki is lazy. Detect migration candidates:
+- CLAUDE.md > ~150 lines total → flag for review (each line is paid on every session)
+- Individual lines > 400 chars describing component names, file paths, API specifics, or implementation behavior (e.g. "URL state syncs via `useUrlState()` hook at `hooks/useUrlState.ts`, converted pages: ...") → propose moving to the targeted wiki page (`[[ui-components]]`, `[[navigation]]`, etc.)
+- For each `[[wikilink]]` in CLAUDE.md: verify the target page actually covers the cross-linked topic (otherwise CLAUDE.md carries content that's "linked but duplicated")
+- "X removed" / "Y migrated" history notes in CLAUDE.md → belong in git log / wiki log.md, not resident context
+- Conversely: wiki pages that contradict CLAUDE.md convention lines (e.g. navigation structure described two different ways) → update the stale side
+
+**12. Wiki Page Size** — pages grow. Flag for [[#Operation-Split]]:
+- Pages > 200 lines → candidates for split
+- Pages covering 2+ visibly independent topics (H2 boundaries) → candidates even if < 200 lines
+
+**13. Suggest New Questions** — Think proactively:
 - What sources are missing that would strengthen the wiki?
 - What topics need deeper exploration?
 - Are there areas where the wiki says "TODO" or is thin on detail?
@@ -378,6 +389,41 @@ N issues found: X stale, Y contradictions, Z orphans, W gaps
 ```
 
 After presenting the report, offer to fix all issues.
+
+---
+
+## Operation: Split
+
+Break an over-grown wiki page into focused successors. Lint flags candidates (check #12); this operation executes the split cleanly.
+
+### When to Split
+
+- Page > ~200 lines (soft limit from Page Conventions)
+- Page covers 2+ independent topics with visible H2 boundaries
+- Lint item #12 fires
+
+### Process
+
+1. **Identify boundaries** — usually H2 sections. Propose N successor pages with titles and which sections land in each.
+2. **Confirm with user** — present the split plan before touching files. User may merge sections, rename successors, or abort.
+3. **Create successor pages** using the Page Template. Each inherits relevant `## Sources` from the original.
+4. **Rewrite or delete original** — either keep it as a hub page (just a list of `[[successor]]` links if the umbrella topic still makes sense) or delete it outright.
+5. **Rewire cross-references** — scan wiki for `[[old-page]]` and replace with the correct `[[new-page]]`. Grep the whole `{wiki}/` tree.
+6. **Update `## See also`** on every page that referenced the original — point to the specific successor, not the generic replacement.
+7. **Update `{wiki}/index.md`** — remove old entry, add N new entries with one-line descriptions.
+8. **Append to `log.md`:**
+```markdown
+## [YYYY-MM-DD] split | old-page → new-a + new-b
+- Reason: lint check #12 flagged 247 lines / 3 independent topics
+- Successors: [[new-a]] (topic X), [[new-b]] (topic Y)
+- Cross-refs updated: N pages
+```
+
+### Anti-Patterns
+
+- **Don't split for size alone.** A focused 210-line page is fine. Size is a heuristic, not a rule.
+- **Don't leave a bait-and-switch hub** (original title, but just a list of links) unless the umbrella topic has standalone value. Prefer deletion + cross-ref rewire.
+- **Don't forget the log.md entry.** Future lint runs need to know the split happened, so they don't re-flag stubs.
 
 ---
 
