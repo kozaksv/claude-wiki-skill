@@ -19,19 +19,26 @@ A persistent, compounding knowledge base maintained by Claude. Instead of re-dis
 
 This skill is **project-agnostic** — it discovers the wiki location automatically.
 
-## Step 0: Discover Wiki Location
+## Step 0: Discover Wiki Location and Schema
 
-**Before any operation**, locate the wiki. Follow this sequence:
+**Before any operation**, locate both the wiki directory and its schema. Follow this sequence:
 
 1. **Find CLAUDE.md** — look in the current working directory, then walk up parent directories until found
 2. **Read CLAUDE.md's Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
 3. **Verify wiki exists** — check that the discovered directory contains `index.md`
 4. **If no Wiki section in CLAUDE.md** — search for `docs/wiki/index.md` relative to CLAUDE.md location
-5. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (absent / v1 / current), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and adds schema sections to `CLAUDE.md`.
+5. **Locate schema** — wiki schema (layers, operations, conventions, `Entity Categories`, `Document Types`, `File Naming`) lives in exactly one of:
+   - **Preferred (v3+):** `{wiki}/schema.md` — canonical location, keeps wiki metadata out of CLAUDE.md resident context
+   - **Legacy (v1–v2):** sections inside `CLAUDE.md` itself (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
+
+   Try `{wiki}/schema.md` first. Fall back to CLAUDE.md sections. When both exist, prefer `schema.md` and flag the duplication during next lint.
+6. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (absent / v1 / current), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
 **CRITICAL: Never create a second wiki.** If you find an existing wiki, use it. If CLAUDE.md references a wiki path, trust it. Only create a new wiki when none exists anywhere in the project.
+
+**Why schema.md is preferred over CLAUDE.md sections:** CLAUDE.md loads into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
 
 ## Three Layers (within Wiki)
 
@@ -47,8 +54,8 @@ Plus external layers:
 
 ```
 Raw Binaries (immutable) → archive/ (gitignored, outside wiki)
-Schema (conventions)     → CLAUDE.md "Wiki", "Entity Categories",
-                           "Document Types", "File Naming" sections
+Schema (conventions)     → {wiki}/schema.md (preferred, v3+)
+                         → CLAUDE.md sections (legacy, v1–v2)
 ```
 
 **Concepts** — the existing layer. Themes, gotchas, architectural decisions.
@@ -194,10 +201,11 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
 
 ### Process
 
-1. **Detect / ask category** — suggest from `Entity Categories` in CLAUDE.md;
-   if user wants new category, add a row to CLAUDE.md
-2. **Detect / ask type** — suggest from `Document Types` in CLAUDE.md;
-   if new type, add a row to CLAUDE.md
+1. **Detect / ask category** — suggest from `Entity Categories` in schema
+   (`{wiki}/schema.md`, fallback to CLAUDE.md). If user wants a new category,
+   add a row to schema.md (or CLAUDE.md for legacy v1–v2 layout)
+2. **Detect / ask type** — suggest from `Document Types` in schema
+   (same fallback order). If new type, add a row to schema.md (or CLAUDE.md legacy)
 3. **Propose slug** — from filename + date + parties;
    ask user to confirm or edit
 4. **Extract text → transcript (via `doc-extract` skill):**
@@ -332,9 +340,11 @@ Run through each check and report findings:
 - Entity `key` matches filename (without `.md`)
 
 **10. Schema Drift:**
-- Are all categories used in `entities/` declared in CLAUDE.md `## Entity Categories`?
-- Are all types in slugs declared in CLAUDE.md `## Document Types`?
-- If drift found — propose updating CLAUDE.md
+- Are all categories used in `entities/` declared in schema (`{wiki}/schema.md` preferred, CLAUDE.md legacy)?
+- Are all types in slugs declared in schema `## Document Types`?
+- Is schema split between `{wiki}/schema.md` AND CLAUDE.md sections (duplication)? → propose collapsing to schema.md only
+- Does CLAUDE.md still carry full schema instead of a 1-line pointer? → propose migration
+- If drift found — propose updating schema
 
 **11. Suggest New Questions** — Think proactively:
 - What sources are missing that would strengthen the wiki?
@@ -417,7 +427,7 @@ After consent:
    - Generate transcript → `transcripts/{slug}.md`
    - Create entity page stub → `entities/{category}/{slug}.md`
 5. Create entity stubs for entities mentioned in concepts (lazy: only key/recurring ones)
-6. Update `CLAUDE.md` with schema sections (Entity Categories, Document Types, File Naming)
+6. Create `{wiki}/schema.md` with layers, operations summary, `Entity Categories`, `Document Types`, `File Naming`. Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
 9. Append `log.md` with migration record
@@ -438,8 +448,7 @@ Post-migration / periodic housekeeping.
 
 1. Remove empty directories under `docs/wiki/` and `archive/`
 2. Verify `archive/` is in `.gitignore`; add if missing
-3. Verify all schema sections exist in CLAUDE.md (`## Wiki`, `## Entity Categories`,
-   `## Document Types`, `## File Naming`); create if missing
+3. Verify schema exists at `{wiki}/schema.md` (preferred). If schema lives in CLAUDE.md sections instead, propose migration: move to `{wiki}/schema.md`, leave a 1-line pointer in CLAUDE.md. If both exist — propose collapsing into schema.md only.
 4. Find unused entity stubs (entity pages with no cross-refs from anywhere) — propose deletion
 5. Find concept pages not in `index.md` and vice versa — propose fixes
 6. Append cleanup actions to `log.md`
@@ -475,3 +484,5 @@ Beyond explicit commands, maintain wiki awareness during normal work:
 | Ingesting without reading existing pages first | ALWAYS read index + relevant pages before writing. Integrate, don't duplicate. |
 | Leaving stale info when updating | When adding new info, also check and fix outdated facts on the same page. |
 | Using hardcoded wiki paths | ALWAYS discover wiki location via CLAUDE.md first. |
+| Writing wiki schema into CLAUDE.md on init | Schema belongs in `{wiki}/schema.md`. CLAUDE.md only gets a 1-line pointer. |
+| Maintaining duplicate schema in both locations | Collapse to `{wiki}/schema.md` only. Leave 1-line pointer in CLAUDE.md. |
