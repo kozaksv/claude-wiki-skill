@@ -16,6 +16,46 @@ A persistent, compounding knowledge base maintained by Claude. Instead of re-dis
 
 This skill is **project-agnostic** — it discovers the wiki location automatically.
 
+## Philosophy
+
+From Karpathy's original pattern (https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
+
+> _"the LLM is rediscovering knowledge from scratch on every question. There's no accumulation."_
+
+> _"The tedious part of maintaining a knowledge base is not the reading or the thinking — it's the bookkeeping. Humans abandon wikis because the maintenance burden grows faster than the value. LLMs don't get bored, don't forget to update a cross-reference, and can touch 15 files in one pass."_
+
+> _"connections between documents are as valuable as the documents themselves"_ (Vannevar Bush's Memex)
+
+The wiki is not documentation. It is synthesized understanding that compounds across sessions. Cross-references are first-class — a page with no `[[wikilinks]]` is suspect.
+
+## Division of Labor
+
+Karpathy draws a sharp line: the human curates and directs; the LLM does everything mechanical.
+
+| Human | LLM |
+|---|---|
+| Curate sources (decide what's worth ingesting) | Read and synthesize those sources |
+| Direct the analysis (ask good questions) | Summarize, cross-reference, update pages |
+| Think about what it all means | All bookkeeping: index, log, `[[wikilinks]]`, `## See also` |
+| Veto LLM proposals on init / cleanup / schema changes | Propose, never execute destructive ops without consent |
+
+> _"You never (or rarely) write the wiki yourself — the LLM writes and maintains all of it."_
+
+If you catch yourself hand-editing wiki pages page-by-page, it's a skill failure — prefer running the relevant operation.
+
+## Modularity
+
+> _"Everything mentioned above is optional and modular — pick what's useful, ignore what isn't."_
+
+Not every project needs every layer or operation:
+
+- **No binary documents (PDFs, contracts, images)?** → skip `entities/` and `transcripts/`. Run only `concepts/`. Skip `ingest-binary` and `doc-extract` dependency.
+- **Small wiki (< 20 pages)?** → lint once per quarter, not every 10 sessions. Skip `split` entirely.
+- **No raw sources dir?** → `ingest-source` still works from code diffs and conversation context; don't force a `specs/` folder.
+- **Schema minimal?** → `schema.md` can be 10 lines. No need for populated Entity Categories or Document Types until the project actually has categories.
+
+The seven operations are a **palette**, not a checklist. A code project might use only `ingest-source` + `query` + `lint`. A research project might lean heavily on `ingest-binary`. Adapt.
+
 ## Step 0: Discover Wiki Location and Schema
 
 **Before any operation**, locate both the wiki directory and its schema. Follow this sequence:
@@ -36,6 +76,8 @@ All paths below use `{wiki}` as placeholder for the discovered wiki directory (e
 **CRITICAL: Never create a second wiki.** If you find an existing wiki, use it. If CLAUDE.md references a wiki path, trust it. Only create a new wiki when none exists anywhere in the project.
 
 **Why schema.md is preferred over CLAUDE.md sections:** CLAUDE.md loads into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
+
+_Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the CLAUDE.md fallback._
 
 ## Three Layers (within Wiki)
 
