@@ -806,7 +806,7 @@ The menu items are reachable; they don't execute new logic embedded in `wiki sta
 | `[1]/[2]/...` Passive fixes | Apply the passive fix directly — no LLM read of the page needed. Cross-ref drift = remove or replace the broken `[[wikilink]]`; schema drift = update the entity's `category`/`type` field or propose a schema.md addition. Each fix is a single `Edit` and bumps `patch_count` for the modified page. |
 | `[n]` Nothing | Print "OK, нічого не зроблено" and end the operation |
 
-**Phase F note (delegation contract):** Lint is being reformulated to support these subset filters cleanly. Until then, treat the delegation as: hand the chosen subset (a list of page paths) into Lint's content-verification step and follow Lint's report → action sequence from there.
+**Delegation contract:** the chosen subset (a list of page paths) is handed to `## Operation: Lint`'s content-verification step, which produces the report and per-page action menu.
 
 ### After completion
 
