@@ -1027,6 +1027,24 @@ Set up wiki, OR detect existing structure and propose migration.
    - Existing concept-like MDs that should move to `concepts/`
    - Duplicate MDs (raw README that overlap wiki content)
 
+### Project-type detection (only for `absent` state)
+
+When bootstrapping a fresh wiki, scan project root for type signals to propose initial `entities/` categories. This is a SUGGESTION — user can override or pick custom categories.
+
+| Signal (file present in project root) | Suggested `entities/` categories |
+|---|---|
+| `package.json` / `tsconfig.json` | `components/`, `services/` |
+| `Cargo.toml` | `modules/`, `traits/` |
+| `requirements.txt` / `pyproject.toml` | `modules/`, `classes/` |
+| `go.mod` | `packages/`, `interfaces/` |
+| `*.csproj` | `classes/`, `services/` |
+| `pom.xml` / `build.gradle` | `packages/`, `services/` |
+| no code signals (research / personal / docs project) | `people/`, `documents/` |
+
+If multiple signals match (polyglot repo), union the suggested categories and let the user prune. After detection, surface the proposed list inside the Bootstrap plan template (step 5: `entities/`) so the user sees what they're approving.
+
+**Scope warning.** Project-type detection ONLY influences proposed initial categories at bootstrap time. It does NOT affect any other behavior — in particular, it does NOT feed into staleness scoring or content-verification (see `## Operation: Lint`), and it does NOT lock future categories (any category can be added later via `ingest-binary` lazy-creation).
+
 ### Plan (interactive)
 
 Before any move, present:
