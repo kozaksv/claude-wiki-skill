@@ -80,6 +80,68 @@ All paths below use `{wiki}` as placeholder for the discovered wiki directory (e
 
 _Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the CLAUDE.md fallback._
 
+## Versioning & Migration
+
+Every wiki has a version stored in `{wiki}/schema.md` frontmatter:
+
+```yaml
+---
+wiki_version: "4.0"
+last_migration: "2026-05-01"
+---
+```
+
+The skill itself has a version in this file's frontmatter (`version: "4.0.0"`).
+
+### State detection on Step 0
+
+After locating the wiki and reading `schema.md`, compare versions:
+
+| State | Condition | Action |
+|---|---|---|
+| `current` | `wiki_version` == skill major version | Continue with operation |
+| `legacy` | Wiki exists but `wiki_version` field absent in frontmatter | Identify version interactively, then propose migration |
+| `older` | `wiki_version` < skill version | Generate migration plan, ask user once |
+| `newer` | `wiki_version` > skill version | Warn user, ask whether to continue |
+| `absent` | No wiki found | Defer to Init operation (bootstrap) |
+
+### Migration plan format
+
+For `older` and `legacy` states, present a single approval block:
+
+```
+⚠️ Wiki версії 3.0, скіл — 4.0. Потрібна міграція.
+
+План:
+  1. {step 1 description}
+  2. {step 2 description}
+  ...
+
+Зроблю всі N кроків одразу? [y] / [n] / [пропусти крок N]
+```
+
+Wait for explicit `y`. On `n`, abort the operation. On `пропусти крок N`, exclude that step and re-confirm.
+
+### Migration is explicit, not silent
+
+Wiki migrations involve directory/file creation, gitignore changes, and frontmatter additions — user-visible changes that warrant explicit consent. Backfill of missing fields **inside** `.usage.json` records (forward-compat fields like `state`, `pinned`, `archived_at`) IS silent. Only structural migrations require the plan-then-confirm flow.
+
+### Migration Log
+
+`schema.md` carries a `## Migration Log` section that records what changed between versions. Each entry:
+
+```markdown
+### 4.0 (2026-05-01)
+- Added `.usage.json` telemetry sidecar
+- Added `wiki_version` frontmatter to schema.md
+- Added РЕФЛЕКСІЯ block as required behavior
+- Added Tiered crystallization
+- Added `wiki status` operation
+- Reformulated Lint as Karpathy content-verification
+```
+
+When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.
+
 ## Three Layers (within Wiki)
 
 The wiki itself has three internal layers:
