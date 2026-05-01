@@ -466,7 +466,7 @@ Three layers protect against accidental destruction:
    ⚠️  Підтверди видалення:
        concepts/purchase-flow.md  (124 рядки, останній patch 2026-04-30)
 
-       Першi 200 символів:
+       Перші 200 символів:
        > Multi-step purchase → receive → inventory creation flow. ...
 
        Якщо точно видалити — напиши `yes` (саме слово, не `y`).

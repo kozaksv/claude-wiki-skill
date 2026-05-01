@@ -163,7 +163,7 @@ User: `wiki status`.
    ⚠️  Підтверди видалення:
        concepts/legacy-feature-flag.md  (87 рядків, останній patch 2025-10-12)
 
-       Першi 200 символів:
+       Перші 200 символів:
        > Legacy feature flag introduced in 2024-Q3 to gate the experimental ...
 
        Якщо точно видалити — напиши `yes` (саме слово, не `y`).
