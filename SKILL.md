@@ -55,7 +55,7 @@ Not every project needs every layer or operation:
 - **No raw sources dir?** → `ingest-source` still works from code diffs and conversation context; don't force a `specs/` folder.
 - **Schema minimal?** → `schema.md` can be 10 lines. No need for populated Entity Categories or Document Types until the project actually has categories.
 
-The seven operations are a **palette**, not a checklist. A code project might use only `ingest-source` + `query` + `lint`. A research project might lean heavily on `ingest-binary`. Adapt.
+The eight operations are a **palette**, not a checklist. A code project might use only `ingest-source` + `query` + `lint`. A research project might lean heavily on `ingest-binary`. Adapt.
 
 ## Step 0: Discover Wiki Location and Schema
 
