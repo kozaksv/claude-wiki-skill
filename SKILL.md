@@ -1,10 +1,11 @@
 ---
 name: wiki
+version: "4.0.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern) — three layers (concepts,
-  entities, transcripts) plus archive/ for binaries. Seven operations:
-  init, ingest-source, ingest-binary, query, lint, cleanup, split.
-  Triggers: "ingest"/"додай до wiki/вікі", "wiki/вікі lint/query/cleanup",
+  entities, transcripts) plus archive/ for binaries. Eight operations:
+  init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki-status.
+  Triggers: "ingest"/"додай до wiki/вікі", "wiki/вікі lint/query/cleanup/status",
   "оновити/перевір wiki/вікі", "що каже wiki про...", "знайди у вікі",
   any binary in tmp/. "вікі" = "wiki". Also use PROACTIVELY after feat/
   refactor commits and when binaries land in tmp/.
