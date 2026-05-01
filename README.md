@@ -1,6 +1,19 @@
 # Claude Wiki Skill
 
+**Version: v4.0.0** — self-improvement release.
+
 Скіл для Claude Code, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
+
+## What's new in v4.0
+
+- **РЕФЛЕКСІЯ block** — після кожного edit/write проходу скіл вмикає короткий refleksiya-крок з anti-noise rule (read-only блоки не тригерять reflection).
+- **Telemetry sidecar (`.usage.json`)** — gitignored per-clone metadata: `read_count` / `write_count` / `last_touched` для кожної сторінки. Для пріоритизації, не для flagging.
+- **Tiered crystallization** — патерн повторюється 3+ разів → пропозиція (y/n/пізніше) створити concept-сторінку, helper-скрипт або під-скіл. Ніколи silent.
+- **`wiki status` operation** — інтроспективний звіт: hot pages, cold pages, drift candidates, telemetry summary.
+- **Karpathy lint reformulation** — staleness визначається content-verification (читання сторінки + judgement), не timestamp-евристикою.
+- **Versioning + migration** — поле `wiki_version` у `schema.md`. Структурні зміни — explicit plan-then-confirm; field-level backfill в `.usage.json` — silent.
+
+Architectural patterns inspired by [Hermes-Agent](https://github.com/NousResearch/hermes-agent) by Nous Research.
 
 ## Що робить
 
@@ -11,15 +24,19 @@
 
 **Бінарники — у `archive/`** (поза git через `.gitignore`).
 
-**Шість операцій:**
+**Вісім операцій:**
 - **init** (bootstrap-aware) — ініціалізувати wiki АБО мігрувати існуючу структуру проєкту
 - **ingest-source** — обробити MD-спеку / статтю → оновити concept-сторінки
 - **ingest-binary** — обробити PDF/DOCX з `tmp/` → entity + transcript + бінарник в `archive/`
 - **query** — шукати у wiki відповіді на питання про проєкт (крос-просторово)
-- **lint** — перевірка здоров'я: trinity integrity, orphans, frontmatter, schema drift
-- **cleanup** — post-migration / періодична уборка
+- **wiki status** — інтроспективний звіт: hot/cold pages, drift candidates, telemetry summary
+- **lint** — Karpathy content-verification: trinity integrity, orphans, frontmatter, drift
+- **split** — розбити monolithic page на focused topics
+- **cleanup** — post-migration / періодична уборка з action menu (delete / merge / archive / pin)
 
-Тригери: `додай до вікі`, `оновити вікі`, `що каже вікі про...`, `вікі лінт`, `перевір вікі`, `знайди у вікі`. Також проактивно при появі бінарників у `tmp/`.
+Плюс мікро-операції: `wiki pin <path>` / `wiki unpin <path>` — захищає сторінку від cleanup-видалення.
+
+Тригери: `додай до вікі`, `оновити вікі`, `що каже вікі про...`, `вікі лінт`, `вікі статус`, `перевір вікі`, `знайди у вікі`. Також проактивно при появі бінарників у `tmp/`.
 
 ## Встановлення
 
