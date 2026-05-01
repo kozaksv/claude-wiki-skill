@@ -330,6 +330,13 @@ The `touched:` line enables `grep -l 'page-name' log.md` searches like
 "when did we last update purchase-flow?" — purely operational metadata,
 no synthesis. Optional but recommended for non-trivial ingests.
 
+**Step 7 — Update telemetry.** Mutate `{wiki}/.usage.json` per the rules in `## Telemetry Sidecar`:
+- For each existing page **read** during this ingest → `bump_view(path)`.
+- For each page **modified** (Edit/Write) → `bump_patch(path)`. New pages are recorded with `created_at = now` on their first patch.
+- For each new `[[wikilink]]` you added pointing to another page → `bump_use(target_path)`.
+
+Do this once at the end of the operation, not after every individual file touch. Telemetry must never block the ingest — see Tolerance rules.
+
 ### Page Template
 
 ```markdown
@@ -439,6 +446,12 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    - `entities/index.md` (or wiki/index.md Entities section): append row
    - `transcripts/index.md`: append row
    - `log.md`: append `## [YYYY-MM-DD] ingest-binary | <description>`
+10. **Update telemetry** (`.usage.json`, see `## Telemetry Sidecar`):
+    - New entity page → `bump_patch(entities/{category}/{slug}.md)` (creates record with `created_at`)
+    - New transcript → `bump_patch(transcripts/{slug}.md)`
+    - Modified `entities/index.md` / `transcripts/index.md` → `bump_patch(...)`
+    - Each existing entity page touched (back-link to new doc) → `bump_patch(...)`
+    - Each `[[wikilink]]` you added pointing to another wiki page → `bump_use(target_path)`
 
 ---
 
@@ -462,7 +475,10 @@ Search the wiki to answer a question about the project.
 3. READ those pages
 4. SYNTHESIZE answer with citations: [[page-name]]
 5. If answer is valuable and reusable → FILE BACK as new wiki page
+6. UPDATE telemetry — call bump_view(path) for each page read in step 3
 ```
+
+After step 3, for each page you read with the `Read` tool, call `bump_view(path)` against `.usage.json` (see `## Telemetry Sidecar`). If step 5 fires and you create or edit a page, also call `bump_patch(new_path)` and `bump_use(target)` for each `[[wikilink]]` added.
 
 ### Filing Back
 
@@ -492,6 +508,7 @@ Run through each check and report findings:
 - Are entity relationships accurate?
 - Has the data model changed since last update?
 - **Is the stale item a count or inventory (e.g., "N tests", "N migrations", "N routes")? → propose DELETE, not UPDATE.** Derivable counts drift faster than any maintenance cadence can catch; deleting them pushes the read to `ls`/`grep`/`wc` which is always current. Keep semantic labels that pair an identifier with what it meant; drop inventory numbers.
+- **Prioritize via `.usage.json`** (see `## Telemetry Sidecar`). Reading every page in full is expensive — use `report()` to sort candidates by highest `patch_count` and oldest `last_patched_at`, and propose the top-N (e.g. top-5) to the user before reading. High `use_count` pages also deserve priority because their drift cascades through cite chains. Telemetry **prioritizes**, it does **not** flag — the actual staleness judgment still requires reading the page.
 
 **2. Contradictions** — Cross-check between pages:
 - Does page A say X while page B says Y?
@@ -598,7 +615,7 @@ Break an over-grown wiki page into focused successors. Lint flags candidates (ch
 1. **Identify boundaries** — usually H2 sections. Propose N successor pages with titles and which sections land in each.
 2. **Confirm with user** — present the split plan before touching files. User may merge sections, rename successors, or abort.
 3. **Create successor pages** using the Page Template. Each inherits relevant `## Sources` from the original.
-4. **Rewrite or delete original** — either keep it as a hub page (just a list of `[[successor]]` links if the umbrella topic still makes sense) or delete it outright.
+4. **Rewrite or delete original** — either keep it as a hub page (just a list of `[[successor]]` links if the umbrella topic still makes sense) or delete it outright. **If deleted**, call `forget(original_path)` against `.usage.json` (see `## Telemetry Sidecar`). For each successor, telemetry will auto-create a record on the first patch — no manual init needed.
 5. **Rewire cross-references** — scan wiki for `[[old-page]]` and replace with the correct `[[new-page]]`. Grep the whole `{wiki}/` tree.
 6. **Update `## See also`** on every page that referenced the original — point to the specific successor, not the generic replacement.
 7. **Update `{wiki}/index.md`** — remove old entry, add N new entries with one-line descriptions.
@@ -691,7 +708,7 @@ Post-migration / periodic housekeeping AND structural reorganization of existing
 1. Remove empty directories under `docs/wiki/` and `archive/`
 2. Verify `archive/` is in `.gitignore`; add if missing
 3. Verify schema exists at `{wiki}/schema.md` (preferred). If schema lives in CLAUDE.md sections instead, propose migration: move to `{wiki}/schema.md`, leave a 1-line pointer in CLAUDE.md. If both exist — propose collapsing into schema.md only.
-4. Find unused entity stubs (entity pages with no cross-refs from anywhere) — propose deletion
+4. Find unused entity stubs (entity pages with no cross-refs from anywhere) — propose deletion. For each page deleted, call `forget(path)` against `.usage.json` (see `## Telemetry Sidecar`).
 5. Find concept pages not in `index.md` and vice versa — propose fixes
 6. Append cleanup actions to `log.md`
 
