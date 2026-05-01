@@ -70,7 +70,7 @@ The eight operations are a **palette**, not a checklist. A code project might us
    - **Legacy (v1–v2):** sections inside `CLAUDE.md` itself (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
 
    Try `{wiki}/schema.md` first. Fall back to CLAUDE.md sections. When both exist, prefer `schema.md` and flag the duplication during next lint.
-6. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (absent / v1 / current), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
+6. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (5-state model: `absent` / `legacy` / `current` / `older` / `newer`), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
 7. **Compare versions** — read `wiki_version` from `{wiki}/schema.md` frontmatter (if absent → state = `legacy`). Read your own `version` from this SKILL.md frontmatter. Determine state per the Versioning & Migration table. If state ≠ `current`, halt the requested operation and follow the migration flow.
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
@@ -1011,11 +1011,17 @@ Set up wiki, OR detect existing structure and propose migration.
 ### Discovery
 
 1. **Find CLAUDE.md** (walk up dirs from cwd)
-2. **Determine wiki state:**
-   - `absent` — no `docs/wiki/` exists
-   - `v1` — `docs/wiki/` exists but no `concepts/entities/transcripts/` substructure
-   - `current` — full three-layer structure
-3. **Scan project for migration candidates** (only if state ≠ current):
+2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
+
+   | State | Condition | Action |
+   |---|---|---|
+   | `absent` | No `docs/wiki/` exists | Bootstrap from scratch (proceed to project-type detection + Plan below) |
+   | `legacy` | Wiki exists but no `wiki_version` field in `schema.md` frontmatter | Identify version interactively, then propose migration |
+   | `current` | `wiki_version` matches skill's version | Nothing to do — abort Init, tell user wiki is up to date |
+   | `older` | `wiki_version` < skill's version | Generate migration plan, ask user once |
+   | `newer` | `wiki_version` > skill's version | Warn user, ask whether to continue |
+
+3. **Scan project for migration candidates** (only if state is `legacy` or `older`):
    - Raw binaries (PDF, DOCX, images, spreadsheets) in non-hidden, non-wiki dirs
    - Analytical MDs (README, analysis, notes) outside `docs/wiki/`
    - Existing concept-like MDs that should move to `concepts/`
