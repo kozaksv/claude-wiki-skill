@@ -583,10 +583,14 @@ After consent:
    - Generate transcript → `transcripts/{slug}.md`
    - Create entity page stub → `entities/{category}/{slug}.md`
 5. Create entity stubs for entities mentioned in concepts (lazy: only key/recurring ones)
-6. Create `{wiki}/schema.md` with layers, operations summary, `Entity Categories`, `Document Types`, `File Naming`. Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
+6. Create `{wiki}/schema.md` with `wiki_version: "4.0"` and `last_migration: "{today}"` in frontmatter, layers description, operations summary, `Entity Categories`, `Document Types`, `File Naming`, and `## Migration Log` section seeded with v4.0 entry. Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
 9. Append `log.md` with migration record
+
+### Versioning during Init
+
+For all migration-from-legacy paths, follow the explicit plan format described in `## Versioning & Migration`. After successful migration, write `## Migration Log` entry documenting the path taken (e.g., "v1 → v4 via init bootstrap").
 
 ---
 
