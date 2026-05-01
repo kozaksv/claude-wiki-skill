@@ -143,6 +143,10 @@ Wiki migrations involve directory/file creation, gitignore changes, and frontmat
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.
 
+### Optional config knobs in `schema.md` frontmatter
+
+Optional `nudge_interval: <N>` in `schema.md` frontmatter overrides the default crystallization periodic nudge frequency (default ~15 tool-calling iterations). Set to `0` to disable the periodic nudge while keeping hard triggers (pre-commit, TodoWrite-completion, explicit user) active. See `## Self-Improvement Loop` → `### Tiered Crystallization` for the trigger model.
+
 ## Telemetry Sidecar (.usage.json)
 
 Each wiki carries a small sidecar file `{wiki}/.usage.json` that tracks per-page activity. It is gitignored, per-clone, and never blocks an operation if it goes wrong. The sidecar exists to **prioritize** what to read or verify next — never to flag pages as stale on its own. Staleness is judged by reading content (see `## Operation: Lint`).
@@ -880,7 +884,17 @@ After consent:
    - Generate transcript → `transcripts/{slug}.md`
    - Create entity page stub → `entities/{category}/{slug}.md`
 5. Create entity stubs for entities mentioned in concepts (lazy: only key/recurring ones)
-6. Create `{wiki}/schema.md` with `wiki_version: "4.0"` and `last_migration: "{today}"` in frontmatter, layers description, operations summary, `Entity Categories`, `Document Types`, `File Naming`, and `## Migration Log` section seeded with v4.0 entry. Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
+6. Create `{wiki}/schema.md` with frontmatter, layers description, operations summary, `Entity Categories`, `Document Types`, `File Naming`, and `## Migration Log` section seeded with v4.0 entry. Frontmatter template:
+
+   ```yaml
+   ---
+   wiki_version: "4.0"
+   last_migration: "{today}"
+   nudge_interval: 15      # tool-calling iterations between crystallization nudges; 0 disables periodic nudge
+   ---
+   ```
+
+   Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
 6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
