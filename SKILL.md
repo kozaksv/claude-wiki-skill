@@ -233,7 +233,7 @@ The wiki is not just a passive store — it is a feedback loop. After meaningful
 Reflection has two purposes:
 
 1. **Visible reasoning** — a short, predictable block that lets the user verify the agent didn't just edit files, it actually thought about the diff. Hermes-style silent telemetry stays in `.usage.json`; РЕФЛЕКСІЯ is the loud counterpart.
-2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving as a script / wiki page / skill?". Tiered Crystallization is documented separately (added in a later section); here the reflection block names what was crystallized in the `Автоматизував:` field.
+2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving as a script / wiki page / skill?". Tiered Crystallization is documented in the subsection below; the reflection block names what was crystallized in the `Автоматизував:` field (one of `tier 1 — scripts/...sh`, `tier 2 — scripts/...py`, `tier 3 — concepts/....md`, `tier 4 — delegated to writing-skills`, or `нічого` with reason).
 
 Reflection fires on **events**, not on a timer the skill maintains. The agent is responsible for self-checking the trigger conditions on every operation — there is no harness-side counter.
 
@@ -305,6 +305,83 @@ Concretely:
 - An Init that created files → reflection fires (structural changes always reflect).
 
 If unsure, lean toward firing reflection — over-reporting is recoverable, under-reporting hides reasoning. Anti-noise is for the obvious cases (literally nothing was written).
+
+### Tiered Crystallization
+
+The reflection's `Автоматизував:` field isn't decorative — it's the agent's answer to a real question: **is anything from this block worth saving so the next session doesn't have to re-derive it?** When the answer is yes, the agent **proposes** (never silently creates) one of four tiers. Choose the lowest tier that captures the value; over-tiering creates maintenance debt.
+
+| Tier | Artifact | Storage | What the model judges (during a periodic nudge) |
+|---|---|---|---|
+| 1. Bash one-liner | shell script ≤20 lines | `scripts/{name}.sh` in project | "Same simple command repeated this session — would a one-liner save tokens / typos next time?" |
+| 2. Python script | Python with args + error handling | `scripts/{name}.py` in project | "Multi-step flow with conditions or parsing repeated more than once — does it justify a real script?" |
+| 3. Wiki concept page | new `concepts/{name}.md` | `{wiki}/concepts/` | "I've explained the same concept across sessions and no existing page covers it — file it so the next query finds it." |
+| 4. Full skill | new `~/.claude/skills/{name}/SKILL.md` | user-level skills | "Multi-step flow with clear trigger conditions, reusable across projects — warrants a real skill, not just a script." |
+
+**These are heuristics for the model's holistic judgment during a periodic nudge — NOT counters this skill maintains algorithmically.** Hermes-Agent's `tools/skill_manager_tool.py` is purely CRUD; the trigger model is a periodic nudge that asks "consider crystallizing", and the model decides. Don't try to count normalized commands or de-dupe argv vectors. Read the room.
+
+### Crystallization triggers
+
+| Trigger | Default | Behavior |
+|---|---|---|
+| Periodic nudge | Every ~15 tool-calling iterations since the last crystallization check | Self-checked. On each operation, briefly notice whether ~15 tool calls have passed; if yes, ask yourself "є щось варте автоматизації?" and surface a proposal if the answer is yes. The skill is purely instructional — there is no harness-side counter; the model is responsible for self-pacing. |
+| Pre-commit | Immediately before `git commit` | Hard trigger — paired with reflection. Always check for crystallization candidates at this moment. |
+| TodoWrite-completion | Last todo → `completed` | Hard trigger — paired with reflection. |
+| Pre-compression flush | User-explicit ("save before /compress" / "збережи перед стисненням") | Guaranteed turn for writing crystallizable patterns out before context is lost. The harness does not signal compression to skills, so this depends on the user. |
+| Explicit user | "save this as bash" / "make it a script" / "винеси в скіл" | Manual override — skip judgment, go straight to proposal at the requested tier. |
+| Disabled | `nudge_interval: 0` in `{wiki}/schema.md` frontmatter | Disables the periodic nudge only. Hard triggers (pre-commit, TodoWrite-completion, explicit user) still fire. |
+
+The default cadence (~15 iterations) can be overridden per-wiki via `nudge_interval: <N>` in `schema.md` frontmatter — see `## Versioning & Migration` for the knob.
+
+### Proposal format
+
+The skill **proposes**; the user decides. Never `Write` a script, page, or skill silently. Use this exact block:
+
+```
+🔁 Помічаю патерн: {one-line description of the recurring pattern, with concrete count}
+   Tier {N} ({type}): {proposed-path}
+
+   Створити? [y] / [n] / [пізніше]
+```
+
+Behavior on each response:
+
+- `y` → create the file, show its content inline, stage it for commit. The reflection's `Автоматизував:` field records `tier {N} — {path}`.
+- `n` → do not create. Record the refusal for this normalized pattern in this session — **do not re-propose the same pattern this session**. The reflection's `Автоматизував:` field records `нічого — юзер відмовив раніше`.
+- `пізніше` → do not create now, but the pattern is still eligible for re-proposal at the next nudge. The reflection's `Автоматизував:` field records `нічого — відкладено`.
+
+A concrete tier-1 example:
+
+```
+🔁 Помічаю патерн: за останні 15 ітерацій ти 3 рази робив curl з cookie better-auth + grep по JSON.
+   Tier 1 (bash one-liner): scripts/auth-curl.sh
+
+   Створити? [y] / [n] / [пізніше]
+```
+
+### Tier-4 delegation to writing-skills
+
+Tier 4 has the highest bar — a full skill with its own SKILL.md, conventions, evals, and trigger-description. **The wiki skill does NOT create SKILL.md itself.** It delegates to the `superpowers:writing-skills` skill, which knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; that one knows skill conventions. Honor the separation.
+
+The tier-4 proposal therefore looks slightly different — it asks for permission to delegate, not for permission to create:
+
+```
+🔁 Цей flow підходить для повноцінного скіла: 5 кроків, чіткі тригери, реюзабельно між проєктами.
+   Tier 4 (full skill): передати у superpowers:writing-skills для оформлення?
+
+   [y] делегуй  /  [n] не зараз  /  [пізніше]
+```
+
+On `y`, hand off to `superpowers:writing-skills` with a one-paragraph brief describing the flow, triggers, and intended scope. The reflection's `Автоматизував:` field records `tier 4 — delegated to writing-skills (subject: {brief})`. Do not create `~/.claude/skills/{name}/SKILL.md` directly from this skill under any circumstances.
+
+### Anti-noise rules for crystallization
+
+The proposal flow has its own anti-noise constraints, separate from the reflection-block anti-noise rule:
+
+- **Don't propose if the user already refused this normalized pattern in this session.** Refusals are sticky for the session.
+- **Don't propose for ambient commands** — `ls`, `cd`, `pwd`, `git status`, `git log`, `cat`, `wc`, `grep` of well-known paths. These are exploration noise, not patterns worth scripting.
+- **Don't propose if arguments are radically different each time.** If you ran `curl` against five different URLs with five different cookies, that's ad-hoc exploration, not a scriptable pattern. Look for repeated *shape*, not repeated *invocation*.
+- **Don't propose tier 1 or 2 for one-shot operations** — deploys, schema migrations, one-time data fixes. Even if the user runs them three times in a row, they're not a recurring pattern; they're one task done in three steps.
+- **Lowest viable tier wins.** Don't propose tier 3 when tier 1 covers it; don't propose tier 4 when tier 3 covers it. Over-tiering is its own form of noise.
 
 ### Cleanup-prompt embedded in reflection
 
