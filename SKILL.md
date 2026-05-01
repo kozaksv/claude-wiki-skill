@@ -490,6 +490,10 @@ When updating documentation after implementing a feature:
 - If in doubt whether something is a "convention" or "implementation detail" — it's wiki
 - Reference wiki from CLAUDE.md when needed: "Details → see [[page-name]] in wiki"
 
+### After completion
+
+If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop`. Ingest-Source almost always involves Edit/Write on at least one wiki page, so the anti-noise rule rarely applies — only skip reflection if you somehow read sources but ended up making no edits at all.
+
 ---
 
 ## Operation: Ingest-Binary
@@ -559,6 +563,10 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
     - Each existing entity page touched (back-link to new doc) → `bump_patch(...)`
     - Each `[[wikilink]]` you added pointing to another wiki page → `bump_use(target_path)`
 
+### After completion
+
+If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop`. Ingest-Binary always creates structural artifacts (entity page, transcript, archive move, navigation updates), so reflection should fire and include the `Перевірив:` section listing structural files touched. Anti-noise does not apply.
+
 ---
 
 ## Operation: Query
@@ -591,6 +599,10 @@ After step 3, for each page you read with the `Read` tool, call `bump_view(path)
 When a query produces a valuable synthesis (comparison, analysis, connection between topics), consider saving it as a new wiki page. This is a key Karpathy insight: **good answers compound into the knowledge base** rather than disappearing into chat history.
 
 Ask yourself: "Would this answer be useful in a future session?" If yes → create a page.
+
+### After completion
+
+Query is read-only by default — apply the **anti-noise rule** and skip the РЕФЛЕКСІЯ block (see `## Self-Improvement Loop`). The exception is when step 5 (Filing Back) fires and you actually create or edit a wiki page: that turns the operation into a synthesis-write, and reflection should fire as if it were an Ingest-Source.
 
 ---
 
@@ -739,6 +751,10 @@ Break an over-grown wiki page into focused successors. Lint flags candidates (ch
 - **Don't leave a bait-and-switch hub** (original title, but just a list of links) unless the umbrella topic has standalone value. Prefer deletion + cross-ref rewire.
 - **Don't forget the log.md entry.** Future lint runs need to know the split happened, so they don't re-flag stubs.
 
+### After completion
+
+If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop`. Split always rewrites multiple files (successors + cross-refs + index + log) and almost always touches `index.md` and `log.md`, so reflection should fire and include the `Перевірив:` section. Anti-noise does not apply.
+
 ---
 
 ## Operation: Init (bootstrap-aware)
@@ -798,6 +814,10 @@ After consent:
 
 For all migration-from-legacy paths, follow the explicit plan format described in `## Versioning & Migration`. After successful migration, write `## Migration Log` entry documenting the path taken (e.g., "v1 → v4 via init bootstrap").
 
+### After completion
+
+Init is the most structurally heavy operation in the skill — it creates `schema.md`, `index.md`, `log.md`, `.usage.json`, edits `.gitignore`, writes a CLAUDE.md pointer, and may move binaries into `archive/`. Always emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop` after Init completes (regardless of trigger), and always include the `Перевірив:` section listing every structural file created or modified. Anti-noise does not apply — Init by definition writes.
+
 ---
 
 ## Operation: Cleanup
@@ -819,6 +839,10 @@ Post-migration / periodic housekeeping AND structural reorganization of existing
 4. Find unused entity stubs (entity pages with no cross-refs from anywhere) — propose deletion. For each page deleted, call `forget(path)` against `.usage.json` (see `## Telemetry Sidecar`).
 5. Find concept pages not in `index.md` and vice versa — propose fixes
 6. Append cleanup actions to `log.md`
+
+### After completion
+
+If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop`. Cleanup that only **proposed** fixes (no user consent yet, no edits applied) is a read-only survey — apply the **anti-noise rule** and skip reflection. Cleanup that actually applied fixes (deletions, schema migration, index/log updates) is a structural change — fire reflection and include the `Перевірив:` section.
 
 ---
 
