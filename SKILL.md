@@ -524,6 +524,19 @@ no synthesis. Optional but recommended for non-trivial ingests.
 
 Do this once at the end of the operation, not after every individual file touch. Telemetry must never block the ingest — see Tolerance rules.
 
+**Step 8 — Pin auto-suggest for critically-rare pages.** For each **new** page created in this ingest (not for updates), check if it looks intentionally rare-read. Trigger if either:
+
+- Frontmatter contains a tag matching `security`, `incident`, `migration`, `compliance`, or `recovery`, OR
+- Filename contains any of those prefixes (e.g. `security-token-rotation.md`, `incident-2026-02-15.md`, `migration-0026-per-serving.md`, `compliance-gdpr-export.md`, `recovery-db-restore.md`).
+
+Ask the user:
+
+```
+Сторінка [[{slug}]] виглядає як критично-рідкісна. Запропонувати pin? [y/n]
+```
+
+On `y`: read `.usage.json`, set `pinned: true` on this page's record (creating the record with defaults if absent), write atomically. Pinning does not bump `patch_count` — it's a metadata mutation. On `n`: leave `pinned: false`. Pin protection then kicks in during future Lint runs (see `## Operation: Lint > Pin protection during Lint`).
+
 ### Page Template
 
 ```markdown
@@ -643,6 +656,18 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
     - Modified `entities/index.md` / `transcripts/index.md` → `bump_patch(...)`
     - Each existing entity page touched (back-link to new doc) → `bump_patch(...)`
     - Each `[[wikilink]]` you added pointing to another wiki page → `bump_use(target_path)`
+11. **Pin auto-suggest for critically-rare pages.** For the **new** entity page created in step 6, check if it looks intentionally rare-read. Trigger if either:
+
+    - Frontmatter contains a tag matching `security`, `incident`, `migration`, `compliance`, or `recovery`, OR
+    - Filename / slug contains any of those prefixes (e.g. `security-cf-tunnel-rotation.md`, `incident-2026-02-15.md`, `migration-stock-pickings.md`, `compliance-gdpr-export.md`, `recovery-runbook.md`).
+
+    Ask the user:
+
+    ```
+    Сторінка [[{slug}]] виглядає як критично-рідкісна. Запропонувати pin? [y/n]
+    ```
+
+    On `y`: read `.usage.json`, set `pinned: true` on the new entity page's record, write atomically. Pinning does not bump `patch_count`. On `n`: leave `pinned: false`. Pin protection then kicks in during future Lint runs (see `## Operation: Lint > Pin protection during Lint`).
 
 ### After completion
 
