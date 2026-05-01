@@ -1098,6 +1098,12 @@ N pages verified (X clean, Y with proposed actions); Z contradictions, W orphans
 
 After presenting the report, offer to fix all issues.
 
+### After completion
+
+Lint is read-only by default — content-verification reads pages and produces a report, but does not mutate them. Apply the **anti-noise rule** and skip the РЕФЛЕКСІЯ block when Lint only printed a report (see `## Self-Improvement Loop`).
+
+Reflection fires only when the user, in response to the report, picks an action verb (`глянь і онови`, `видали`, `merge`, `розбий`) and the skill actually applies that fix. Each per-page action that mutates wiki content (Edit / Write / file move) triggers reflection on its own terms via the cleanup-flow contract. Don't double-fire.
+
 ---
 
 ## Operation: Split
