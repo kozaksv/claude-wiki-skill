@@ -1325,3 +1325,8 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Using hardcoded wiki paths | ALWAYS discover wiki location via CLAUDE.md first. |
 | Writing wiki schema into CLAUDE.md on init | Schema belongs in `{wiki}/schema.md`. CLAUDE.md only gets a 1-line pointer. |
 | Maintaining duplicate schema in both locations | Collapse to `{wiki}/schema.md` only. Leave 1-line pointer in CLAUDE.md. |
+| Auto-flagging staleness by timestamp | Use Karpathy content-verification — read pages and judge claims. Telemetry is for prioritization, not flagging. |
+| Creating crystallization artifact silently | Skill ALWAYS proposes (y/n/пізніше). Never `Write` a script/page/skill without explicit user approval. |
+| Treating `.usage.json` as user-visible | It's metadata, gitignored, per-clone. Don't mention specific counter values to user unless `wiki status` is invoked. |
+| Migrating `wiki_version` silently | Migration is explicit plan-then-confirm for structural changes. Only field-level backfill in `.usage.json` is silent. |
+| Skipping reflection because "small change" | Anti-noise rule applies only to read-only blocks. Any edit/write block produces reflection. |
