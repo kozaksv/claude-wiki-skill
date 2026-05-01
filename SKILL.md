@@ -521,6 +521,33 @@ After each completed action, mutate `.usage.json` exactly once:
 
 A cancelled action (user said anything other than `yes` to a `видали` confirm, or pin protection refused) leaves `.usage.json` untouched.
 
+### `wiki pin <path>` and `wiki unpin <path>`
+
+Two micro-operations let the user toggle the `pinned` field in `.usage.json` outside of the cleanup-flow context — useful when adding a page that should be born protected (security recipes, incident postmortems, migration runbooks), or when the user wants to liberate a previously-pinned page so it rejoins normal cleanup.
+
+| Command | What it does |
+|---|---|
+| `wiki pin <path>` | Set `pinned: true` for `<path>` in `.usage.json`. Page is now skipped by `[a]` / `[b]` and refused by `видали` until unpinned. |
+| `wiki unpin <path>` | Set `pinned: false` for `<path>` in `.usage.json`. Page rejoins the normal cleanup-flow and can be proposed for verification or destructive action. |
+
+After either toggle, the skill confirms the new state and notes which protections (de)apply. Example output:
+
+```
+✅ concepts/security-recovery.md → pinned: true
+   Сторінка тепер виключена з cleanup-flow ([a]/[b]/[c] її не запропонують).
+   Спроба `видали` буде відхилена з підказкою про `wiki unpin`.
+```
+
+```
+✅ concepts/legacy-feature.md → pinned: false
+   Сторінка повертається в нормальний cleanup-flow.
+   Може з'явитись у [a] / [b] proposals і прийняти `видали`.
+```
+
+These commands do **not** fire reflection — they are pure metadata toggles, no content edited. Apply the **anti-noise rule** and skip the РЕФЛЕКСІЯ block.
+
+The `<path>` argument is the wiki-relative path (e.g. `concepts/security-recovery.md`, `entities/contracts/acme-2026.md`). If the path does not match a wiki page, the skill refuses with a one-line error rather than creating an empty `.usage.json` entry.
+
 ### Why a reflection block at all
 
 Karpathy's pattern is silent: read, write, move on. Hermes adds telemetry, also silent. But a coding agent navigating an interactive session benefits from a small visible breadcrumb after each meaningful chunk — it tells the user "yes, I noticed this was a recurring pattern" or "no, nothing new here". The strict template prevents drift into rambling reflection essays; the trigger table prevents spam; anti-noise keeps it relevant. The reflection block is the wiki's interactive companion to its silent telemetry sidecar.
