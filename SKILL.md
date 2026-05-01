@@ -1047,7 +1047,7 @@ If multiple signals match (polyglot repo), union the suggested categories and le
 
 ### Plan (interactive)
 
-Before any move, present:
+For `legacy` / `older` migrations, before any move, present:
 - Concept candidates → list of MDs to move into `concepts/`
 - Entity candidates → suggest stubs from mentions in existing wiki
 - Binary candidates → list of binaries to move to `archive/` + create transcript
@@ -1055,6 +1055,30 @@ Before any move, present:
 - Stale folders → list to remove after content migrated
 
 Ask per group: "Migrate these? [y/N/per-file]". User retains veto on each.
+
+### Bootstrap plan template (for `absent` state)
+
+For a fresh wiki (state = `absent`), present this single-block plan after project-type detection finishes. Substitute `{detected_type}` with the matched signal (e.g., `package.json`) and `{category-list}` with the suggested categories from the table above; substitute `{today}` with the current date in `YYYY-MM-DD` form.
+
+```
+📂 Створюю нову wiki у docs/wiki/
+
+План:
+  1. docs/wiki/schema.md — frontmatter (wiki_version: "4.0", last_migration: "{today}", nudge_interval: 15) + три розділи (Layers / Operations / Conventions) + Migration Log
+  2. docs/wiki/index.md — порожній з трьома секціями (Concepts | Entities | Transcripts)
+  3. docs/wiki/log.md — порожній з заголовком
+  4. docs/wiki/concepts/ — порожня папка
+  5. docs/wiki/entities/ — пропонована структура для {detected_type}: {category-list}
+  6. docs/wiki/transcripts/ — порожня папка
+  7. docs/wiki/.usage.json — порожній dict {}
+  8. archive/ — поза wiki (gitignored)
+  9. CLAUDE.md — додати 1-line pointer "Wiki schema → docs/wiki/schema.md"
+  10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
+
+[y] так, створи все  /  [n] скасувати
+```
+
+After confirmation (`y`), execute all 10 steps in order using the Execute checklist below. After execution, append `## [{today}] init | bootstrap fresh wiki v4.0` to `log.md`. On `n`, abort and leave the project untouched.
 
 ### Execute
 
