@@ -682,6 +682,8 @@ After consent:
    - Create entity page stub → `entities/{category}/{slug}.md`
 5. Create entity stubs for entities mentioned in concepts (lazy: only key/recurring ones)
 6. Create `{wiki}/schema.md` with `wiki_version: "4.0"` and `last_migration: "{today}"` in frontmatter, layers description, operations summary, `Entity Categories`, `Document Types`, `File Naming`, and `## Migration Log` section seeded with v4.0 entry. Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
+6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
+6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
 9. Append `log.md` with migration record
