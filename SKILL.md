@@ -405,7 +405,121 @@ The trailing block (after the horizontal rule) is an **embedded cleanup-prompt**
 
 The prompt is short on purpose — it's a passive offer, not an interrogation. If the user does not engage in three consecutive reflections, scale back to firing it only on pre-commit moments (still optional from the user side). This avoids prompt fatigue.
 
-The same downstream flow (subset selection → content-verification → action menu) is also reachable from the `wiki status` operation. Both entry points lead to identical mechanics; this is documented in detail under `## Operation: Wiki Status` below and in the cleanup-flow subsection of this section (added later as well).
+The same downstream flow (subset selection → content-verification → action menu) is also reachable from the `wiki status` operation. Both entry points lead to identical mechanics; this is documented in detail under `## Operation: Wiki Status` below and in the `### Cleanup-flow` subsection that immediately follows.
+
+### Cleanup-flow
+
+The cleanup-flow is the **single canonical path** for any "the wiki has drifted, let's fix it" moment. Both entry points (the embedded РЕФЛЕКСІЯ prompt and the `wiki status` command) funnel into the same mechanics: subset selection → content-verification → per-page action menu. This subsection is the contract; everything in `## Operation: Lint` and `## Operation: Wiki Status` is a delegation target.
+
+#### Two entry points, same downstream flow
+
+| Entry point | Trigger | What the user picks |
+|---|---|---|
+| **РЕФЛЕКСІЯ embedded prompt** | Passive — emitted at the end of a reflection-firing turn | `[y]` показати → enters subset selection |
+| **`wiki status` command** | Active — user typed `wiki status` / `вікі статус` | `[a]` / `[b]` / `[c]` directly picks a subset |
+
+Both lead to:
+
+1. **Subset selection** — top-5 most edited (`[a]`), top-5 longest unverified (`[b]`), or specific pages / category (`[c]`). Pin protection filters out `pinned: true` pages from `[a]` and `[b]` automatically.
+2. **Content-verification** — skill reads each picked page in full (this bumps `view_count`), checks claims against cited code and disk state, surfaces drift findings.
+3. **Action menu** — for each finding, the user picks one of the actions below.
+
+The two entry points share the same code path on purpose. There is no "lite" cleanup vs. "full" cleanup; the only difference is which trigger surfaced the prompt.
+
+#### Action menu (per-page / per-finding)
+
+After verification, the skill presents findings with a numbered list. For each finding, the user picks an action verb (Ukrainian wording is the contract — do not translate):
+
+| Action | What the skill does | Telemetry effect |
+|---|---|---|
+| `глянь і онови` | Read page + cited code, update content synchronously, show diff before saving | `bump_patch(path)` |
+| `видали` | Delete the file, remove from `index.md`, mark in `.usage.json` | `forget(path)` |
+| `pin` | Set `pinned: true` in `.usage.json` — future cleanup-prompts skip this page | toggle `pinned` |
+| `merge` | Propose merging two pages into one; triggers a separate flow that asks which is the target and which is the source | `forget(merged-into-other)` + `bump_patch(target)` |
+| `розбий` | Invoke the existing `## Operation: Split` on this page | (split's own telemetry, normally `bump_patch` on each successor) |
+| `глянь обидві` | Verbose side-by-side diff + recommendation (used when content-verification surfaces a contradiction between two pages) | (no immediate mutation; user then picks per-page action on each side) |
+
+Render the menu with the verbs in Ukrainian, e.g.:
+
+```
+🔍 Знайдено: concepts/purchase-flow.md — джерело `docs/superpowers/specs/2025-12-01-purchase-receive.md` не існує.
+
+   1 — глянь і онови   (прочитаю + поправлю claim синхронно)
+   2 — видали          (видалю сторінку повністю — потребує double-confirm)
+   3 — pin             (помічу як захищену, виключу з cleanup-flow)
+   4 — merge           (об'єднати з іншою сторінкою)
+   5 — розбий          (запустити split)
+   6 — глянь обидві    (тільки якщо є парна сторінка-кандидат)
+
+   Вибір [1/2/3/4/5/6]:
+```
+
+Six verbs is the full menu. If a verb doesn't make sense for the finding (e.g. `глянь обидві` without a paired page), omit that line — never offer a no-op.
+
+#### Safety layers
+
+Three layers protect against accidental destruction:
+
+1. **Double confirmation for `видали`.** The user picked `2` once. The skill **re-shows the list** of what will be deleted (path + first 200 chars of the page) and asks for a second confirmation that **must literally be `yes`**, not `y`. Single-character confirmations are too easy to slip on (touchpad, autocomplete, double-Enter). Example:
+
+   ```
+   ⚠️  Підтверди видалення:
+       concepts/purchase-flow.md  (124 рядки, останній patch 2026-04-30)
+
+       Першi 200 символів:
+       > Multi-step purchase → receive → inventory creation flow. ...
+
+       Якщо точно видалити — напиши `yes` (саме слово, не `y`).
+       Будь-яка інша відповідь — скасування.
+   ```
+
+   Only `yes` (case-insensitive, trimmed) proceeds. Anything else cancels with no telemetry effect.
+
+2. **Snapshot before destructive ops.** Immediately before `видали` / `merge` / `розбий` actually mutates the wiki, the skill commits the current state:
+
+   ```bash
+   git commit -m "chore(wiki): snapshot before {operation}"
+   ```
+
+   Use the literal verb in `{operation}` — `видали`, `merge`, `розбий`. The commit captures the wiki *before* the destructive change, so rollback is a one-liner:
+
+   ```bash
+   git revert HEAD
+   ```
+
+   The skill mentions this in its post-operation message: «Якщо передумаєш — `git revert HEAD` поверне до знімка». Do not skip the snapshot just because the working tree «looked clean»; if there's nothing to commit, run an empty commit (`--allow-empty`) so the rollback anchor still exists.
+
+3. **Pin protection.** Even if the user typed `видали` (and even if they made it through double-confirmation), if the target page has `pinned: true` in `.usage.json`, the skill **refuses** with a helpful message and does nothing. Example:
+
+   ```
+   ⛔ concepts/security-recovery.md помічена як `pinned: true` —
+       захищена від cleanup-flow.
+
+       Якщо точно треба видалити:
+         1) wiki unpin concepts/security-recovery.md
+         2) повтори видалення
+
+       Це додатковий запобіжник проти випадкового знесення
+       критичних сторінок (security, incident, migration).
+   ```
+
+   The same pin protection applies to `merge` (when the pinned page is the source side — pinned page cannot be silently absorbed into another). For `глянь і онови` and `pin` itself the protection is a no-op (these are non-destructive).
+
+#### Telemetry effects summary
+
+After each completed action, mutate `.usage.json` exactly once:
+
+| Action | Mutator call(s) |
+|---|---|
+| `глянь і онови` | `bump_patch(path)` |
+| `видали` | `forget(path)` |
+| `pin` | toggle `pinned: true` |
+| `unpin` (via `wiki unpin`, see below) | toggle `pinned: false` |
+| `merge` | `forget(source-path)` + `bump_patch(target-path)` |
+| `розбий` | delegated to `## Operation: Split` (it bumps each successor's `created_at` and patches the index) |
+| `глянь обидві` | no immediate mutation — the per-page action chosen afterward triggers its own mutator |
+
+A cancelled action (user said anything other than `yes` to a `видали` confirm, or pin protection refused) leaves `.usage.json` untouched.
 
 ### Why a reflection block at all
 
