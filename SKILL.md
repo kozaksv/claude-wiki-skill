@@ -805,13 +805,38 @@ Periodic health-check of the wiki.
 
 Run through each check and report findings:
 
-**1. Staleness** — Read each wiki page and verify key claims against current code:
-- Do referenced files/functions still exist?
-- Do described flows match current implementation?
-- Are entity relationships accurate?
-- Has the data model changed since last update?
-- **Is the stale item a count or inventory (e.g., "N tests", "N migrations", "N routes")? → propose DELETE, not UPDATE.** Derivable counts drift faster than any maintenance cadence can catch; deleting them pushes the read to `ls`/`grep`/`wc` which is always current. Keep semantic labels that pair an identifier with what it meant; drop inventory numbers.
-- **Prioritize via `.usage.json`** (see `## Telemetry Sidecar`). Reading every page in full is expensive — use `report()` to sort candidates by highest `patch_count` and oldest `last_patched_at`, and propose the top-N (e.g. top-5) to the user before reading. High `use_count` pages also deserve priority because their drift cascades through cite chains. Telemetry **prioritizes**, it does **not** flag — the actual staleness judgment still requires reading the page.
+**1. Staleness (Karpathy content-verification)** — **Don't infer staleness from timestamps, view counts, or any other algorithmic heuristic.** Whether a page is stale is a judgment that lives inside the page's content vs. the world it claims to describe. The only way to know is to read the page in full and verify its claims. Telemetry is for **prioritization** (which page to read first), never for **flagging** (auto-marking pages as stale).
+
+**Process:**
+
+1. **Propose a subset for verification** — full-wiki reads are expensive, so pick a small candidate set first. Offer the user one of:
+   - **`[a]` Top-5 most edited** — sort `report()` by `patch_count desc, last_patched_at asc`, take the first 5 entries with `state == "active"` and `pinned == false`. High patch-count = the page has been touched a lot, so drift between the page and the world is more likely to compound here.
+   - **`[b]` Top-5 longest unpatched among active** — sort `report()` by `last_patched_at asc` (oldest first; treat `null` as "older than any timestamp"), filter to `state == "active"` and `pinned == false`, take the first 5. Long-unpatched pages have had more time for the world to drift away from what they claim.
+   - **`[c]` By category** — user supplies a category (e.g. "all `entities/contracts/`", "all `concepts/` pages mentioning purchase flow"); enumerate that subset, then apply pin protection (skip `pinned == true`).
+   - **`[d]` User-specified pages** — user supplies an explicit list of `[[page-names]]`; verify exactly that set. **Pinned pages in `[d]` are still skipped unless the user first unpins them via `wiki unpin <path>`** — explicit listing does not bypass pin protection (see "Pin protection during Lint" below).
+
+2. **For each selected page, read in full and verify claims:**
+   - **Sources existing** — every path under `## Sources` resolves on disk
+   - **Flows match code** — described flows correspond to current implementation (call out `git log` or grep checks if needed)
+   - **Entity relationships accurate** — claimed parent/child / has-many / belongs-to relations match the data model
+   - **Internal `[[wikilinks]]` resolve** — every wikilink in the body points to a page that exists
+   - **Stated counts match reality** — if the page asserts "N tests", "N migrations", "N routes", run the corresponding `ls`/`grep`/`wc` and compare. **If the count is the only stale thing, propose DELETE the count, not UPDATE.** Derivable counts drift faster than any maintenance cadence can catch; deleting them pushes the read to `ls`/`grep`/`wc` which is always current. Keep semantic labels that pair an identifier with what it meant; drop inventory numbers.
+
+3. **Report findings without auto-flagging.** For each verified page, write a short note: claims that hold, claims that drifted, suggested action. **Do not silently rewrite the page.** The user chooses per page: `глянь і онови`, `видали`, `залиш як є`, or `pin` (mark as intentionally rare-read so future Lint runs skip it).
+
+4. **`.usage.json` is read here for prioritization only** — sort order in `[a]` and `[b]`, pin filter in `[a]`/`[b]`/`[c]`. The presence of low view_count or old last_viewed_at is **never** a reason to flag a page as stale on its own. A 0-view page may be a perfectly correct security recipe that just hasn't been needed yet (which is exactly why pinning exists).
+
+### Pin protection during Lint
+
+Some pages are **intentionally rare-read** — security recipes, incident postmortems, migration runbooks, compliance notes, recovery procedures. They earn their value precisely because they sit untouched until the rare moment they're needed. Algorithmic staleness checks (least-viewed, oldest-edited) would score these pages as "stale" forever, which is exactly wrong.
+
+**Pin protection rules:**
+
+- A page with `pinned: true` in `.usage.json` is **skipped** by the `[a]` / `[b]` / `[c]` proposals. It is also **excluded** from any "candidates for content-verification" auto-list.
+- The Lint report **must** include a separate `### Pinned` header listing these pages (so the user remembers they exist), but **never** flags them as `глянь і онови` or `видали`.
+- To verify or modify a pinned page, the user must first run `wiki unpin <path>`. After unpinning, the page becomes a normal Lint candidate; the user can re-pin afterwards with `wiki pin <path>`.
+- Pin/unpin is a sidecar mutation: read `.usage.json`, set/clear `pinned`, write atomically (see Telemetry Tolerance rules). Pinning does not bump `patch_count` for the page itself.
+- Pin auto-suggest fires during Ingest-Source / Ingest-Binary when a new page looks critically-rare (security / incident / migration / compliance / recovery). See those operations for the exact prompt.
 
 **2. Contradictions** — Cross-check between pages:
 - Does page A say X while page B says Y?
@@ -879,8 +904,14 @@ Run through each check and report findings:
 ```markdown
 ## Wiki Lint Report — [date]
 
-### Stale Content
-- [ ] [[page]] — section X references function Y which was renamed/removed
+### Verified (content-verification subset: [a]/[b]/[c]/[d])
+- [[page-x]] — claims hold, no action needed
+- [[page-y]] — `## Sources` references deleted file → propose DELETE source line
+- [[page-z]] — stated count "N migrations" doesn't match reality → propose DELETE count
+
+### Pinned (skipped by content-verification — `wiki unpin <path>` to verify)
+- [[secret-rotation-recipe]]
+- [[incident-2026-02-15]]
 
 ### Contradictions
 - [ ] [[page-a]] says X, but [[page-b]] says Y
@@ -896,7 +927,7 @@ Run through each check and report findings:
 - [ ] Recent spec Y not ingested
 
 ### Summary
-N issues found: X stale, Y contradictions, Z orphans, W gaps
+N pages verified (X clean, Y with proposed actions); Z contradictions, W orphans, V gaps
 ```
 
 After presenting the report, offer to fix all issues.
