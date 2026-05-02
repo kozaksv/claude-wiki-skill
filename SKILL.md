@@ -982,7 +982,20 @@ Run through each check and report findings:
 
    State the chosen subset at the top of the report (e.g. "Verified subset: full — N active pages" or "Verified subset: top-10 most-edited active" or "Verified subset: `concepts/architecture/` — N pages").
 
-   **Heads-up before starting full lint:** if the wiki has > 20 active+unpinned pages, print a one-line warning before reading the first page: "Перевіряю N сторінок (повний лінт). Якщо потрібно швидко — обірви і запусти `вікі лінт швидко` (top-10 most-edited)." This lets the user abort cheap, before token-heavy reads start.
+   **Heads-up before starting full lint — always.** Before reading the first page, print this block (and pause briefly to give the user a chance to abort):
+
+   ```
+   🔍 Готую повний лінт: N активних сторінок (priority order: most-edited first).
+      Pin-protected (skipped): K сторінок.
+
+   Менший скоуп — обірви і запусти один з:
+     • `вікі лінт швидко`                       — top-10 most-edited
+     • `вікі лінт concepts/`                    — лише теку concepts/
+     • `вікі лінт entities/contracts/`          — лише одну категорію
+     • `вікі лінт [[page-x]] [[page-y]]`        — конкретні сторінки
+   ```
+
+   Substitute real `N` and `K` from `report()`. The block is shown for **every** full lint, regardless of wiki size — it's the user's escape hatch and a reminder that smaller-scope alternatives exist. Skip it ONLY when the user already named a scope or said "швидко" (the choice was already explicit).
 
    **Never present a multi-option subset menu** like "[a] top-edited / [b] oldest / [c] by category / [d] specific list". The user names a scope, or says "швидко", or the default full lint applies — there is no in-Lint chooser. Pin protection always applies regardless of subset (skip `pinned == true` unless the user first runs `wiki unpin <path>`).
 
