@@ -12,7 +12,7 @@ The four sub-scenarios cover:
    `глянь і онови`
 2. **`wiki status` entry point** — `[a]` → top-5 most edited → user picks
    `видали` → double-confirmation flow
-3. **Pin protection** — user attempts `видали` on a `pinned: true` page;
+3. **Page protection** — user attempts `видали` on a `protected: true` page;
    skill refuses with helpful message
 4. **Snapshot rollback** — destructive op completes, user regrets, runs
    `git revert HEAD`, wiki restored
@@ -67,7 +67,7 @@ User: `y`.
 1. Enter subset selection. Show menu `[a] / [b] / [c]`. User picks `[a]`
    Top-5 most edited.
 2. Sort `report()` by `patch_count desc, last_patched_at asc`. Filter
-   `state == "active"` and `pinned == false`. Top entry:
+   `state == "active"` and `protected == false`. Top entry:
    `template-course-flow.md`.
 3. **Read** `concepts/template-course-flow.md` in full → bumps
    `view_count` to its prior value + 1.
@@ -85,7 +85,7 @@ User: `y`.
 
        1 — глянь і онови   (прочитаю + поправлю claim синхронно)
        2 — видали          (потребує double-confirm)
-       3 — pin
+       3 — захисти
        4 — merge
        5 — розбий
        (глянь обидві — недоступно, пара сторінок не виявлена)
@@ -118,7 +118,7 @@ User: `y`.
     "view_count": <prev+1>,
     "patch_count": 7,
     "last_patched_at": "<now>",
-    "state": "active", "pinned": false
+    "state": "active", "protected": false
   }
 }
 ```
@@ -139,7 +139,7 @@ Mock wiki state:
   list points to a deleted spec and a deleted route file.
 - `.usage.json` for `legacy-feature-flag.md`: `patch_count: 9`
   (the page was actively maintained back when the flag mattered),
-  `last_patched_at: 2025-10-12T...`, `pinned: false`.
+  `last_patched_at: 2025-10-12T...`, `protected: false`.
 - It tops the `[a]` ranking (highest `patch_count`).
 
 ### Trigger
@@ -198,9 +198,9 @@ delete. Print:
 
 ---
 
-## Sub-scenario 3: Pin protection on `видали`
+## Sub-scenario 3: Page protection on `видали`
 
-User attempts to delete a `pinned: true` page; skill refuses regardless
+User attempts to delete a `protected: true` page; skill refuses regardless
 of how the user got there.
 
 ### Setup
@@ -209,7 +209,7 @@ Mock wiki state:
 
 - `docs/wiki/concepts/security-recovery.md` — incident-recovery runbook,
   intentionally rare-read but high value.
-- `.usage.json` records `pinned: true`, `view_count: 0`, `patch_count: 1`.
+- `.usage.json` records `protected: true`, `view_count: 0`, `patch_count: 1`.
 - A separate page (e.g. via `[c]` user-specified) lists this path
   explicitly, OR the user invokes the action menu directly on it.
 
@@ -220,20 +220,20 @@ Either path is valid:
 - (a) `wiki status` → `[c]` → user types `concepts/security-recovery.md`
   → action menu → user picks `2` (видали).
 - (b) From a РЕФЛЕКСІЯ `[y]` → `[c]` flow with the same explicit listing
-  (per spec, `[c]` does NOT bypass pin protection).
+  (per spec, `[c]` does NOT bypass page protection).
 
 ### Expected skill behavior
 
-1. Skill detects `pinned: true` on the target.
+1. Skill detects `protected: true` on the target.
 2. **Refuse before even offering double-confirmation.** No snapshot, no
    delete, no telemetry mutation. Print:
 
    ```
-   ⛔ concepts/security-recovery.md помічена як `pinned: true` —
+   ⛔ concepts/security-recovery.md помічена як `protected: true` —
        захищена від cleanup-flow.
 
        Якщо точно треба видалити:
-         1) wiki unpin concepts/security-recovery.md
+         1) wiki unprotect concepts/security-recovery.md
          2) повтори видалення
 
        Це додатковий запобіжник проти випадкового знесення
@@ -241,18 +241,18 @@ Either path is valid:
    ```
 
 3. State unchanged. `.usage.json` for this page is identical before/after.
-4. The same protection triggers if the user picks `merge` and the pinned
-   page is the source side. For `глянь і онови` and `pin` itself the
+4. The same protection triggers if the user picks `merge` and the protected
+   page is the source side. For `глянь і онови` and `захисти` itself the
    protection is a no-op (these are non-destructive).
 
-### Unpinning + re-attempt
+### Unprotecting + re-attempt
 
-If the user runs `wiki unpin concepts/security-recovery.md`:
+If the user runs `wiki unprotect concepts/security-recovery.md`:
 
-1. Skill toggles `pinned: false` in `.usage.json`.
-2. Confirms: «✅ concepts/security-recovery.md → pinned: false …».
+1. Skill toggles `protected: false` in `.usage.json`.
+2. Confirms: «✅ concepts/security-recovery.md → protected: false …».
 3. User can now re-attempt `видали`; the normal double-confirm flow
-   applies (the page is no longer pin-protected).
+   applies (the page is no longer page-protected).
 
 ---
 

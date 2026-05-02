@@ -32,9 +32,9 @@ Architectural patterns inspired by [Hermes-Agent](https://github.com/NousResearc
 - **wiki status** — інтроспективний звіт: hot/cold pages, drift candidates, telemetry summary
 - **lint** — Karpathy content-verification: trinity integrity, orphans, frontmatter, drift
 - **split** — розбити monolithic page на focused topics
-- **cleanup** — post-migration / періодична уборка з action menu (`глянь і онови` / `видали` / `pin` / `merge` / `розбий` / `глянь обидві`)
+- **cleanup** — post-migration / періодична уборка з action menu (`глянь і онови` / `видали` / `захисти` / `merge` / `розбий` / `глянь обидві`)
 
-Плюс мікро-операції: `wiki pin <path>` / `wiki unpin <path>` — захищає сторінку від cleanup-видалення.
+Плюс мікро-операції: `wiki protect <path>` / `wiki unprotect <path>` — захищає сторінку від cleanup-видалення (детальніше — секція [«Захист сторінок»](#захист-сторінок) нижче).
 
 Тригери: `додай до вікі`, `оновити вікі`, `що каже вікі про...`, `вікі лінт`, `вікі статус`, `перевір вікі`, `знайди у вікі`. Також проактивно при появі бінарників у `tmp/`.
 
@@ -56,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 
 | Тег | Що це |
 |---|---|
-| **v4.0.0** *(рекомендується)* | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization, cleanup-flow, pin protection, 8 операцій |
+| **v4.0.0** *(рекомендується)* | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization, cleanup-flow, page protection, 8 операцій |
 | **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement |
 | `master` | Поточний HEAD: остання випущена версія + усі коміти після неї |
 
@@ -100,6 +100,44 @@ URL у курлі завжди вказує на `master/install.sh` — це с
 ```
 
 Скіл читає ці секції при `ingest-binary` і додає рядки при появі нових категорій/типів.
+
+## Захист сторінок
+
+Деякі сторінки існують для рідкісних моментів — інструкції на випадок інциденту, runbook міграції, recovery-процедури, ротація токенів. Їх ніхто не редагує і не читає роками **за дизайном**; коли треба — вони критично важливі.
+
+Без захисту скіл не знає різниці між «корисна сторінка, до якої ще не звертались» і «сторінка, яка дійсно протухла». Захист — це явна декларація користувача: «ця сторінка не редагується навмисно, не пропонуй її на видалення і не верифікуй у лінті».
+
+### Як захистити сторінку
+
+```bash
+wiki protect concepts/security-recovery.md
+wiki protect concepts/migration-rollback.md
+```
+
+Що дає захист:
+- **Лінт пропускає** захищену сторінку при content-verification (повний / швидкий / scope — все одно).
+- **Cleanup-flow відмовляється** видаляти захищену сторінку, поки не зробиш `wiki unprotect`.
+- **Звіт лінта показує захищені** сторінки окремим рядком — щоб ти пам'ятав, що вони існують.
+
+### Як зняти захист
+
+Коли треба перевірити або редагувати:
+
+```bash
+wiki unprotect concepts/security-recovery.md
+```
+
+Після цього сторінка повертається у звичайний flow — її можна верифікувати, оновити, видалити.
+
+### Auto-suggest захисту
+
+При `ingest-source` / `ingest-binary` нової сторінки, що виглядає як security / incident / migration / compliance / recovery recipe (за ключовими словами в назві та змісті), скіл сам запитує: «Сторінка виглядає критично-рідкісною. Захистити? [y/n]». Не silent — завжди явна згода.
+
+### Чи воно тобі потрібне
+
+Якщо твоя вікі — **продуктова розробка** (UI patterns, бізнес-flow, data model, gotchas), захист, ймовірно, не потрібен. Усі сторінки активні, всі редагуються, всі читаються. Cleanup-flow і так має double-confirmation проти випадкового видалення.
+
+Захист стає корисним, коли в вікі **з'являються operational runbook'и** — речі, які мусять бути готові на «коли все горить», але до яких не звертаються в нормальний день.
 
 ## Оновлення
 

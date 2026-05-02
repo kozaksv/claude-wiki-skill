@@ -3,7 +3,7 @@
 Three sub-scenarios that exercise the reformulated `## Operation: Lint`
 staleness check (#1) in `SKILL.md`. The check is no longer timestamp-based;
 it proposes a subset for verification, reads selected pages in full, verifies
-claims, and reports findings without auto-flagging. Pinned pages are
+claims, and reports findings without auto-flagging. Захищені pages are
 **always** skipped by content-verification proposals. Cross-ref drift and
 other passive issues need NO LLM read — pure grep.
 
@@ -11,7 +11,7 @@ The three sub-scenarios cover:
 
 1. **Content-verification flags a deleted source** (active LLM read, claim
    fails)
-2. **Pinned page is never proposed for verification** (pin fence holds)
+2. **Захищені page is never proposed for verification** (protect fence holds)
 3. **Cross-ref drift is detected passively** (no LLM read, pure grep)
 
 ---
@@ -54,7 +54,7 @@ Mock wiki state:
     "last_used_at":   "2026-04-25T09:00:00Z",
     "last_patched_at":"2026-04-30T15:00:00Z",
     "created_at":     "2026-01-10T08:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   }
 }
 ```
@@ -66,7 +66,7 @@ User: `wiki lint` → picks `[a] Top-5 most edited` from the verification menu.
 ### Expected skill behavior
 
 1. Sort `report()` by `patch_count desc, last_patched_at asc`. Filter to
-   `state == "active"` and `pinned == false`. Top entry: `purchase-flow.md`
+   `state == "active"` and `protected == false`. Top entry: `purchase-flow.md`
    (only candidate here).
 2. **Read** `concepts/purchase-flow.md` in full → bumps `view_count` to 4
    (this is a real consultation, not a meta-op).
@@ -85,7 +85,7 @@ User: `wiki lint` → picks `[a] Top-5 most edited` from the verification menu.
    ```
 
 5. **Do not silently rewrite the page.** Wait for user to choose
-   `глянь і онови`, `видали`, `залиш як є`, or `pin`.
+   `глянь і онови`, `видали`, `залиш як є`, or `захисти`.
 
 ### Manual verification
 
@@ -96,11 +96,11 @@ User: `wiki lint` → picks `[a] Top-5 most edited` from the verification menu.
 
 ---
 
-## Sub-scenario 2: Pinned page is never proposed for verification
+## Sub-scenario 2: Захищені page is never proposed for verification
 
-A pinned page sits with `view_count: 0` and `last_patched_at` of two months
+A protected page sits with `view_count: 0` and `last_patched_at` of two months
 ago. Both algorithmic-staleness signals would normally rank it as a top
-candidate. Pin protection skips it.
+candidate. Page protection skips it.
 
 ### Setup
 
@@ -139,7 +139,7 @@ Mock wiki state:
     "last_used_at":   null,
     "last_patched_at":"2026-02-10T14:00:00Z",
     "created_at":     "2026-02-10T14:00:00Z",
-    "state": "active", "pinned": true, "archived_at": null
+    "state": "active", "protected": true, "archived_at": null
   },
   "concepts/purchase-flow.md": {
     "view_count": 5, "use_count": 1, "patch_count": 2,
@@ -147,32 +147,32 @@ Mock wiki state:
     "last_used_at":   "2026-04-25T09:00:00Z",
     "last_patched_at":"2026-04-29T15:00:00Z",
     "created_at":     "2026-01-10T08:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   }
 }
 ```
 
 ### Trigger
 
-Two equivalent triggers must both honor the pin:
+Two equivalent triggers must both honor the protection:
 
 - (a) User: `wiki lint` → picks `[b] Top-5 longest unpatched among active`.
 - (b) User: `wiki status` → picks `[b]` from action menu (delegates to Lint).
 
 ### Expected skill behavior
 
-1. Sort `report()` by `last_patched_at asc`. Without pin filter, the result
+1. Sort `report()` by `last_patched_at asc`. Without protect filter, the result
    would be: `secret-rotation-recipe` (Feb 10), `purchase-flow` (Apr 29).
-2. **Apply pin filter**: drop `secret-rotation-recipe` because
-   `pinned == true`. Result set: `purchase-flow` only.
-3. Lint report includes a separate `### Pinned` header listing the pinned
+2. **Apply protect filter**: drop `secret-rotation-recipe` because
+   `protected == true`. Result set: `purchase-flow` only.
+3. Lint report includes a separate `### Захищені` header listing the protected
    pages (so the user remembers they exist):
 
    ```
    ### Verified (content-verification subset: [b])
    - [[purchase-flow]] — claims hold, no action needed.
 
-   ### Pinned (skipped by content-verification — `wiki unpin <path>` to verify)
+   ### Захищені (skipped by content-verification — `wiki unprotect <path>` to verify)
    - [[secret-rotation-recipe]]
    ```
 
@@ -184,7 +184,7 @@ Two equivalent triggers must both honor the pin:
 - After the lint run, `secret-rotation-recipe.md` record in `.usage.json`:
   `view_count` is still `0`, `last_viewed_at` is still `null`.
 - `purchase-flow.md` `view_count` is `6` (was `5`).
-- Pinned page appears in report under its own header — **never** under
+- Захищені page appears in report under its own header — **never** under
   `### Verified` with a `глянь і онови` / `видали` action.
 - Same behavior whether triggered via `wiki lint` directly or via
   `wiki status` → `[b]` delegation.
@@ -192,20 +192,20 @@ Two equivalent triggers must both honor the pin:
 ### `wiki status` rendering of the same state
 
 When the user runs `wiki status` (without picking `[b]`), the structured
-display lists `[[secret-rotation-recipe]]` under the `Pinned:` section
+display lists `[[secret-rotation-recipe]]` under the `Захищені:` section
 verbatim — never under "candidates for verification".
 
 ### Unpin path
 
-If the user really wants to verify the pinned page, they run:
+If the user really wants to verify the protected page, they run:
 
 ```
-wiki unpin concepts/secret-rotation-recipe.md
+wiki unprotect concepts/secret-rotation-recipe.md
 ```
 
-The skill mutates `.usage.json` (sets `pinned: false`, no `patch_count`
+The skill mutates `.usage.json` (sets `protected: false`, no `patch_count`
 bump). On the next `wiki lint`, the page becomes a normal candidate. After
-verification, the user can re-pin via `wiki pin <path>`.
+verification, the user can re-protect via `wiki protect <path>`.
 
 ---
 
@@ -246,7 +246,7 @@ Mock wiki state:
     "last_used_at":   null,
     "last_patched_at":"2026-04-20T10:00:00Z",
     "created_at":     "2026-04-20T10:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   }
 }
 ```
@@ -300,9 +300,9 @@ Across all three sub-scenarios:
    say "I'll start with the top-5 most-edited candidates" — that's
    prioritization. The skill never says "this page is stale because it has
    `last_patched_at` 2026-01-05" — that would be flagging.
-3. **Pin acts as a hard fence.** `pinned == true` excludes the page from
+3. **Pin acts as a hard fence.** `protected == true` excludes the page from
    `[a]/[b]/[c]/[d]` content-verification proposals. Even an explicit user
-   list (`[d]`) requires `wiki unpin` first.
+   list (`[d]`) requires `wiki unprotect` first.
 4. **Reflection fires only when edits happen.** Sub-scenario 1 (no edit yet,
    waiting on user choice) — no РЕФЛЕКСІЯ block. Sub-scenario 3, if the
    user later applies the passive fix and `Edit`s `page-a.md`, reflection

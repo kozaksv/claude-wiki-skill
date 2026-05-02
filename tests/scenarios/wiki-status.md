@@ -1,7 +1,7 @@
 # Scenario: `wiki status` operation (manual pull-model)
 
 Single scenario that exercises the `## Operation: Wiki Status` section in
-`SKILL.md`. Sets up a v4-shaped mock wiki with mixed activity (hot/cold/pinned
+`SKILL.md`. Sets up a v4-shaped mock wiki with mixed activity (hot/cold/protected
 pages, one cross-ref drift, one schema drift), triggers `wiki status`, and
 verifies the structured display + action menu behave per spec section 6.
 
@@ -29,7 +29,7 @@ docs/wiki/concepts/
   intake-stock.md           (hot — high view_count + recent edits)
   dose-dimensions.md        (central — high use_count)
   course-builder.md         (drift-risk — high patch_count)
-  secret-rotation-recipe.md (cold but pinned)
+  secret-rotation-recipe.md (cold but protected)
 docs/wiki/entities/
   services/
     auth-service.md         (legitimate)
@@ -61,7 +61,7 @@ no orphans).
     "last_used_at":   "2026-04-25T09:00:00Z",
     "last_patched_at":"2026-03-15T14:00:00Z",
     "created_at":     "2026-01-10T08:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   },
   "concepts/intake-stock.md": {
     "view_count": 12, "use_count": 3, "patch_count": 3,
@@ -69,7 +69,7 @@ no orphans).
     "last_used_at":   "2026-04-28T09:00:00Z",
     "last_patched_at":"2026-04-29T13:00:00Z",
     "created_at":     "2026-01-12T08:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   },
   "concepts/dose-dimensions.md": {
     "view_count": 6, "use_count": 8, "patch_count": 2,
@@ -77,7 +77,7 @@ no orphans).
     "last_used_at":   "2026-04-30T08:00:00Z",
     "last_patched_at":"2026-04-20T10:00:00Z",
     "created_at":     "2026-02-01T08:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   },
   "concepts/course-builder.md": {
     "view_count": 4, "use_count": 1, "patch_count": 5,
@@ -85,7 +85,7 @@ no orphans).
     "last_used_at":   "2026-04-15T09:00:00Z",
     "last_patched_at":"2026-04-30T15:00:00Z",
     "created_at":     "2026-03-01T08:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   },
   "concepts/secret-rotation-recipe.md": {
     "view_count": 0, "use_count": 0, "patch_count": 1,
@@ -93,7 +93,7 @@ no orphans).
     "last_used_at":   null,
     "last_patched_at":"2026-02-10T14:00:00Z",
     "created_at":     "2026-02-10T14:00:00Z",
-    "state": "active", "pinned": true, "archived_at": null
+    "state": "active", "protected": true, "archived_at": null
   },
   "concepts/old-auth-middleware.md": {
     "view_count": 1, "use_count": 0, "patch_count": 1,
@@ -101,7 +101,7 @@ no orphans).
     "last_used_at":   null,
     "last_patched_at":"2026-04-01T09:00:00Z",
     "created_at":     "2026-04-01T09:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   },
   "entities/services/auth-service.md": {
     "view_count": 2, "use_count": 1, "patch_count": 1,
@@ -109,7 +109,7 @@ no orphans).
     "last_used_at":   "2026-04-20T10:00:00Z",
     "last_patched_at":"2026-04-20T10:00:00Z",
     "created_at":     "2026-04-20T10:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   },
   "entities/legacy/old-service.md": {
     "view_count": 0, "use_count": 0, "patch_count": 1,
@@ -117,7 +117,7 @@ no orphans).
     "last_used_at":   null,
     "last_patched_at":"2026-01-05T08:00:00Z",
     "created_at":     "2026-01-05T08:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   },
   "transcripts/2026-04-12-design-call.md": {
     "view_count": 1, "use_count": 0, "patch_count": 1,
@@ -125,7 +125,7 @@ no orphans).
     "last_used_at":   null,
     "last_patched_at":"2026-04-12T15:00:00Z",
     "created_at":     "2026-04-12T15:00:00Z",
-    "state": "active", "pinned": false, "archived_at": null
+    "state": "active", "protected": false, "archived_at": null
   }
 }
 ```
@@ -150,7 +150,7 @@ User says: `wiki status`.
    - **Top by view_count**: `[[purchase-flow]]` (15), `[[intake-stock]]` (12)
    - **Top by use_count**: `[[dose-dimensions]]` (8), `[[purchase-flow]]` (4)
    - **Top by patch_count**: `[[course-builder]]` (5), `[[intake-stock]]` (3)
-6. List pinned: `[[secret-rotation-recipe]]` (only one).
+6. List protected: `[[secret-rotation-recipe]]` (only one).
 7. Detect passive issues:
    - **Cross-ref drift**: `[[old-auth-middleware]]` body links to
      `[[middleware-rules]]` — target file does not exist.
@@ -173,7 +173,7 @@ User says: `wiki status`.
   Найбільш цитуються:         [[dose-dimensions]] (8 use), [[purchase-flow]] (4)
   Найбільш редагуються:       [[course-builder]] (5 patch), [[intake-stock]] (3)
 
-Pinned:
+Захищені:
   • [[secret-rotation-recipe]]
 
 ⚠️ Знайдено пасивно:
@@ -221,23 +221,23 @@ For each menu choice, the next user reply routes to the documented operation:
 | Reply | Expected next-turn behavior |
 |---|---|
 | `a` | Delegate to `## Operation: Lint` content-verification with `[[course-builder]], [[intake-stock]], [[dose-dimensions]], [[purchase-flow]], [[old-auth-middleware]]` (top 5 by patch_count desc) |
-| `b` | Delegate to `## Operation: Lint` content-verification with the 5 pages whose `last_patched_at` is oldest among `state == "active"` and `pinned == false` — i.e. `[[old-service]]` (Jan 5), `[[purchase-flow]]` (Mar 15), `[[auth-service]]` (Apr 20)... (`secret-rotation-recipe` skipped because pinned) |
+| `b` | Delegate to `## Operation: Lint` content-verification with the 5 pages whose `last_patched_at` is oldest among `state == "active"` and `protected == false` — i.e. `[[old-service]]` (Jan 5), `[[purchase-flow]]` (Mar 15), `[[auth-service]]` (Apr 20)... (`secret-rotation-recipe` skipped because protected) |
 | `c [[purchase-flow]]` | Delegate to Lint content-verification with that exact page set |
 | `1` | Apply passive fix: edit `concepts/old-auth-middleware.md`, remove or replace the broken `[[middleware-rules]]` link. Bumps `patch_count` for `old-auth-middleware.md` (this is a real edit, not a meta-op). |
 | `2` | Apply passive fix: either move `entities/legacy/old-service.md` into a valid category, or propose adding `legacy` to `schema.md` `## Document Types`. Bumps `patch_count` for whichever file ends up modified. |
 | `n` | Print "OK, нічого не зроблено" and end the operation. No further state change. |
 
-### Pin protection
+### Page protection
 
-`[[secret-rotation-recipe]]` appears under `Pinned:` and is **excluded** from
+`[[secret-rotation-recipe]]` appears under `Захищені:` and is **excluded** from
 the `[b]` "Top-5 longest unverified" candidate list, even though its
 `last_patched_at` is 2026-02-10 (one of the oldest). Pin acts as a hard fence
 against content-verification proposals.
 
 ### Output structure stays predictable
 
-If `Pinned:` were empty, the section header would still print with the
-fallback `«жодних — ще нічого не закріплено»`. Same shape applies to the
+If `Захищені:` were empty, the section header would still print with the
+fallback `«жодних — ще нічого не захищено»`. Same shape applies to the
 passive-issues section. The structural skeleton of the output is invariant
 across runs — only content varies.
 

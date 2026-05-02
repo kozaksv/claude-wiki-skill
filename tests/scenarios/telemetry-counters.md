@@ -51,7 +51,7 @@ After:
     "last_patched_at": null,
     "created_at": "<now>",
     "state": "active",
-    "pinned": false,
+    "protected": false,
     "archived_at": null
   }
 }
@@ -109,7 +109,7 @@ After:
     "last_patched_at": "<now>",
     "created_at": "<now>",
     "state": "active",
-    "pinned": false,
+    "protected": false,
     "archived_at": null
   }
 }
@@ -146,7 +146,7 @@ record for `intake-stock.md` (so we can verify increment vs. create-from-zero):
     "last_patched_at": "2026-04-28T12:00:00Z",
     "created_at": "2026-04-01T08:00:00Z",
     "state": "active",
-    "pinned": false,
+    "protected": false,
     "archived_at": null
   }
 }
@@ -179,7 +179,7 @@ For `concepts/intake-stock.md` only the use fields change (other fields preserve
     "last_patched_at": "2026-04-28T12:00:00Z",
     "created_at": "2026-04-01T08:00:00Z",
     "state": "active",
-    "pinned": false,
+    "protected": false,
     "archived_at": null
   }
 }
@@ -215,5 +215,5 @@ once when wiring telemetry into the skill:
   the wiki operation, log a warning, and NOT raise. Counters stay at their
   pre-trigger values.
 - **Missing field on existing record** — pre-populate `.usage.json` with a record
-  missing `pinned` (legacy v4.0 record). On read, skill backfills `pinned: false`
+  missing `protected` (legacy v4.0 record). On read, skill backfills `protected: false`
   silently and proceeds.
