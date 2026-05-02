@@ -985,14 +985,19 @@ Run through each check and report findings:
    **Heads-up before starting full lint — always.** Print **exactly this block, nothing else**, then end the turn:
 
    ```
-   🔍 Готую повний лінт: N активних сторінок (priority order: most-edited first).
+   🔍 Готую повний лінт: N активних сторінок.
       Pin-protected (skipped): K сторінок.
 
-   Менший скоуп — обірви і запусти один з:
+   Повний режим читає кожну сторінку і верифікує claims проти диска —
+   це найповніший і найдовший прохід.
+
+   Менший скоуп — швидше:
      • `вікі лінт швидко`                       — top-10 most-edited
      • `вікі лінт concepts/`                    — лише теку concepts/
      • `вікі лінт entities/contracts/`          — лише одну категорію
      • `вікі лінт [[page-x]] [[page-y]]`        — конкретні сторінки
+
+   Скажи `далі` щоб продовжити, або одну з команд вище.
    ```
 
    Substitute real `N` and `K` from `report()`. Skip this block ONLY when the user already named a scope or said "швидко" (the choice was already explicit).
