@@ -1069,7 +1069,10 @@ Pin protection always applies during resolution: pinned pages are excluded from 
    - **Internal `[[wikilinks]]` resolve** — every wikilink in the body points to a page that exists
    - **Stated counts match reality** — if the page asserts "N tests", "N migrations", "N routes", run the corresponding `ls`/`grep`/`wc` and compare. **If the count is the only stale thing, propose DELETE the count, not UPDATE.** Derivable counts drift faster than any maintenance cadence can catch; deleting them pushes the read to `ls`/`grep`/`wc` which is always current. Keep semantic labels that pair an identifier with what it meant; drop inventory numbers.
 
-3. **Report findings without auto-flagging.** For each verified page, write a short note: claims that hold, claims that drifted, suggested action. **Do not silently rewrite the page.** The user chooses per page: `глянь і онови`, `видали`, `залиш як є`, or `pin` (mark as intentionally rare-read so future Lint runs skip it).
+3. **Classify findings into three tiers (AUTO / DECIDE / INFO), then act accordingly.** This is the autonomy contract — Lint is no longer a read-only operation. See `### Two-Tier Autonomy` subsection below for full rules. Short version:
+   - **AUTO findings** (disk-grounded, atomic, reversible): apply automatically after creating a snapshot. Each fix is its own commit. The user sees the report with auto-applied changes already done and a prominent ВІДКАТ section.
+   - **DECIDE findings** (judgment calls): surface one at a time with the action menu (`глянь і онови` / `видали` / `залиш як є` / `pin`). The user chooses; the skill applies after the choice.
+   - **INFO findings** (notes/context): listed at the end for awareness, no action implied.
 
 4. **`.usage.json` is read here for prioritization only** — sort order (`patch_count desc, last_patched_at asc`) so most-likely-drifted pages are verified first, and pin filter (skip `pinned == true`). The presence of low view_count or old last_viewed_at is **never** a reason to flag a page as stale on its own. A 0-view page may be a perfectly correct security recipe that just hasn't been needed yet (which is exactly why pinning exists).
 
@@ -1146,46 +1149,126 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 - Are there areas where the wiki says "TODO" or is thin on detail?
 - What questions would a new team member ask that the wiki can't answer yet?
 
+### Two-Tier Autonomy
+
+Lint is **autonomous** for objective findings and **deferential** for judgment calls. The classification is per-finding, decided after content-verification produced raw evidence.
+
+#### Tier AUTO — apply automatically (no per-finding confirmation)
+
+A finding qualifies as AUTO **only if all of these hold**:
+
+- **Disk-grounded evidence**: a literal `grep` / `ls` / `cat` confirmed the drift (the symbol/path/file is *demonstrably* missing or different on disk). Not "I think this is stale based on the description".
+- **Atomic action**: the fix is a single mechanical edit — delete a number, fix a path, drop a dead link, remove a legacy mention. No structural changes.
+- **Reversible**: the change can be cleanly reverted by `git revert <commit>`.
+- **No ambiguity in what to do**: only one obvious correct action.
+
+Concrete AUTO patterns:
+
+- **Derivable count deletions** — page says "N tests / N migrations / N routes", `grep -c` returns a different number → delete the count, keep the surrounding semantic label.
+- **Source path corrections** — page references `apps/X/Y.ts`, file moved to `apps/X/Z.ts`, real path is unambiguous → rewrite the path.
+- **Dead legacy mentions** — page describes table/function/file that `grep` confirms doesn't exist anywhere in the codebase → delete the mention/section.
+- **Broken `[[wikilinks]]`** — link points to a page that doesn't exist in the wiki tree → remove the link, keep surrounding text.
+- **Dead `## Sources` lines** — `## Sources` lists a file that doesn't exist on disk → delete the line.
+
+Anything else is DECIDE.
+
+#### Tier DECIDE — surface for user judgment
+
+- **Cross-page contradictions** — page A says X, page B says Y. Which is canonical? User decides which to update.
+- **Coverage gaps** — important concept lacking a page; whether to add and how is a content decision.
+- **Split candidates** — page > 200 lines, where to cut depends on the reader's mental model.
+- **Pin candidates** — is this rare-read by design or just untouched?
+- **Anything where the fix could plausibly be wrong** — when in doubt, DECIDE.
+
+#### Tier INFO — context, no action
+
+- Pinned-list (so the user remembers protected pages exist).
+- Schema version status.
+- Largest page (with note "structurally coherent → keep" or "split candidate → DECIDE").
+- Subset that was verified.
+
+#### Auto-apply mechanics
+
+When AUTO findings exist:
+
+1. **Snapshot commit** — `git commit -m "chore(wiki): snapshot before lint auto-fixes"` on the current state. Stage only `docs/wiki/` if working tree has unrelated changes.
+2. **Per-fix commits** — each AUTO finding becomes its own commit:
+   - Message: `auto-fix(wiki): <one-line description>` (e.g. `auto-fix(wiki): drop derivable count from ui-components.md`)
+   - Body: short rationale + grep evidence (e.g. `grep -c '^test\\b' ui-components.test.tsx → 14, page said 7`)
+3. **Then** present the report (see `### Lint Report Format`).
+
+Separate commits per fix enable partial revert via `відкат N`.
+
+#### ВІДКАТ — natural-language revert
+
+After the report is shown, the user can revert auto-fixes with one of:
+
+- **`відкат`** (no number) → revert ALL auto-fix commits in reverse order. Skill runs `git revert <last-fix-commit> <prev-fix-commit> ... <first-fix-commit> --no-edit` and reports: «Відкатив усі N правок. Файли повернуто до стану перед лінтом.»
+- **`відкат N`** (e.g. `відкат 2`) → revert only the Nth auto-fix from the report list. Skill runs `git revert <fix-N-commit> --no-edit` and reports: «Відкатив правку №N (опис). Інші правки лишились.»
+
+`відкат` does NOT touch the snapshot commit itself — that stays in history as a witness anchor (per the cleanup-flow rollback contract). It also does not undo DECIDE actions the user has already applied; those are independent commits with their own revert paths.
+
+If the user does several DECIDE actions before saying `відкат`, the skill must locate the auto-fix commits **by message** (`auto-fix(wiki):`) rather than assuming `HEAD~1` — DECIDE commits may sit between HEAD and the auto-fixes.
+
+#### Safety ceiling
+
+If the AUTO bucket has > 10 fixes for a single lint run, **don't** auto-apply. Instead, present them as DECIDE (numbered list with an «застосуй усі» / «застосуй #1 #3 #5» / «жодне» prompt). Reason: high count usually signals either a wiki that drifted heavily (worth a human eye) or a misclassification (also worth a human eye). The convenience win of full automation isn't worth the risk above this threshold.
+
 ### Lint Report Format
 
+The user-facing report is **Ukrainian**. The template:
+
 ```markdown
-## Wiki Lint Report — [date]
+## Звіт лінта вікі — [дата]
 
-### Verified (subset: <e.g. "full — N active pages" / "top-10 most-edited" / "`concepts/architecture/` — N pages">)
-- [[page-x]] — claims hold, no action needed
-- [[page-y]] — `## Sources` references deleted file → propose DELETE source line
-- [[page-z]] — stated count "N migrations" doesn't match reality → propose DELETE count
+Перевірено: <напр. «повний прохід — 27 активних сторінок» / «швидко — top-10 most-edited» / «`concepts/architecture/` — 3 сторінки» / «тема «склад» — 3 сторінки»>.
 
-### Pinned (skipped by content-verification — `wiki unpin <path>` to verify)
-- [[secret-rotation-recipe]]
-- [[incident-2026-02-15]]
+🟢 **Авто-застосовано N правок** (знімок створено перед)
 
-### Contradictions
-- [ ] [[page-a]] says X, but [[page-b]] says Y
+  1. `<page>.md` — <one-line action> (<коротке disk-grounded обґрунтування>)
+  2. `<page>.md` — <one-line action> (<обґрунтування>)
+  3. ...
 
-### Orphans
-- [ ] file.md exists but not in index.md
+  **↩️  Відкат:**
+  • Скажи `відкат` — поверну всі N (знімок готовий)
+  • Скажи `відкат N` — поверну лише №N
 
-### Missing Cross-References
-- [ ] [[page-a]] should link to [[page-b]] (both discuss topic Z)
+  Якщо ок — переходимо до finding'ів нижче.
 
-### Coverage Gaps
-- [ ] Feature X has no wiki page
-- [ ] Recent spec Y not ingested
+🟡 **Потребує твого рішення (M знахідок)**
 
-### Summary
-N pages verified (X clean, Y with proposed actions); Z contradictions, W orphans, V gaps
+  [1] `<page>.md` ↔ `<page>.md` — <короткий опис судження-кейсу>
+      Дія: `глянь і онови` / `глянь обидві` / `залиш як є`
+
+  [2] `<page>.md` — <coverage gap / split / pin candidate>
+      Дія: `глянь і онови` / `залиш як є`
+
+🔵 **Примітки**
+
+  • Закріплених сторінок: K (`<list>` — `wiki unpin <path>` щоб перевірити)
+  • Версія схеми: `vX.Y` (поточна / mismatch)
+  • Найбільша сторінка: `<page>.md` (N рядків — <структурно когерентна / split candidate>)
+  • Перевірених без дій: P сторінок
 ```
 
-After presenting the report, offer to fix all issues.
+Empty buckets are **omitted**, not shown as "0". If there are no AUTO findings, skip the 🟢 block entirely. Same for 🟡 and 🔵.
 
-**Never close Lint with a multi-option "куди далі?" menu** that mixes paradigms — e.g. `[1] verify subset / [2] another subset / [3] specific list / [4] split page X / [5] stop without verification`. Lint produces a report; per-finding actions are offered one finding at a time using the unified action menu (see `## Self-Improvement Loop > ### Cleanup-flow`). When the report is done, the operation is done — wait for user to act on findings, don't pre-pose a follow-up menu. Split candidates surfaced under "Page Health" are notes in the report, not menu items.
+When ALL buckets are empty (clean wiki), print one line: «✅ Лінт чистий. N сторінок перевірено, дрейфу не виявлено.»
+
+**Never close Lint with a multi-option "куди далі?" menu** that mixes paradigms — e.g. `[1] verify subset / [2] another subset / [3] specific list / [4] split page X / [5] stop without verification`. Per-finding actions in 🟡 are offered with the unified action menu (see `## Self-Improvement Loop > ### Cleanup-flow`). When the report is done, the operation is done — wait for user to act on findings or say `відкат`.
 
 ### After completion
 
-Lint is read-only by default — content-verification reads pages and produces a report, but does not mutate them. Apply the **anti-noise rule** and skip the РЕФЛЕКСІЯ block when Lint only printed a report (see `## Self-Improvement Loop`).
+Lint mutates wiki content whenever AUTO findings exist (snapshot + per-fix commits applied during step 3). Anti-noise rule applies only when **all** of the following hold:
+- AUTO bucket was empty (nothing auto-applied).
+- DECIDE bucket was empty (no judgment-call actions taken yet).
+- The lint produced a "✅ чистий" or pure-INFO report.
 
-Reflection fires only when the user, in response to the report, picks an action verb (`глянь і онови`, `видали`, `merge`, `розбий`) and the skill actually applies that fix. Each per-page action that mutates wiki content (Edit / Write / file move) triggers reflection on its own terms via the cleanup-flow contract. Don't double-fire.
+In that case (read-only run), skip the РЕФЛЕКСІЯ block per `## Self-Improvement Loop`.
+
+Otherwise — emit РЕФЛЕКСІЯ once, summarizing the auto-applied AUTO bucket. DECIDE actions the user later picks each trigger their own reflection via the cleanup-flow contract. Don't double-fire: the auto-apply reflection is one block at end of lint; per-DECIDE reflections fire as the user resolves them.
+
+If the user says `відкат` / `відкат N` after the lint report, the revert itself is a wiki-content mutation and emits its own brief reflection («Відкатив N правок. Файли повернуто.»).
 
 ---
 
@@ -1421,3 +1504,6 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Skipping reflection because "small change" | Anti-noise rule applies only to read-only blocks. Any edit/write block produces reflection. |
 | Closing Lint with a multi-option "куди далі?" menu | Lint = report + per-finding actions. Subset is decided BEFORE running (full by default, "швидко" for top-10, or user-named scope), never via a closing chooser. Mixing in `split` / `skip-verification` is also wrong — split is its own operation, content-verification is core not optional. |
 | Padding the lint heads-up with time estimates, recommendations, or hybrid modes | Heads-up is exactly the block from spec, nothing else. No "≈45-60 хв", no "рекомендую почати з пасивних перевірок", no "80% цінності за 20% часу", no curated 5-7-page lists, no closing "Що обираєш?". The user invoked default lint; the block lists the three legitimate alternatives and ends the turn. |
+| Asking the user to choose per AUTO finding | AUTO-tier findings (derivable counts, dead legacy, broken paths, dead wikilinks) are applied automatically with a snapshot — that's the autonomy contract. Per-finding confirmation belongs only to DECIDE-tier (contradictions, coverage gaps, splits, pins). If a finding is disk-grounded, atomic, and reversible, it goes to AUTO, not DECIDE. |
+| Burying the revert hint in technical syntax | ВІДКАТ section is a top-level part of the report, not a footnote. Use natural Ukrainian commands `відкат` / `відкат N`, not `git revert HEAD~1`. The user must see, at a glance, that auto-changes are reversible with one word. |
+| Writing user-facing report in English | The Lint Report Format is Ukrainian for everything the user reads — section headers ("Авто-застосовано", "Потребує твого рішення", "Примітки"), action verbs (`глянь і онови`, `залиш як є`), revert keyword (`відкат`). Only file paths, code identifiers, and proper names stay in their native form. |
