@@ -1138,12 +1138,34 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 - Does CLAUDE.md still carry full schema instead of a 1-line pointer? → propose migration
 - If drift found — propose updating schema
 
-**11. CLAUDE.md Drift** — CLAUDE.md is resident context; wiki is lazy. Detect migration candidates:
-- CLAUDE.md > ~150 lines total → flag for review (each line is paid on every session)
-- Individual lines > 400 chars describing component names, file paths, API specifics, or implementation behavior (e.g. "URL state syncs via `useUrlState()` hook at `hooks/useUrlState.ts`, converted pages: ...") → propose moving to the targeted wiki page (`[[ui-components]]`, `[[navigation]]`, etc.)
-- For each `[[wikilink]]` in CLAUDE.md: verify the target page actually covers the cross-linked topic (otherwise CLAUDE.md carries content that's "linked but duplicated")
-- "X removed" / "Y migrated" history notes in CLAUDE.md → belong in git log / wiki log.md, not resident context
-- Conversely: wiki pages that contradict CLAUDE.md convention lines (e.g. navigation structure described two different ways) → update the stale side
+**11. CLAUDE.md Content Verification (Karpathy-style)** — CLAUDE.md is resident context paid on every session, every conversation, every tool call. Wiki is lazy (read on demand). The skill **reads CLAUDE.md in full** and judges each line/section by content type — **no algorithmic line-count threshold**. Length is a symptom, content-type ratio is the real question.
+
+**Per-line classification** — every line falls into one of these:
+
+a. **CONVENTION/RULE (KEEP)** — what the project does/doesn't do, naming patterns, workflow rules, architectural principles, data model summary at a level useful for every session. These earn resident context.
+
+b. **IMPLEMENTATION DETAIL (MIGRATE)** — how something works internally, component props, function signatures, exact file paths, API endpoints, sub-feature behaviors. These are looked up when needed; they don't belong in resident context. Identify the target wiki page for each migrated line.
+
+c. **HISTORY NOTE (MOVE TO LOG)** — "X removed in <date>", "Y migrated to Z", "deprecated since vN", "previously called A, now B". Belong in `git log` or `wiki/log.md`, not resident context.
+
+d. **DEAD REFERENCE (DELETE)** — wikilink to a page that doesn't exist in the wiki tree, file path to a deleted file, mention of a removed feature/library/table. Verifiable via `ls`/`grep`.
+
+e. **VERBOSE PHRASING (CONDENSE)** — sentence that's 400+ chars when 80 would do, repeated qualifications, redundant explanations across multiple lines. Same rule lives shorter.
+
+**Cross-checks:**
+
+- For each `[[wikilink]]` in CLAUDE.md: target page exists AND covers the cross-linked topic (otherwise CLAUDE.md carries duplicated content).
+- For each convention line: doesn't contradict the wiki page that elaborates it.
+
+**Bias toward shrinking.** When a line could plausibly live in either CLAUDE.md or wiki, default to wiki. Resident context is a precious budget — every byte is paid forever. The default question is «can this be shorter? can this move to a lazy page?», not «is this important enough to delete?».
+
+**Tier mapping** (per the standard AUTO/DECIDE/INFO contract):
+
+- **AUTO**: dead wikilinks (point to non-existent pages — verify via wiki tree), dead file path references (verify via `ls`), confirmed-stale history notes (`grep` confirms the migrated/removed thing is gone), drift-prone counts inside CLAUDE.md ("N tests").
+- **DECIDE**: convention-vs-implementation-detail calls (line is genuinely ambiguous), section-level migration proposals (move whole H2 to wiki), condensation rewrites (3 paragraphs → 1 sentence — preserve meaning vs. acceptable loss).
+- **INFO**: content-type breakdown (e.g. «CLAUDE.md: 42 рядки конвенцій, 18 implementation details, 5 history notes, 3 dead refs — 68 рядків загалом»). User sees ratio at a glance.
+
+The breakdown is the actionable lever — high "implementation details" count means many DECIDE/AUTO findings are coming, not «CLAUDE.md is too big in absolute terms».
 
 **12. Wiki Page Size** — pages grow. Flag for [[#Operation-Split]]:
 - Pages > 200 lines → candidates for split
@@ -1564,3 +1586,4 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Numbering AUTO and DECIDE both starting at 1 | Use a SINGLE sequential namespace 1..N across the whole report (AUTO + DECIDE + INFO). No A/D prefixes. Verb context disambiguates intent: `відкат N` only applies to AUTO; `<N> <verb>` applies to DECIDE / INFO elevation. Renderer never restarts numbering between blocks. |
 | Per-finding numbered sub-menu inside a DECIDE entry | DECIDE finding's action menu shows **verbs only**, no numbered sub-menu. User invokes by `<N> <verb>` where `<N>` is the item's report-wide number. Numbered sub-menus inside a finding recreate exactly the ambiguity sequential numbering was designed to prevent. |
 | Leaving INFO items unnumbered while AUTO/DECIDE have numbers | All items in the report get a number, including 🔵 Примітки. Without numbering, the user can't reference an INFO item to elevate it (e.g. say `9 розбий` to split a noted large page). Bullet points (`•`) for INFO items violate the «every assertion has a number» rule. |
+| Using a line-count threshold for CLAUDE.md (e.g. ">150 lines") | Algorithmic threshold contradicts Karpathy content-verification. Read CLAUDE.md in full, classify each line (convention/detail/history/dead/verbose), propose AUTO for verifiable dead refs, DECIDE for judgment calls, INFO for the content-type breakdown. Length is a symptom; the real question is content-type ratio. Default bias: when ambiguous, propose moving to wiki — CLAUDE.md is paid every session, every byte counts. |
