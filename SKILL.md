@@ -1243,17 +1243,25 @@ The user-facing report is **Ukrainian**. The template:
   [2] `<page>.md` — <coverage gap / split / pin candidate>
       Дія: `глянь і онови` / `залиш як є`
 
-🔵 **Примітки**
+🔵 **Примітки** (показується лише якщо є хоч один пункт нижче з тригером)
 
-  • Закріплених сторінок: K (`<list>` — `wiki unpin <path>` щоб перевірити)
-  • Версія схеми: `vX.Y` (поточна / mismatch)
-  • Найбільша сторінка: `<page>.md` (N рядків — <структурно когерентна / split candidate>)
-  • Перевірених без дій: P сторінок
+  • Закріплені сторінки (K, захищені від cleanup): `<list>` — `wiki unpin <path>` щоб перевірити
+  • ⚠️ Версія схеми: вікі на `vX.Y`, скіл на `vZ.W` — запусти `wiki init` для міграції
+  • Велика сторінка: `<page>.md` (N рядків, не ділимо — <структурно когерентна тощо>)
 ```
 
-Empty buckets are **omitted**, not shown as "0". If there are no AUTO findings, skip the 🟢 block entirely. Same for 🟡 and 🔵.
+**Empty-buckets-omitted rule applies to every block:**
 
-When ALL buckets are empty (clean wiki), print one line: «✅ Лінт чистий. N сторінок перевірено, дрейфу не виявлено.»
+- **🟢** Авто-застосовано — show only when AUTO bucket has ≥ 1 finding.
+- **🟡** Потребує рішення — show only when DECIDE bucket has ≥ 1 finding.
+- **🔵** Примітки — each line has a trigger; the block appears only when **at least one** triggers:
+  - **Закріплені** — only when `K > 0`. Don't introduce the pin concept to users who haven't pinned anything; «Закріплених: 0» is noise.
+  - **Версія схеми** — only on **mismatch** between `{wiki}/schema.md`'s `wiki_version` and the skill's frontmatter version. When they match, this line is redundant fog.
+  - **Велика сторінка** — only when at least one page is > 200 lines **and not already in 🟡** as a split candidate (otherwise it'd be duplicated). When the skill judged a large page coherent and decided not to split, this line is the FYI; when it judged it splittable, the 🟡 entry covers it.
+
+If all three 🔵 lines lack triggers, omit the 🔵 block entirely.
+
+When ALL buckets (🟢 / 🟡 / 🔵) are empty (clean wiki, nothing applied, nothing pending, nothing notable), print exactly one line: «✅ Лінт чистий. N сторінок перевірено, дрейфу не виявлено.»
 
 **Never close Lint with a multi-option "куди далі?" menu** that mixes paradigms — e.g. `[1] verify subset / [2] another subset / [3] specific list / [4] split page X / [5] stop without verification`. Per-finding actions in 🟡 are offered with the unified action menu (see `## Self-Improvement Loop > ### Cleanup-flow`). When the report is done, the operation is done — wait for user to act on findings or say `відкат`.
 
@@ -1507,3 +1515,4 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Asking the user to choose per AUTO finding | AUTO-tier findings (derivable counts, dead legacy, broken paths, dead wikilinks) are applied automatically with a snapshot — that's the autonomy contract. Per-finding confirmation belongs only to DECIDE-tier (contradictions, coverage gaps, splits, pins). If a finding is disk-grounded, atomic, and reversible, it goes to AUTO, not DECIDE. |
 | Burying the revert hint in technical syntax | ВІДКАТ section is a top-level part of the report, not a footnote. Use natural Ukrainian commands `відкат` / `відкат N`, not `git revert HEAD~1`. The user must see, at a glance, that auto-changes are reversible with one word. |
 | Writing user-facing report in English | The Lint Report Format is Ukrainian for everything the user reads — section headers ("Авто-застосовано", "Потребує твого рішення", "Примітки"), action verbs (`глянь і онови`, `залиш як є`), revert keyword (`відкат`). Only file paths, code identifiers, and proper names stay in their native form. |
+| Showing 🔵 Примітки items that lack a trigger | Each line in 🔵 has a precondition: pinned line only when K > 0, schema version only on mismatch, large-page only when > 200 lines AND not already in 🟡. Don't print «Закріплених: 0» or «Версія схеми: v4.0 (поточна)» — those introduce vocabulary or ops-metadata the user doesn't need. If no line triggers, omit the 🔵 block entirely. |
