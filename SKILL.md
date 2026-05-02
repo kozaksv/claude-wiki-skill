@@ -982,7 +982,7 @@ Run through each check and report findings:
 
    State the chosen subset at the top of the report (e.g. "Verified subset: full — N active pages" or "Verified subset: top-10 most-edited active" or "Verified subset: `concepts/architecture/` — N pages").
 
-   **Heads-up before starting full lint — always.** Before reading the first page, print this block (and pause briefly to give the user a chance to abort):
+   **Heads-up before starting full lint — always.** Print **exactly this block, nothing else**, then end the turn:
 
    ```
    🔍 Готую повний лінт: N активних сторінок (priority order: most-edited first).
@@ -995,7 +995,20 @@ Run through each check and report findings:
      • `вікі лінт [[page-x]] [[page-y]]`        — конкретні сторінки
    ```
 
-   Substitute real `N` and `K` from `report()`. The block is shown for **every** full lint, regardless of wiki size — it's the user's escape hatch and a reminder that smaller-scope alternatives exist. Skip it ONLY when the user already named a scope or said "швидко" (the choice was already explicit).
+   Substitute real `N` and `K` from `report()`. Skip this block ONLY when the user already named a scope or said "швидко" (the choice was already explicit).
+
+   **Forbidden additions to the heads-up.** Do NOT print, alongside or after the block:
+
+   - **Time estimates** — no "≈45-60 хв", "це довго", "великий контекст". The user can decide; rough estimates are noisy and frequently wrong.
+   - **Recommendations against the user's choice** — no "рекомендую почати з пасивних перевірок", "80% цінності за 20% часу", "краще оберіть швидко". The user invoked the default; respect it.
+   - **Invented hybrid modes** — no "пасивні перевірки + content-verification на 5-7 'гарячих' сторінок", no curated page lists ("data-model, purchase-flow, template-course-flow"). The only legitimate scopes are: full (default), "швидко" (top-10), user-named scope. Period.
+   - **Closing chooser** — no "Що обираєш?", no "[1]/[2]/[3]". The block IS the prompt; the user's next message is the answer.
+
+   **What the user's next message means:**
+
+   - Anything that re-invokes lint with a smaller scope (`вікі лінт швидко`, `вікі лінт concepts/...`, etc.) → cancel this run, restart with the new scope.
+   - Anything else (`далі`, `продовжуй`, `ок`, `так`, silence-then-next-message, an unrelated question) → start verification on the full subset already announced. Don't ask for re-confirmation.
+   - User says "стоп" / "відміна" / "не треба" → cancel and acknowledge.
 
    **Never present a multi-option subset menu** like "[a] top-edited / [b] oldest / [c] by category / [d] specific list". The user names a scope, or says "швидко", or the default full lint applies — there is no in-Lint chooser. Pin protection always applies regardless of subset (skip `pinned == true` unless the user first runs `wiki unpin <path>`).
 
@@ -1357,3 +1370,4 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Migrating `wiki_version` silently | Migration is explicit plan-then-confirm for structural changes. Only field-level backfill in `.usage.json` is silent. |
 | Skipping reflection because "small change" | Anti-noise rule applies only to read-only blocks. Any edit/write block produces reflection. |
 | Closing Lint with a multi-option "куди далі?" menu | Lint = report + per-finding actions. Subset is decided BEFORE running (full by default, "швидко" for top-10, or user-named scope), never via a closing chooser. Mixing in `split` / `skip-verification` is also wrong — split is its own operation, content-verification is core not optional. |
+| Padding the lint heads-up with time estimates, recommendations, or hybrid modes | Heads-up is exactly the block from spec, nothing else. No "≈45-60 хв", no "рекомендую почати з пасивних перевірок", no "80% цінності за 20% часу", no curated 5-7-page lists, no closing "Що обираєш?". The user invoked default lint; the block lists the three legitimate alternatives and ends the turn. |
