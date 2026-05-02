@@ -976,7 +976,8 @@ Run through each check and report findings:
 **Process:**
 
 1. **Determine the verification subset — no menu.** Pick the subset by this rule, in priority order:
-   - **If the user named a scope** in the trigger (e.g. "лінт `concepts/architecture/`", "лінт цей список: [[page-a]], [[page-b]]", "лінт all `entities/contracts/`") — verify exactly that scope.
+   - **If the user named a path-based scope** in the trigger (e.g. "лінт `concepts/architecture/`", "лінт all `entities/contracts/`") — verify exactly that scope.
+   - **If the user described a topic in natural language** ("перевір склад", "все про курси", "сторінки про закупки") — resolve via topic resolution flow (see below) BEFORE running. Don't guess silently; confirm the resolved list with the user first.
    - **If the user said "швидко" / "fast" / "top-10" / "топ-10"** — verify only top-10 most-edited active + unpinned pages. Sort `report()` by `patch_count desc, last_patched_at asc`, filter `state == "active"` and `pinned == false`, take the first 10.
    - **Otherwise — default: full lint.** Verify ALL active + unpinned pages, in priority order (sort by `patch_count desc, last_patched_at asc`; pinned pages skipped). This matches the convention from other linters (ESLint, mypy, ruff): "lint" = full check by default.
 
@@ -991,16 +992,13 @@ Run through each check and report findings:
    Повний режим читає кожну сторінку і верифікує claims проти диска —
    це найповніший і найдовший прохід.
 
-   Менший скоуп — швидше:
-     • `вікі лінт швидко`                       — top-10 most-edited
-     • `вікі лінт concepts/`                    — лише теку concepts/
-     • `вікі лінт entities/contracts/`          — лише одну категорію
-     • `вікі лінт [[page-x]] [[page-y]]`        — конкретні сторінки
-
-   Скажи `далі` щоб продовжити, або одну з команд вище.
+   Скажи `далі` для продовження. Або обмеж скоуп:
+     • `швидко`                        — top-10 most-edited
+     • тема словами                    — напр. «перевір склад», «все про курси»
+     • шлях до теки                    — напр. `concepts/architecture/`
    ```
 
-   Substitute real `N` and `K` from `report()`. Skip this block ONLY when the user already named a scope or said "швидко" (the choice was already explicit).
+   Substitute real `N` and `K` from `report()`. Skip this block ONLY when the user already named a path-based scope, described a topic, or said "швидко" (the choice was already explicit).
 
    **Forbidden additions to the heads-up.** Do NOT print, alongside or after the block:
 
@@ -1011,11 +1009,58 @@ Run through each check and report findings:
 
    **What the user's next message means:**
 
-   - Anything that re-invokes lint with a smaller scope (`вікі лінт швидко`, `вікі лінт concepts/...`, etc.) → cancel this run, restart with the new scope.
-   - Anything else (`далі`, `продовжуй`, `ок`, `так`, silence-then-next-message, an unrelated question) → start verification on the full subset already announced. Don't ask for re-confirmation.
-   - User says "стоп" / "відміна" / "не треба" → cancel and acknowledge.
+   - **`далі` / `продовжуй` / `ок` / `так`** → start verification on the announced full subset.
+   - **`швидко`** → cancel this run, restart with top-10 most-edited.
+   - **A path-based scope** (e.g. `concepts/architecture/`, `вікі лінт entities/contracts/`) → cancel this run, restart with that scope.
+   - **A natural-language topic** (e.g. "перевір склад", "все про закупки") → cancel this run, enter Topic Resolution Flow (see below).
+   - **`стоп` / `відміна` / `не треба`** → cancel and acknowledge.
+   - Anything else / unrelated question → treat as continuation of the announced full subset, but pause if you're unsure. When in doubt — ask, don't autopilot.
 
-   **Never present a multi-option subset menu** like "[a] top-edited / [b] oldest / [c] by category / [d] specific list". The user names a scope, or says "швидко", or the default full lint applies — there is no in-Lint chooser. Pin protection always applies regardless of subset (skip `pinned == true` unless the user first runs `wiki unpin <path>`).
+   **Never present a multi-option subset menu** like "[a] top-edited / [b] oldest / [c] by category / [d] specific list". The user names a scope, says "швидко", describes a topic, or the default full lint applies — there is no in-Lint chooser. Pin protection always applies regardless of subset (skip `pinned == true` unless the user first runs `wiki unpin <path>`).
+
+### Topic Resolution Flow
+
+When the user describes a topic in natural language ("перевір склад", "все про курси", "сторінки про закупки"), don't guess silently. Resolve to a concrete page list and confirm with the user before running content-verification.
+
+**Process:**
+
+1. **Read `index.md`** + the first descriptive paragraph (or `description:` frontmatter field, if present) of each candidate page. Don't read full pages yet — that's wasteful pre-confirmation.
+
+2. **Match the topic to candidate pages.** Use semantic judgement: title contains the keyword, description mentions the theme, page covers a related sub-topic. Be liberal — it's better to over-include and let the user trim than to miss a relevant page.
+
+3. **If 0 candidates match** → fall back to clarification (case below). Don't run an empty lint.
+
+4. **If 1+ candidates match** → present the resolved list and ask for confirmation:
+
+   ```
+   🎯 Тема: «<user's words>»
+      Знайшов N сторінок:
+        • [[page-a]] — <one-line description from index>
+        • [[page-b]] — <one-line description from index>
+        • [[page-c]] — <one-line description from index>
+
+   Скажи `так` для запуску, або корегуй: «прибери [[page-b]]»,
+   «додай [[page-d]]», «лише [[page-a]] [[page-c]]».
+   ```
+
+5. **User responds:**
+   - `так` / `ок` / `запускай` → run content-verification on the resolved list. State the subset at the top of the report (e.g. "Verified subset: тема «склад» — 3 pages").
+   - **Edits the list** ("прибери X", "додай Y", "лише A і C") → apply the edits, show the updated list, ask for confirmation again.
+   - **Switches scope** (`далі` / `швидко` / path / different topic) → cancel resolution, dispatch by usual rules.
+   - `стоп` → cancel.
+
+**Ambiguous topic — clarification required.** When the topic is too broad ("перевір вікі") or too narrow ("перевір те що змінилось" without a clear referent), don't autopilot. Print:
+
+```
+🤔 Не зрозумів обмеження — тема надто широка / нема явного референса.
+
+Активні теки у вікі: <list of top-level dirs from index — concepts/, entities/X/, entities/Y/...>
+Назви шлях, конкретну тему («перевір склад»), або скажи `далі` для повного лінта.
+```
+
+Then end the turn. Don't pre-pick a default — the user explicitly described something they wanted, falling back silently to full lint hides the mismatch.
+
+Pin protection always applies during resolution: pinned pages are excluded from the candidate list and from any final resolved subset.
 
 2. **For each selected page, read in full and verify claims:**
    - **Sources existing** — every path under `## Sources` resolves on disk
