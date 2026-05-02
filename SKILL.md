@@ -1072,9 +1072,11 @@ Page protection always applies during resolution: protected pages are excluded f
    - **Stated counts match reality** — if the page asserts "N tests", "N migrations", "N routes", run the corresponding `ls`/`grep`/`wc` and compare. **If the count is the only stale thing, propose DELETE the count, not UPDATE.** Derivable counts drift faster than any maintenance cadence can catch; deleting them pushes the read to `ls`/`grep`/`wc` which is always current. Keep semantic labels that pair an identifier with what it meant; drop inventory numbers.
 
 3. **Classify findings into three tiers (AUTO / DECIDE / INFO), then act accordingly.** This is the autonomy contract — Lint is no longer a read-only operation. See `### Two-Tier Autonomy` subsection below for full rules. Short version:
-   - **AUTO findings** (no genuinely competing alternative — there's an obvious correct fix): apply automatically after creating a snapshot. Each fix is its own commit, identified as `A1`, `A2`, ... in the report.
-   - **DECIDE findings** (multiple actions genuinely compete — `видали` vs `глянь і онови` vs `merge` vs `розбити`): surface with the action menu. Identified as `D1`, `D2`, ... in the report. The user invokes by ID + verb (e.g. `D1 merge`).
-   - **INFO findings** (notes/context): listed at the end for awareness, no action implied.
+   - **AUTO findings** (no genuinely competing alternative — there's an obvious correct fix): apply automatically after creating a snapshot. Each fix is its own commit.
+   - **DECIDE findings** (multiple actions genuinely compete — `видали` vs `глянь і онови` vs `merge` vs `розбити`): surface with the action menu. The user invokes by item number + verb (e.g. `5 merge`).
+   - **INFO findings** (notes/context): listed for awareness; user can elevate to action by number + verb (e.g. `7 розбий`).
+
+   **All items in the report — AUTO, DECIDE, INFO — receive a single sequential number from 1 to N across the whole report.** No A/D prefixes. The user references any item by its number; verb context disambiguates intent (`відкат N` only applies to AUTO; `N <verb>` applies to DECIDE or elevated INFO).
 
    **Forbidden DECIDE pattern: binary `глянь і онови` / `залиш як є`.** If the only alternative to applying the fix is to perpetuate an identified bug, that's not a competing alternative — that's a fake choice. Such findings belong in AUTO, not DECIDE. Use DECIDE only when alternatives are genuinely defensible from different angles.
 
@@ -1196,14 +1198,21 @@ Real DECIDE cases:
 - Largest page (with note "structurally coherent → keep" or "split candidate → DECIDE").
 - Subset that was verified.
 
-#### Finding IDs — unique across the report
+#### Finding numbering — sequential, single namespace
 
-Findings receive **prefixed identifiers** so commands stay unambiguous when multiple buckets are populated:
+All items in the report — AUTO, DECIDE, INFO — share one sequential namespace **1...N** in render order:
 
-- **AUTO findings**: `A1`, `A2`, `A3`, ...
-- **DECIDE findings**: `D1`, `D2`, ...
+```
+🟢 Авто-застосовано:   1, 2, 3, 4    (AUTO bucket)
+🟡 Потребує рішення:    5, 6           (DECIDE bucket)
+🔵 Примітки:            7, 8           (INFO bucket — also numbered, also actionable)
+```
 
-Renumbering restarts each lint run. The prefix is part of the identifier, not decoration — `відкат 1` without prefix is acceptable when only AUTO has IDs (verb context implies bucket), but the report **always renders with the prefix** for clarity.
+No prefixes. No restart-per-block. One number per item, top to bottom. The verb the user types disambiguates:
+- `відкат` only applies to AUTO. `відкат 2` = revert AUTO #2.
+- `<N> <verb>` applies to DECIDE or INFO (elevation). `5 merge` / `7 розбий`.
+
+Renumbering restarts each lint run.
 
 #### Auto-apply mechanics
 
@@ -1211,39 +1220,43 @@ When AUTO findings exist:
 
 1. **Snapshot commit** — `git commit -m "chore(wiki): snapshot before lint auto-fixes"` on the current state. Stage only `docs/wiki/` if working tree has unrelated changes.
 2. **Per-fix commits** — each AUTO finding becomes its own commit:
-   - Message: `auto-fix(wiki): A<N> <one-line description>` (e.g. `auto-fix(wiki): A2 drop derivable count from ui-components.md`)
+   - Message: `auto-fix(wiki): #<N> <one-line description>` where `<N>` is the item number (e.g. `auto-fix(wiki): #2 drop derivable count from ui-components.md`)
    - Body: short rationale + grep evidence (e.g. `grep -c '^test\\b' ui-components.test.tsx → 14, page said 7`)
 3. **Then** present the report (see `### Lint Report Format`).
 
-The `A<N>` token in commit messages is the lookup key for `відкат A<N>`. Separate commits per fix enable partial revert.
+The `#<N>` token in commit messages is the lookup key for `відкат N`. Separate commits per fix enable partial revert.
 
 #### ВІДКАТ — natural-language revert
 
 After the report is shown, the user can revert auto-fixes with one of:
 
-- **`відкат`** (no ID) → revert ALL auto-fix commits in reverse order. Skill runs `git revert <last-fix-commit> ... <first-fix-commit> --no-edit` and reports: «Відкатив усі N правок. Файли повернуто до стану перед лінтом.»
-- **`відкат A<N>`** (e.g. `відкат A2`) → revert only the matching auto-fix commit (located by `A<N>` token in its message). Skill runs `git revert <fix-commit> --no-edit` and reports: «Відкатив правку A<N> (опис). Інші правки лишились.»
-- **`відкат <N>`** (no `A` prefix, e.g. `відкат 2`) → accepted shorthand. The skill maps `<N>` to `A<N>` automatically (the verb `відкат` only applies to AUTO bucket, so there's no ambiguity).
+- **`відкат`** (no number) → revert ALL auto-fix commits in reverse order. Skill runs `git revert <last-fix-commit> ... <first-fix-commit> --no-edit` and reports: «Відкатив усі N правок. Файли повернуто до стану перед лінтом.»
+- **`відкат <N>`** (e.g. `відкат 2`) → revert only the matching auto-fix commit (located by `#<N>` token in its message). Skill runs `git revert <fix-commit> --no-edit` and reports: «Відкатив правку №<N> (опис). Інші правки лишились.»
 
-`відкат` does NOT touch the snapshot commit itself — that stays in history as a witness anchor (per the cleanup-flow rollback contract). It also does not undo DECIDE actions the user has already applied; those are independent commits with their own revert paths.
+If `<N>` doesn't correspond to an AUTO item (e.g. user types `відкат 5` when 5 is a DECIDE item), the skill answers: «5 — це DECIDE-finding, не auto-fix. `відкат` стосується тільки авто-застосованих. Для DECIDE використай `5 <verb>`.»
 
-If the user does several DECIDE actions before saying `відкат`, the skill must locate the auto-fix commits **by `A<N>` token in the message** rather than assuming `HEAD~1` — DECIDE commits may sit between HEAD and the auto-fixes.
+`відкат` does NOT touch the snapshot commit itself — that stays in history as a witness anchor (per the cleanup-flow rollback contract). It also does not undo DECIDE/elevated-INFO actions the user has already applied; those are independent commits with their own revert paths.
 
-#### DECIDE invocation
+**Locating auto-fix commits** is via `git log --grep='auto-fix(wiki): #<N>'` from the most recent snapshot commit forward. Don't assume `HEAD~N` — DECIDE/INFO actions taken between report and revert may sit between HEAD and the auto-fixes.
 
-For DECIDE findings, the user names the finding by its `D<N>` ID and the action verb in one message:
+#### DECIDE & INFO invocation
 
-- `D1 merge` — apply the `merge` action to finding D1
-- `D2 розбити` — apply `розбити` to D2
-- `D1 глянь units-system` — when the action takes a target argument, include it after the verb
-- `D1` (alone, no verb) → if the finding has only one menu action that is dominant, treat as that action; otherwise ask «який verb для D1?» (don't pick a default silently)
-- `D1 пропусти` / `D1 залиш` → user explicitly skips this finding; record in the report's tail as «D1 skipped по запиту користувача»
+For DECIDE findings AND for elevating INFO findings, the user types the item number followed by an action verb:
 
-The action menu in each DECIDE finding **always shows verbs only** (no per-finding number sub-menu like the legacy 1-6 chooser). Numbered sub-menus inside a DECIDE finding are forbidden — they create the same ambiguity that prefixed IDs solve.
+- `5 merge` — apply `merge` to item 5
+- `6 розбити` — apply `розбити` to item 6
+- `5 глянь units-system` — when the action takes a target argument, include it after the verb
+- `7 захисти` — elevate INFO item 7 (e.g. a large-page note) into a `захисти` action
+- `5` alone (no verb) → if the item has only one dominant action, apply it; otherwise ask «який verb для №5?» (don't pick a default silently)
+- `5 пропусти` / `5 залиш` → user explicitly skips this DECIDE/INFO; record in the report's tail as «№5 skipped по запиту користувача»
+
+The action menu in each DECIDE finding **shows verbs only** (no per-finding numbered sub-menu). User invokes by `<item-number> <verb>`. Numbered sub-menus inside a finding are forbidden — they recreate exactly the ambiguity sequential numbering was designed to prevent.
+
+INFO items don't carry an action menu by default (they're notes), but verbs that make sense for the item-type are accepted on elevation: large-page note → `розбити` / `захисти` / `merge`, schema-mismatch alert → `wiki init` (skill runs init).
 
 #### Safety ceiling
 
-If the AUTO bucket has > 10 fixes for a single lint run, **don't** auto-apply. Instead, demote them all to DECIDE (re-IDed as `D1`...`D<N>`) with a single batch prompt: «Знайдено N автоматичних правок (більше за поріг 10). Скажи `так` для застосування всіх, `D3 D7 D9` для конкретних, або `ні` для жодної.» Reason: high count usually signals either a wiki that drifted heavily (worth a human eye) or a misclassification (also worth a human eye). Convenience win of full automation isn't worth the risk above this threshold.
+If the AUTO bucket has > 10 fixes for a single lint run, **don't** auto-apply. Instead, demote all AUTO findings into DECIDE (still using sequential numbering) with a single batch prompt: «Знайдено N автоматичних правок (більше за поріг 10). Скажи `так` для застосування всіх, `3 7 9` для конкретних номерів, або `ні` для жодної.» Reason: high count usually signals either a wiki that drifted heavily (worth a human eye) or a misclassification (also worth a human eye). Convenience win of full automation isn't worth the risk above this threshold.
 
 ### Lint Report Format
 
@@ -1254,32 +1267,32 @@ The user-facing report is **Ukrainian**. The template:
 
 Перевірено: <напр. «повний прохід — 27 активних сторінок» / «швидко — top-10 most-edited» / «`concepts/architecture/` — 3 сторінки» / «тема «склад» — 3 сторінки»>.
 
-🟢 **Авто-застосовано N правок** (знімок створено перед)
+🟢 **Авто-застосовано** (знімок створено перед)
 
-  A1. `<page>.md` — <one-line action> (<коротке disk-grounded обґрунтування>)
-  A2. `<page>.md` — <one-line action> (<обґрунтування>)
+  1. `<page>.md` — <one-line action> (<коротке disk-grounded обґрунтування>)
+  2. `<page>.md` — <one-line action> (<обґрунтування>)
   ...
 
   **↩️  Відкат:**
-  • Скажи `відкат` — поверну всі N (знімок готовий)
-  • Скажи `відкат A2` — поверну лише A2
+  • Скажи `відкат` — поверну всі (знімок готовий)
+  • Скажи `відкат 2` — поверну лише №2
 
-  Якщо ок — переходимо до finding'ів нижче.
+🟡 **Потребує твого рішення** (справжній multi-action)
 
-🟡 **Потребує твого рішення (M знахідок — справжній multi-action)**
+  5. `<page>.md` ↔ `<page>.md` — <опис судження-кейсу з 3+ defensible actions>
+     Дія: `5 глянь A` / `5 глянь B` / `5 merge` / `5 розбити обидві`
 
-  D1. `<page>.md` ↔ `<page>.md` — <опис судження-кейсу з 3+ defensible actions>
-      Дія: `D1 глянь A` / `D1 глянь B` / `D1 merge` / `D1 розбити обидві`
-
-  D2. `<page>.md` (276 рядків) — split candidate
-      Дія: `D2 розбити` / `D2 merge with <page>` / `D2 залиш` (current scope coherent)
+  6. `<page>.md` (276 рядків) — split candidate
+     Дія: `6 розбити` / `6 merge with <page>` / `6 залиш`
 
 🔵 **Примітки** (показується лише якщо є хоч один пункт нижче з тригером)
 
-  • Захищені сторінки (K, захищені від cleanup): `<list>` — `wiki unprotect <path>` щоб перевірити
-  • ⚠️ Версія схеми: вікі на `vX.Y`, скіл на `vZ.W` — запусти `wiki init` для міграції
-  • Велика сторінка: `<page>.md` (N рядків, не ділимо — <структурно когерентна тощо>)
+  7. Захищені сторінки (K, захищені від cleanup): `<list>` — `wiki unprotect <path>` щоб перевірити
+  8. ⚠️ Версія схеми: вікі на `vX.Y`, скіл на `vZ.W` — `8 wiki init` для міграції
+  9. Велика сторінка: `<page>.md` (N рядків, не ділимо — <структурно когерентна тощо>) — elevate: `9 розбий` / `9 захисти`
 ```
+
+Numbering continues from the AUTO/DECIDE buckets. INFO items are noted by default but accept verbs on elevation (`<N> <verb>`); the verb that makes sense is shown inline with each note.
 
 **Empty-buckets-omitted rule applies to every block:**
 
@@ -1548,5 +1561,6 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Writing user-facing report in English | The Lint Report Format is Ukrainian for everything the user reads — section headers ("Авто-застосовано", "Потребує твого рішення", "Примітки"), action verbs (`глянь і онови`, `залиш як є`), revert keyword (`відкат`). Only file paths, code identifiers, and proper names stay in their native form. |
 | Showing 🔵 Примітки items that lack a trigger | Each line in 🔵 has a precondition: protected line only when K > 0, schema version only on mismatch, large-page only when > 200 lines AND not already in 🟡. Don't print «Захищених: 0» or «Версія схеми: v4.0 (поточна)» — those introduce vocabulary or ops-metadata the user doesn't need. If no line triggers, omit the 🔵 block entirely. |
 | Putting binary `глянь і онови` / `залиш як є` in a DECIDE menu | Fake choice — `залиш як є` means perpetuate the bug, not a defensible alternative. If only one action is sensible, the finding belongs in AUTO with auto-apply. DECIDE is reserved for 3+ genuinely competing actions (e.g. `видали` vs `глянь і онови` vs `merge` vs `розбити`). |
-| Numbering AUTO and DECIDE both starting at 1 | Creates ambiguity when user types `1`. Use prefixed IDs: `A1`, `A2`, ... for AUTO; `D1`, `D2`, ... for DECIDE. Commands: `відкат A2` / `D1 merge`. Renderer always includes the prefix; user shorthand without prefix is accepted only when verb context disambiguates (`відкат 2` → `A2` because `відкат` applies only to AUTO). |
-| Per-finding numbered sub-menu inside a DECIDE entry | DECIDE finding's action menu shows **verbs only**, no numbered sub-menu. User invokes by `D<N> <verb>`. Numbered sub-menus inside a DECIDE entry recreate the same collision the prefix system was designed to prevent. |
+| Numbering AUTO and DECIDE both starting at 1 | Use a SINGLE sequential namespace 1..N across the whole report (AUTO + DECIDE + INFO). No A/D prefixes. Verb context disambiguates intent: `відкат N` only applies to AUTO; `<N> <verb>` applies to DECIDE / INFO elevation. Renderer never restarts numbering between blocks. |
+| Per-finding numbered sub-menu inside a DECIDE entry | DECIDE finding's action menu shows **verbs only**, no numbered sub-menu. User invokes by `<N> <verb>` where `<N>` is the item's report-wide number. Numbered sub-menus inside a finding recreate exactly the ambiguity sequential numbering was designed to prevent. |
+| Leaving INFO items unnumbered while AUTO/DECIDE have numbers | All items in the report get a number, including 🔵 Примітки. Without numbering, the user can't reference an INFO item to elevate it (e.g. say `9 розбий` to split a noted large page). Bullet points (`•`) for INFO items violate the «every assertion has a number» rule. |
