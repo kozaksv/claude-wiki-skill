@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+WIKI_VERSION="${1:-master}"
+
 REPO="https://github.com/kozaksv/claude-wiki-skill.git"
 SKILL_DIR="$HOME/claude-wiki-skill"
 SKILLS_ROOT="$HOME/.claude/skills"
@@ -10,11 +12,15 @@ DOC_EXTRACT_REPO="https://github.com/kozaksv/claude-doc-extract-skill.git"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
 DOC_EXTRACT_LINK="$SKILLS_ROOT/doc-extract"
 
-install_skill() {
-  local name="$1" repo="$2" dir="$3" link="$4"
+install_skill_at_ref() {
+  local name="$1" repo="$2" dir="$3" link="$4" ref="$5"
   if [ -d "$dir/.git" ]; then
-    echo "[$name] репо вже існує — оновлюю..."
-    git -C "$dir" pull
+    echo "[$name] репо вже існує — переключаю на $ref..."
+    git -C "$dir" fetch --tags --force origin
+    git -C "$dir" checkout "$ref"
+    if git -C "$dir" symbolic-ref -q HEAD >/dev/null; then
+      git -C "$dir" pull --ff-only
+    fi
   else
     if [ -e "$dir" ]; then
       echo "Помилка: $dir існує, але це не git-репо. Видаліть вручну і спробуйте знову."
@@ -22,11 +28,12 @@ install_skill() {
     fi
     echo "[$name] клоную $repo → $dir..."
     git clone "$repo" "$dir"
+    git -C "$dir" checkout "$ref"
   fi
   ln -sfn "$dir" "$link"
 }
 
-echo "=== Claude Wiki Skill — встановлення ==="
+echo "=== Claude Wiki Skill — встановлення (версія: $WIKI_VERSION) ==="
 
 if ! command -v git &>/dev/null; then
   echo "Помилка: git не встановлений. Встановіть git і спробуйте знову."
@@ -35,16 +42,16 @@ fi
 
 mkdir -p "$SKILLS_ROOT"
 
-# 1. Wiki skill
-install_skill "wiki" "$REPO" "$SKILL_DIR" "$SKILL_LINK"
+# 1. Wiki skill — користувацький pin (за замовчуванням master)
+install_skill_at_ref "wiki" "$REPO" "$SKILL_DIR" "$SKILL_LINK" "$WIKI_VERSION"
 
-# 2. doc-extract (залежність для ingest-binary)
-install_skill "doc-extract" "$DOC_EXTRACT_REPO" "$DOC_EXTRACT_DIR" "$DOC_EXTRACT_LINK"
+# 2. doc-extract (залежність для ingest-binary) — завжди master
+install_skill_at_ref "doc-extract" "$DOC_EXTRACT_REPO" "$DOC_EXTRACT_DIR" "$DOC_EXTRACT_LINK" "master"
 
 echo ""
 echo "Готово! Встановлено:"
-echo "  $SKILL_LINK → $SKILL_DIR"
-echo "  $DOC_EXTRACT_LINK → $DOC_EXTRACT_DIR"
+echo "  $SKILL_LINK → $SKILL_DIR  (@ $WIKI_VERSION)"
+echo "  $DOC_EXTRACT_LINK → $DOC_EXTRACT_DIR  (@ master)"
 echo ""
 echo "Для роботи з PDF/DOCX (ingest-binary) встановіть системні залежності:"
 echo "  bash $DOC_EXTRACT_LINK/bin/install-deps.sh"

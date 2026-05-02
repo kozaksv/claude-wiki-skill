@@ -40,23 +40,29 @@ Architectural patterns inspired by [Hermes-Agent](https://github.com/NousResearc
 
 ## Встановлення
 
-Остання версія (зараз — v4 з self-improvement):
+Остання версія (за замовчуванням — master):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
 
-### Вибір версії
+Конкретна версія (передається аргументом скрипту):
 
-URL у курлі містить ім'я гілки або тегу — заміни `master` на потрібну версію:
+```bash
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash -s v3.0.0
+```
 
-| Версія | Що це | Команда |
-|---|---|---|
-| **v4.0.0** *(рекомендується)* | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization, cleanup-flow, pin protection, 8 операцій | `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/v4.0.0/install.sh \| bash` |
-| **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement | `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/v3.0.0/install.sh \| bash` |
-| **master** | Те саме, що остання випущена версія (зараз — v4.0.0). Може випереджати теги між релізами | `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh \| bash` |
+### Доступні версії
 
-Тег у URL — це закладка на конкретний коміт; версія, яку ти отримаєш через `v3.0.0` або `v4.0.0`, не зміниться навіть коли вийдуть нові релізи. `master` навпаки рухається вперед.
+| Тег | Що це |
+|---|---|
+| **v4.0.0** *(рекомендується)* | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization, cleanup-flow, pin protection, 8 операцій |
+| **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement |
+| `master` | Поточний HEAD: остання випущена версія + усі коміти після неї |
+
+URL у курлі завжди вказує на `master/install.sh` — це сам інсталятор. **Версію скіла обираєш аргументом** (`bash -s v3.0.0`). Без аргумента — встановлюється `master`.
+
+Тег — це закладка на конкретний коміт; версія, яку ти отримаєш через `v3.0.0` або `v4.0.0`, не зміниться навіть коли вийдуть нові релізи. `master` навпаки рухається вперед.
 
 ## Ініціалізація wiki у проєкті
 
@@ -97,13 +103,19 @@ URL у курлі містить ім'я гілки або тегу — замі
 
 ## Оновлення
 
-Запустіть ту саму команду — скрипт оновить автоматично:
+Запустіть ту саму команду без аргумента — скіл оновиться до останнього master:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
 
-Щоб перейти між версіями (наприклад, з v3 на v4 або навпаки) — запустіть курл відповідної версії з таблиці вище. Скіл буде перевстановлено з нової версії; ваші wiki у проєктах не чіпаються.
+Щоб переключитись на конкретну версію (наприклад, з master на v3.0.0 або з v3.0.0 на v4.0.0) — запустіть з аргументом:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash -s v4.0.0
+```
+
+Скрипт переключиться на потрібний тег у вже клонованому репо. Ваші wiki у проєктах не чіпаються.
 
 ## Видалення
 
