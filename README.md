@@ -40,9 +40,23 @@ Architectural patterns inspired by [Hermes-Agent](https://github.com/NousResearc
 
 ## Встановлення
 
+Остання версія (зараз — v4 з self-improvement):
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
+
+### Вибір версії
+
+URL у курлі містить ім'я гілки або тегу — заміни `master` на потрібну версію:
+
+| Версія | Що це | Команда |
+|---|---|---|
+| **v4.0.0** *(рекомендується)* | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization, cleanup-flow, pin protection, 8 операцій | `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/v4.0.0/install.sh \| bash` |
+| **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement | `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/v3.0.0/install.sh \| bash` |
+| **master** | Те саме, що остання випущена версія (зараз — v4.0.0). Може випереджати теги між релізами | `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh \| bash` |
+
+Тег у URL — це закладка на конкретний коміт; версія, яку ти отримаєш через `v3.0.0` або `v4.0.0`, не зміниться навіть коли вийдуть нові релізи. `master` навпаки рухається вперед.
 
 ## Ініціалізація wiki у проєкті
 
@@ -88,6 +102,8 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
+
+Щоб перейти між версіями (наприклад, з v3 на v4 або навпаки) — запустіть курл відповідної версії з таблиці вище. Скіл буде перевстановлено з нової версії; ваші wiki у проєктах не чіпаються.
 
 ## Видалення
 
