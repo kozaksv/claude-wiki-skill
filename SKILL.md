@@ -975,11 +975,11 @@ Run through each check and report findings:
 
 **Process:**
 
-1. **Propose a subset for verification** — full-wiki reads are expensive, so pick a small candidate set first. Offer the user one of:
-   - **`[a]` Top-5 most edited** — sort `report()` by `patch_count desc, last_patched_at asc`, take the first 5 entries with `state == "active"` and `pinned == false`. High patch-count = the page has been touched a lot, so drift between the page and the world is more likely to compound here.
-   - **`[b]` Top-5 longest unpatched among active** — sort `report()` by `last_patched_at asc` (oldest first; treat `null` as "older than any timestamp"), filter to `state == "active"` and `pinned == false`, take the first 5. Long-unpatched pages have had more time for the world to drift away from what they claim.
-   - **`[c]` By category** — user supplies a category (e.g. "all `entities/contracts/`", "all `concepts/` pages mentioning purchase flow"); enumerate that subset, then apply pin protection (skip `pinned == true`).
-   - **`[d]` User-specified pages** — user supplies an explicit list of `[[page-names]]`; verify exactly that set. **Pinned pages in `[d]` are still skipped unless the user first unpins them via `wiki unpin <path>`** — explicit listing does not bypass pin protection (see "Pin protection during Lint" below).
+1. **Determine the verification subset — no menu.** Full-wiki reads are expensive, so don't read every page. Pick the subset by this rule, in priority order:
+   - **If the user named a scope** in the trigger (e.g. "лінт `concepts/architecture/`", "лінт цей список: [[page-a]], [[page-b]]", "лінт all `entities/contracts/`") — verify exactly that scope.
+   - **Otherwise — default subset:** top-10 most-edited active + unpinned pages. Sort `report()` by `patch_count desc, last_patched_at asc`, filter `state == "active"` and `pinned == false`, take the first 10. State the chosen subset at the top of the report (e.g. "Verified subset: top-10 most-edited active pages").
+
+   **Never present a multi-option subset menu** like "[a] top-edited / [b] oldest / [c] by category / [d] specific list". The user names a scope, or the default applies — there is no in-Lint chooser. Pin protection always applies regardless of subset (skip `pinned == true` unless the user first runs `wiki unpin <path>`).
 
 2. **For each selected page, read in full and verify claims:**
    - **Sources existing** — every path under `## Sources` resolves on disk
@@ -990,7 +990,7 @@ Run through each check and report findings:
 
 3. **Report findings without auto-flagging.** For each verified page, write a short note: claims that hold, claims that drifted, suggested action. **Do not silently rewrite the page.** The user chooses per page: `глянь і онови`, `видали`, `залиш як є`, or `pin` (mark as intentionally rare-read so future Lint runs skip it).
 
-4. **`.usage.json` is read here for prioritization only** — sort order in `[a]` and `[b]`, pin filter in `[a]`/`[b]`/`[c]`. The presence of low view_count or old last_viewed_at is **never** a reason to flag a page as stale on its own. A 0-view page may be a perfectly correct security recipe that just hasn't been needed yet (which is exactly why pinning exists).
+4. **`.usage.json` is read here for prioritization only** — sort order for the default top-N subset (`patch_count desc, last_patched_at asc`) and pin filter (skip `pinned == true`). The presence of low view_count or old last_viewed_at is **never** a reason to flag a page as stale on its own. A 0-view page may be a perfectly correct security recipe that just hasn't been needed yet (which is exactly why pinning exists).
 
 ### Pin protection during Lint
 
@@ -998,7 +998,7 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 
 **Pin protection rules:**
 
-- A page with `pinned: true` in `.usage.json` is **skipped** by the `[a]` / `[b]` / `[c]` proposals. It is also **excluded** from any "candidates for content-verification" auto-list.
+- A page with `pinned: true` in `.usage.json` is **skipped** by both the default top-N subset and any user-named scope. It is also **excluded** from any "candidates for content-verification" auto-list.
 - The Lint report **must** include a separate `### Pinned` header listing these pages (so the user remembers they exist), but **never** flags them as `глянь і онови` or `видали`.
 - To verify or modify a pinned page, the user must first run `wiki unpin <path>`. After unpinning, the page becomes a normal Lint candidate; the user can re-pin afterwards with `wiki pin <path>`.
 - Pin/unpin is a sidecar mutation: read `.usage.json`, set/clear `pinned`, write atomically (see Telemetry Tolerance rules). Pinning does not bump `patch_count` for the page itself.
@@ -1070,7 +1070,7 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 ```markdown
 ## Wiki Lint Report — [date]
 
-### Verified (content-verification subset: [a]/[b]/[c]/[d])
+### Verified (subset: <user-named scope or "top-N most-edited active">)
 - [[page-x]] — claims hold, no action needed
 - [[page-y]] — `## Sources` references deleted file → propose DELETE source line
 - [[page-z]] — stated count "N migrations" doesn't match reality → propose DELETE count
@@ -1097,6 +1097,8 @@ N pages verified (X clean, Y with proposed actions); Z contradictions, W orphans
 ```
 
 After presenting the report, offer to fix all issues.
+
+**Never close Lint with a multi-option "куди далі?" menu** that mixes paradigms — e.g. `[1] verify subset / [2] another subset / [3] specific list / [4] split page X / [5] stop without verification`. Lint produces a report; per-finding actions are offered one finding at a time using the unified action menu (see `## Self-Improvement Loop > ### Cleanup-flow`). When the report is done, the operation is done — wait for user to act on findings, don't pre-pose a follow-up menu. Split candidates surfaced under "Page Health" are notes in the report, not menu items.
 
 ### After completion
 
@@ -1336,3 +1338,4 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Treating `.usage.json` as user-visible | It's metadata, gitignored, per-clone. Don't mention specific counter values to user unless `wiki status` is invoked. |
 | Migrating `wiki_version` silently | Migration is explicit plan-then-confirm for structural changes. Only field-level backfill in `.usage.json` is silent. |
 | Skipping reflection because "small change" | Anti-noise rule applies only to read-only blocks. Any edit/write block produces reflection. |
+| Closing Lint with a multi-option "куди далі?" menu | Lint = report + per-finding actions. Subset is decided BEFORE running (user-named scope OR default top-N), never via a closing chooser. Mixing in `split` / `skip-verification` is also wrong — split is its own operation, content-verification is core not optional. |
