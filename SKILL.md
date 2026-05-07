@@ -1,14 +1,21 @@
 ---
 name: wiki
-version: "4.0.0"
+version: "4.1.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern) — three layers (concepts,
   entities, transcripts) plus archive/ for binaries. Eight operations:
   init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki-status.
   Triggers: "ingest"/"додай до wiki/вікі", "wiki/вікі lint/query/cleanup/status",
   "оновити/перевір wiki/вікі", "що каже wiki про...", "знайди у вікі",
-  any binary in tmp/. "вікі" = "wiki". Also use PROACTIVELY after feat/
-  refactor commits and when binaries land in tmp/.
+  any binary in tmp/. "вікі" = "wiki". Also use PROACTIVELY: (a) after feat/
+  refactor commits; (b) when binaries land in tmp/; (c) BEFORE generating
+  any project-specific how-to / config / setup / recipe / explanation —
+  run query first even when you think you know the answer, because the wiki
+  holds project-specific facts (paths, configs, decisions, gotchas) that
+  may differ from general training knowledge. Common shapes that should
+  trigger query: "як [налаштувати/встановити/підключити/зробити] X", "що
+  таке X", "як працює X", "де лежить X", "пам'ятаєш як ми Y", "потрібно
+  знову Z", "розкажи про W".
 ---
 
 # LLM Wiki (Karpathy Pattern)
@@ -92,7 +99,7 @@ last_migration: "2026-05-01"
 ---
 ```
 
-The skill itself has a version in this file's frontmatter (`version: "4.0.0"`).
+The skill itself has a version in this file's frontmatter (`version: "4.1.0"`).
 
 ### State detection on Step 0
 
@@ -145,7 +152,7 @@ When proposing a migration plan, the skill reads its own SKILL.md frontmatter `v
 
 ### Optional config knobs in `schema.md` frontmatter
 
-Optional `nudge_interval: <N>` in `schema.md` frontmatter overrides the default crystallization periodic nudge frequency (default ~15 tool-calling iterations). Set to `0` to disable the periodic nudge while keeping hard triggers (pre-commit, TodoWrite-completion, explicit user) active. See `## Self-Improvement Loop` → `### Tiered Crystallization` for the trigger model.
+Optional `nudge_interval: <N>` in `schema.md` frontmatter overrides the default crystallization periodic nudge frequency (default ~15 tool-calling iterations). Set to `0` to disable the periodic nudge while keeping hard triggers (pre-commit, TodoWrite-completion, explicit user) active. See `## Self-Improvement Loop` → `### Crystallization` for the trigger model.
 
 ## Telemetry Sidecar (.usage.json)
 
@@ -239,7 +246,7 @@ The wiki is not just a passive store — it is a feedback loop. After meaningful
 Reflection has two purposes:
 
 1. **Visible reasoning** — a short, predictable block that lets the user verify the agent didn't just edit files, it actually thought about the diff. Hermes-style silent telemetry stays in `.usage.json`; РЕФЛЕКСІЯ is the loud counterpart.
-2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving as a script / wiki page / skill?". Tiered Crystallization is documented in the subsection below; the reflection block names what was crystallized in the `Автоматизував:` field (one of `tier 1 — scripts/...sh`, `tier 2 — scripts/...py`, `tier 3 — concepts/....md`, `tier 4 — delegated to writing-skills`, or `нічого` with reason).
+2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving so the next session doesn't have to re-derive it?". Crystallization is documented in the subsection below; the reflection block names what was crystallized in the `Автоматизував:` field (one of `wiki — concepts/{name}.md`, `skill — delegated to writing-skills`, or `нічого` with reason).
 
 Reflection fires on **events**, not on a timer the skill maintains. The agent is responsible for self-checking the trigger conditions on every operation — there is no harness-side counter.
 
@@ -253,7 +260,7 @@ Print this verbatim at the end of a triggered turn. Do not paraphrase the field 
 Дізнався: {one sentence — what new insight emerged}
 Чому це краще: {one or two sentences — why it works, why this approach}
 Зберіг у wiki: [[page-a]], [[page-b]]   (or: «не торкав wiki — нічого синтетичного»)
-Автоматизував: {tier 1 bash / tier 2 python / tier 3 wiki page / tier 4 skill / нічого + причина}
+Автоматизував: {wiki — concepts/{name}.md  /  skill — delegated to writing-skills  /  нічого + причина}
 
 [ONLY if structural files were touched (index.md / schema.md / log.md / .usage.json):]
 Перевірив:
@@ -295,7 +302,7 @@ Treat hard events (TodoWrite-completion, pre-commit, explicit user) as the relia
 - **Дізнався** must contain a real insight or be explicit about its absence: «Дізнався: нічого нового — стандартна реалізація за патерном [[X]]». Never leave the field empty or write filler like "багато всього".
 - **Чому це краще** appears only if "Дізнався" had real content. Otherwise omit the line entirely (do not write "n/a" or "—").
 - **Зберіг у wiki** is a `[[wikilinks]]` list, or the explicit phrase «не торкав wiki — нічого синтетичного». If you touched only `log.md` / `index.md` (bookkeeping), say so explicitly: «лише log.md / index.md — bookkeeping».
-- **Автоматизував** is mandatory. If nothing crystallized, write one of: `нічого — операція разова` / `нічого — порогу не досягнуто (поточний M/3)` / `нічого — юзер відмовив раніше` / `нічого — патерн не повторюється`. The user wants to see that the question was asked.
+- **Автоматизував** is mandatory. If nothing crystallized, write one of: `нічого — операція разова` / `нічого — патерн не повторюється` / `нічого — юзер відмовив раніше` / `нічого — відкладено`. The user wants to see that the question was asked. Do not invent counter-style explanations like "поточний 2/3" — there is no algorithmic threshold; see "Read the room" rule below.
 - **Перевірив** appears only when structural files (`index.md`, `schema.md`, `log.md`, `.usage.json`) were modified in this block. Use ✅ for confirmed updates, ⚠️ for intentional skips with one-line reason. Skip the section entirely if no structural files were touched.
 
 ### Anti-noise rule
@@ -313,18 +320,20 @@ Concretely:
 
 If unsure, lean toward firing reflection — over-reporting is recoverable, under-reporting hides reasoning. Anti-noise is for the obvious cases (literally nothing was written).
 
-### Tiered Crystallization
+### Crystallization
 
-The reflection's `Автоматизував:` field isn't decorative — it's the agent's answer to a real question: **is anything from this block worth saving so the next session doesn't have to re-derive it?** When the answer is yes, the agent **proposes** (never silently creates) one of four tiers. Choose the lowest tier that captures the value; over-tiering creates maintenance debt.
+The reflection's `Автоматизував:` field isn't decorative — it's the agent's answer to a real question: **is anything from this block worth saving so the next session doesn't have to re-derive it?** When the answer is yes, the agent **proposes** (never silently creates) one of two artifact types.
 
-| Tier | Artifact | Storage | What the model judges (during a periodic nudge) |
+| Type | Artifact | Storage | What the model judges (during a periodic nudge) |
 |---|---|---|---|
-| 1. Bash one-liner | shell script ≤20 lines | `scripts/{name}.sh` in project | "Same simple command repeated this session — would a one-liner save tokens / typos next time?" |
-| 2. Python script | Python with args + error handling | `scripts/{name}.py` in project | "Multi-step flow with conditions or parsing repeated more than once — does it justify a real script?" |
-| 3. Wiki concept page | new `concepts/{name}.md` | `{wiki}/concepts/` | "I've explained the same concept across sessions and no existing page covers it — file it so the next query finds it." |
-| 4. Full skill | new `~/.claude/skills/{name}/SKILL.md` | user-level skills | "Multi-step flow with clear trigger conditions, reusable across projects — warrants a real skill, not just a script." |
+| **wiki** | new or extended `concepts/{name}.md` (recipe, ready-made block, concept explanation) | `{wiki}/concepts/` | "I re-derived this content from scratch this session — paste-able block, recipe, or concept the next session would also need. File it so the next read finds it instead of regenerating." |
+| **skill** | new `~/.claude/skills/{name}/SKILL.md` (delegated to `superpowers:writing-skills`) | user-level skills | "Multi-step flow with clear trigger conditions, reusable across projects — warrants a real skill, not just a wiki page." |
 
-**These are heuristics for the model's holistic judgment during a periodic nudge — NOT counters this skill maintains algorithmically.** Hermes-Agent's `tools/skill_manager_tool.py` is purely CRUD; the trigger model is a periodic nudge that asks "consider crystallizing", and the model decides. Don't try to count normalized commands or de-dupe argv vectors. Read the room.
+**Why no `scripts/` tier.** Earlier versions proposed `scripts/{name}.sh` and `scripts/{name}.py` as crystallization tiers. They violated the Division of Labor stated at the top of this file: those scripts are **user-runnable** artifacts (`bash scripts/x.sh`, `python scripts/x.py | pbcopy`) — that pushes mechanical work onto the user, who in this skill's model only directs and curates. The right artifact for "I generated the same content twice" is a wiki page Claude reads back, not a generator the user runs. If a one-shot inline command is genuinely useful, write it inline at the moment of use; do not crystallize it as a user-facing tier.
+
+**Memory is not a tier either.** The auto-memory mechanism in the system prompt already saves user feedback / preferences automatically (e.g. "user dislikes script-tier proposals" lands in `~/.claude/.../memory/feedback_*.md` without skill involvement). Wiki is the project-scoped, version-controlled, lint-verified store — auto-memory is the volatile sticky-note layer. They are perpendicular; this skill operates only on wiki and skill artifacts.
+
+**These are heuristics for the model's holistic judgment during a periodic nudge — NOT counters this skill maintains algorithmically.** The trigger model is a periodic nudge that asks "consider crystallizing", and the model decides. Don't try to count normalized commands or de-dupe argv vectors. Read the room.
 
 ### Crystallization triggers
 
@@ -334,61 +343,62 @@ The reflection's `Автоматизував:` field isn't decorative — it's t
 | Pre-commit | Immediately before `git commit` | Hard trigger — paired with reflection. Always check for crystallization candidates at this moment. |
 | TodoWrite-completion | Last todo → `completed` | Hard trigger — paired with reflection. |
 | Pre-compression flush | User-explicit ("save before /compress" / "збережи перед стисненням") | Guaranteed turn for writing crystallizable patterns out before context is lost. The harness does not signal compression to skills, so this depends on the user. |
-| Explicit user | "save this as bash" / "make it a script" / "винеси в скіл" | Manual override — skip judgment, go straight to proposal at the requested tier. |
+| Explicit user | "збережи у вікі" / "винеси в скіл" / "save as wiki page" | Manual override — skip judgment, go straight to proposal at the requested type. If the user asks for a script (`scripts/*.sh` / `*.py`), explain that this skill no longer crystallizes user-runnable scripts (Division of Labor) and offer the wiki-page equivalent. The user can still create a script manually if they want — the skill just doesn't propose it. |
 | Disabled | `nudge_interval: 0` in `{wiki}/schema.md` frontmatter | Disables the periodic nudge only. Hard triggers (pre-commit, TodoWrite-completion, explicit user) still fire. |
 
 The default cadence (~15 iterations) can be overridden per-wiki via `nudge_interval: <N>` in `schema.md` frontmatter — see `## Versioning & Migration` for the knob.
 
 ### Proposal format
 
-The skill **proposes**; the user decides. Never `Write` a script, page, or skill silently. Use this exact block:
+The skill **proposes**; the user decides. Never `Write` a wiki page or hand off to `superpowers:writing-skills` silently. Use this exact block:
 
 ```
 🔁 Помічаю патерн: {one-line description of the recurring pattern, with concrete count}
-   Tier {N} ({type}): {proposed-path}
+   {wiki | skill}: {proposed-path}
 
    Створити? [y] / [n] / [пізніше]
 ```
 
 Behavior on each response:
 
-- `y` → create the file, show its content inline, stage it for commit. The reflection's `Автоматизував:` field records `tier {N} — {path}`.
+- `y` → create the artifact, show its content inline, stage it for commit (or, for skill, hand off to `superpowers:writing-skills`). The reflection's `Автоматизував:` field records `wiki — {path}` or `skill — delegated to writing-skills (subject: {brief})`.
 - `n` → do not create. Record the refusal for this normalized pattern in this session — **do not re-propose the same pattern this session**. The reflection's `Автоматизував:` field records `нічого — юзер відмовив раніше`.
 - `пізніше` → do not create now, but the pattern is still eligible for re-proposal at the next nudge. The reflection's `Автоматизував:` field records `нічого — відкладено`.
 
-A concrete tier-1 example:
+A concrete wiki example:
 
 ```
-🔁 Помічаю патерн: за останні 15 ітерацій ти 3 рази робив curl з cookie better-auth + grep по JSON.
-   Tier 1 (bash one-liner): scripts/auth-curl.sh
+🔁 Помічаю патерн: за сесію двічі надрукував той самий 60-рядковий PowerShell install-block для OpenSSH на Windows DC.
+   wiki: concepts/openssh-on-windows-dc.md (з вбудованим PS-блоком + коли застосовувати)
 
    Створити? [y] / [n] / [пізніше]
 ```
 
-### Tier-4 delegation to writing-skills
+### Skill delegation to writing-skills
 
-Tier 4 has the highest bar — a full skill with its own SKILL.md, conventions, evals, and trigger-description. **The wiki skill does NOT create SKILL.md itself.** It delegates to the `superpowers:writing-skills` skill, which knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; that one knows skill conventions. Honor the separation.
+A skill has the highest bar — its own SKILL.md, conventions, evals, and trigger-description. **The wiki skill does NOT create SKILL.md itself.** It delegates to the `superpowers:writing-skills` skill, which knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; that one knows skill conventions. Honor the separation.
 
-The tier-4 proposal therefore looks slightly different — it asks for permission to delegate, not for permission to create:
+The skill proposal therefore looks slightly different — it asks for permission to delegate, not for permission to create:
 
 ```
 🔁 Цей flow підходить для повноцінного скіла: 5 кроків, чіткі тригери, реюзабельно між проєктами.
-   Tier 4 (full skill): передати у superpowers:writing-skills для оформлення?
+   skill: передати у superpowers:writing-skills для оформлення?
 
    [y] делегуй  /  [n] не зараз  /  [пізніше]
 ```
 
-On `y`, hand off to `superpowers:writing-skills` with a one-paragraph brief describing the flow, triggers, and intended scope. The reflection's `Автоматизував:` field records `tier 4 — delegated to writing-skills (subject: {brief})`. Do not create `~/.claude/skills/{name}/SKILL.md` directly from this skill under any circumstances.
+On `y`, hand off to `superpowers:writing-skills` with a one-paragraph brief describing the flow, triggers, and intended scope. The reflection's `Автоматизував:` field records `skill — delegated to writing-skills (subject: {brief})`. Do not create `~/.claude/skills/{name}/SKILL.md` directly from this skill under any circumstances.
 
 ### Anti-noise rules for crystallization
 
 The proposal flow has its own anti-noise constraints, separate from the reflection-block anti-noise rule:
 
 - **Don't propose if the user already refused this normalized pattern in this session.** Refusals are sticky for the session.
-- **Don't propose for ambient commands** — `ls`, `cd`, `pwd`, `git status`, `git log`, `cat`, `wc`, `grep` of well-known paths. These are exploration noise, not patterns worth scripting.
-- **Don't propose if arguments are radically different each time.** If you ran `curl` against five different URLs with five different cookies, that's ad-hoc exploration, not a scriptable pattern. Look for repeated *shape*, not repeated *invocation*.
-- **Don't propose tier 1 or 2 for one-shot operations** — deploys, schema migrations, one-time data fixes. Even if the user runs them three times in a row, they're not a recurring pattern; they're one task done in three steps.
-- **Lowest viable tier wins.** Don't propose tier 3 when tier 1 covers it; don't propose tier 4 when tier 3 covers it. Over-tiering is its own form of noise.
+- **Don't propose for ambient commands** — `ls`, `cd`, `pwd`, `git status`, `git log`, `cat`, `wc`, `grep` of well-known paths. These are exploration noise, not patterns worth crystallizing.
+- **Don't propose if arguments are radically different each time.** If you ran `curl` against five different URLs with five different cookies, that's ad-hoc exploration, not a crystallizable pattern. Look for repeated *shape*, not repeated *invocation*.
+- **Don't propose wiki for one-shot content** — deploys, schema migrations, one-time data fixes. Even if the same block was generated three times in a row, if it has no recurring lookup value (the script will never run again, the migration is done), filing it wastes wiki real estate. Crystallize only when "next session will need to read this" is plausibly true.
+- **Don't propose a skill when a wiki page covers it.** Wiki is the cheaper, lower-maintenance store. Promote to skill only when the pattern is multi-step, has clear triggers, and is reusable across projects. Over-promotion is its own form of noise.
+- **Don't crystallize user-runnable scripts.** If you find yourself wanting to propose `scripts/{name}.sh` or `scripts/{name}.py` as a saved artifact, stop — that route was deliberately removed (Division of Labor). Either capture the underlying content as a wiki page Claude reads back, or run an inline command at the moment of need without crystallizing.
 
 ### Cleanup-prompt embedded in reflection
 
@@ -827,10 +837,28 @@ Search the wiki to answer a question about the project.
 
 ### When to Query
 
-- When the user asks about architecture, flows, or design decisions
-- When Claude needs context about how a system works before making changes
-- When searching for gotchas before touching a specific area
-- When the user says "що каже wiki про...", "wiki query", "знайди у wiki"
+**Master rule: before generating any project-specific content from memory, query first — even when you think you know.** The wiki captures project-specific facts (paths, configs, prior decisions, gotchas) that may not match general training knowledge. Default-answering from memory is a gamble; query is cheap (3-5 file reads).
+
+This rule exists because the user should not have to know wiki keywords. The user types in plain Ukrainian — "як налаштувати X", "де лежить Y", "пам'ятаєш як ми Z" — and Claude is responsible for translating that into a wiki check before generating anything.
+
+Concretely, query when:
+
+- The user's question takes any of these shapes:
+  - «як [налаштувати/встановити/підключити/зробити/запустити] X»
+  - «як [працює/влаштовано] X у [нашому проєкті/нас]»
+  - «що таке X», «розкажи про X», «поясни X»
+  - «де лежить X», «де знаходиться X», «де у нас Y»
+  - «пам'ятаєш як ми Y», «ми вже робили X», «потрібно знову Z»
+  - any «як ми вирішили…», «який у нас підхід до…»
+- You're about to generate a recipe, paste-able block, config snippet, or multi-step setup for this project.
+- The user asks about architecture, flows, or design decisions.
+- You need context about how a system works before making changes.
+- You're searching for gotchas before touching a specific area.
+- The user explicitly invokes via "що каже wiki про...", "wiki query", "знайди у wiki".
+
+**Don't query for ambient operations** — `ls`, `pwd`, `git status`, generic shell exploration. Those don't have project-specific knowledge to retrieve.
+
+**Pair with crystallization.** If you query and find nothing relevant, that's a discovery signal: this topic isn't yet captured. Hold it in mind — once you derive the answer, it becomes a candidate for crystallization (see `## Self-Improvement Loop > ### Crystallization`). Discovery and crystallization are two halves of the same loop: query reads what was saved, crystallization saves what was re-derived. The OpenSSH-on-Windows-DC scenario in the SKILL's reflection examples is the canonical case — a wiki entity existed but lacked the paste-able block, so Claude re-derived from memory; query before generating would have surfaced the gap and prompted crystallization the first time, not the second.
 
 ### Process
 
@@ -1578,7 +1606,8 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Writing wiki schema into CLAUDE.md on init | Schema belongs in `{wiki}/schema.md`. CLAUDE.md only gets a 1-line pointer. |
 | Maintaining duplicate schema in both locations | Collapse to `{wiki}/schema.md` only. Leave 1-line pointer in CLAUDE.md. |
 | Auto-flagging staleness by timestamp | Use Karpathy content-verification — read pages and judge claims. Telemetry is for prioritization, not flagging. |
-| Creating crystallization artifact silently | Skill ALWAYS proposes (y/n/пізніше). Never `Write` a script/page/skill without explicit user approval. |
+| Creating crystallization artifact silently | Skill ALWAYS proposes (y/n/пізніше). Never `Write` a wiki page or hand off to writing-skills without explicit user approval. |
+| Proposing `scripts/*.sh` or `scripts/*.py` as crystallization | Removed in v4.1 — user-runnable scripts violate Division of Labor (mechanical work belongs to LLM, not user). Crystallize content as a wiki page Claude reads back, or run inline at the moment of need. |
 | Treating `.usage.json` as user-visible | It's metadata, gitignored, per-clone. Don't mention specific counter values to user unless `wiki status` is invoked. |
 | Migrating `wiki_version` silently | Migration is explicit plan-then-confirm for structural changes. Only field-level backfill in `.usage.json` is silent. |
 | Skipping reflection because "small change" | Anti-noise rule applies only to read-only blocks. Any edit/write block produces reflection. |

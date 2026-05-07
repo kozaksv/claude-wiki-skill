@@ -43,6 +43,7 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 - ✅ Page protection: not relevant for Query (no destructive ops; Query reads any page on demand).
 - ✅ Karpathy staleness: not relevant.
 - ✅ Anti-noise: applies by default.
+- ✅ Discovery: `### When to Query` opens with **master rule** ("query before generating project-specific content from memory"), enumerates Ukrainian question shapes, pairs with crystallization (find-nothing = crystallization candidate). Frontmatter `description` mirrors the proactive trigger so the skill activates on natural «як налаштувати/що таке/де лежить» phrasing without requiring "wiki" keyword.
 
 ### Wiki Status
 
@@ -119,9 +120,10 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 
 ### Crystallization (proposal, not silent write)
 
-- ✅ `## Self-Improvement Loop > ### Tiered Crystallization` — full hierarchy and proposal format.
-- ✅ Tier 4 explicitly delegates to `superpowers:writing-skills` — no SKILL.md created from this skill.
-- ✅ Common Mistakes row "Creating crystallization artifact silently" reinforces.
+- ✅ `## Self-Improvement Loop > ### Crystallization` — two artifact types (wiki / skill) and proposal format.
+- ✅ Skill type explicitly delegates to `superpowers:writing-skills` — no SKILL.md created from this skill.
+- ✅ Script tier (`scripts/*.sh` / `*.py`) deliberately absent — Division of Labor reasoning in the table's "Why no `scripts/` tier" callout.
+- ✅ Common Mistakes rows "Creating crystallization artifact silently" + "Proposing `scripts/*.sh` or `scripts/*.py` as crystallization" reinforce.
 
 ### Telemetry as gitignored sidecar
 
