@@ -340,7 +340,7 @@ The reflection's `Автоматизував:` field isn't decorative — it's t
 | Type | Artifact | Storage | What the model judges (during a periodic nudge) |
 |---|---|---|---|
 | **wiki** | new or extended `concepts/{name}.md` (recipe, ready-made block, concept explanation) | `{wiki}/concepts/` | "I re-derived this content from scratch this session — paste-able block, recipe, or concept the next session would also need. File it so the next read finds it instead of regenerating." |
-| **skill** | new `~/.claude/skills/{name}/SKILL.md` (delegated to `superpowers:writing-skills`) | user-level skills | "Multi-step flow with clear trigger conditions, reusable across projects — warrants a real skill, not just a wiki page." |
+| **skill** | new user-level skill (`SKILL.md`) | active agent's user skill registry | "Multi-step flow with clear trigger conditions, reusable across projects — warrants a real skill, not just a wiki page." |
 
 **Why no `scripts/` tier.** Earlier versions proposed `scripts/{name}.sh` and `scripts/{name}.py` as crystallization tiers. They violated the Division of Labor stated at the top of this file: those scripts are **user-runnable** artifacts (`bash scripts/x.sh`, `python scripts/x.py | pbcopy`) — that pushes mechanical work onto the user, who in this skill's model only directs and curates. The right artifact for "I generated the same content twice" is a wiki page the agent reads back, not a generator the user runs. If a one-shot inline command is genuinely useful, write it inline at the moment of use; do not crystallize it as a user-facing tier.
 
@@ -363,7 +363,7 @@ The default cadence (~15 iterations) can be overridden per-wiki via `nudge_inter
 
 ### Proposal format
 
-The skill **proposes**; the user decides. Never `Write` a wiki page or hand off to `superpowers:writing-skills` silently. Use this exact block:
+The skill **proposes**; the user decides. Never `Write` a wiki page, create a skill, or hand off to a skill-authoring helper silently. Use this exact block:
 
 ```
 🔁 Помічаю патерн: {one-line description of the recurring pattern, with concrete count}
@@ -374,7 +374,7 @@ The skill **proposes**; the user decides. Never `Write` a wiki page or hand off 
 
 Behavior on each response:
 
-- `y` → create the artifact, show its content inline, stage it for commit (or, for skill, hand off to `superpowers:writing-skills`). The reflection's `Автоматизував:` field records `wiki — {path}` or `skill — delegated to writing-skills (subject: {brief})`.
+- `y` → create the artifact, show its content inline, stage it for commit (or, for skill, follow `### Skill creation / delegation`). The reflection's `Автоматизував:` field records `wiki — {path}`, `skill — delegated to writing-skills (subject: {brief})`, or `skill — created at {path}`.
 - `n` → do not create. Record the refusal for this normalized pattern in this session — **do not re-propose the same pattern this session**. The reflection's `Автоматизував:` field records `нічого — юзер відмовив раніше`.
 - `пізніше` → do not create now, but the pattern is still eligible for re-proposal at the next nudge. The reflection's `Автоматизував:` field records `нічого — відкладено`.
 
@@ -387,20 +387,27 @@ A concrete wiki example:
    Створити? [y] / [n] / [пізніше]
 ```
 
-### Skill delegation to writing-skills
+### Skill creation / delegation
 
-A skill has the highest bar — its own SKILL.md, conventions, evals, and trigger-description. **The wiki skill does NOT create SKILL.md itself.** It delegates to the `superpowers:writing-skills` skill, which knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; that one knows skill conventions. Honor the separation.
+A skill has the highest bar — its own SKILL.md, conventions, evals, and trigger-description. If the active agent has access to a dedicated skill-authoring helper (for example `superpowers:writing-skills`), delegate there because it knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; the helper knows skill conventions.
 
-The skill proposal therefore looks slightly different — it asks for permission to delegate, not for permission to create:
+If the active agent does **not** have such a helper (common in Codex/Gemini contexts), create the SKILL.md directly after explicit user approval. Use the current agent's user skill registry:
+
+- Claude-first stack: create canonical `~/.claude/skills/{name}/SKILL.md`, and for cross-agent availability create exports `~/.agents/skills/{name}` and `~/.gemini/skills/{name}` pointing to the Claude entrypoint.
+- Codex/Gemini-only stack: create `~/.agents/skills/{name}/SKILL.md` as the neutral user-skill location. If Gemini requires a direct path, add `~/.gemini/skills/{name}` as a symlink export.
+
+Keep the generated skill minimal: frontmatter with `name` and trigger-only `description`, concise instructions, and no extra README unless the target skill format explicitly requires it.
+
+The skill proposal therefore looks slightly different — it asks for permission to create or delegate:
 
 ```
 🔁 Цей flow підходить для повноцінного скіла: 5 кроків, чіткі тригери, реюзабельно між проєктами.
-   skill: передати у superpowers:writing-skills для оформлення?
+   skill: оформити як user-level skill (delegate to writing-skills if available, otherwise create directly)?
 
-   [y] делегуй  /  [n] не зараз  /  [пізніше]
+   [y] створи  /  [n] не зараз  /  [пізніше]
 ```
 
-On `y`, hand off to `superpowers:writing-skills` with a one-paragraph brief describing the flow, triggers, and intended scope. The reflection's `Автоматизував:` field records `skill — delegated to writing-skills (subject: {brief})`. Do not create `~/.claude/skills/{name}/SKILL.md` directly from this skill under any circumstances.
+On `y`, prefer handing off to `superpowers:writing-skills` when available, with a one-paragraph brief describing the flow, triggers, and intended scope. If no helper is available, create the skill directly in the registry described above and show the path. The reflection's `Автоматизував:` field records either `skill — delegated to writing-skills (subject: {brief})` or `skill — created at {path}`.
 
 ### Anti-noise rules for crystallization
 
@@ -779,14 +786,13 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
 3. **Propose slug** — from filename + date + parties;
    ask user to confirm or edit
 4. **Extract text → transcript (via `doc-extract` skill):**
-   The installer treats `~/.claude/skills` as the canonical skill registry for
-   this stack and exports the same `doc-extract` skill to Codex/Gemini via
-   symlinks (`~/.agents/skills/doc-extract`, `~/.gemini/skills/doc-extract`).
-   Use the canonical path below unless the local installation clearly differs.
+   Use the neutral export path below. In the default installer stack this is a
+   symlink to the Claude-first canonical entrypoint (`~/.claude/skills/doc-extract`),
+   so all agents run the same dependency while avoiding Claude-only command text.
 
    Call:
    ```bash
-   bash ~/.claude/skills/doc-extract/bin/extract.sh <source_file> \
+   bash ~/.agents/skills/doc-extract/bin/extract.sh <source_file> \
      --out <wiki>/transcripts/<slug>.md \
      --format md
    ```
@@ -798,7 +804,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
      Варіанти: (1) вручну → summary, (2) vision-capable file read if this agent supports it, explicit and potentially expensive,
      (3) пропустити". Wait for user decision.
    - `20` (missing_dependency) — STOP. Run
-     `bash ~/.claude/skills/doc-extract/bin/doctor.sh`, show output,
+     `bash ~/.agents/skills/doc-extract/bin/doctor.sh`, show output,
      ask user to install missing deps, then retry.
    - `30` (unsupported_format) — ask user to skip or convert first.
    - `40/50` — caller bug, show stderr.
@@ -1448,7 +1454,7 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Discovery
 
-1. **Find agent instruction files** (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`; walk up dirs from cwd). Use an existing file when present; if none exists during fresh bootstrap, create `CLAUDE.md` as the default pointer file.
+1. **Find agent instruction files** (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`; walk up dirs from cwd). Use an existing file when present. If none exists during fresh bootstrap, create the pointer file that matches the active agent (`CLAUDE.md` for Claude, `AGENTS.md` for Codex, `GEMINI.md` for Gemini). If the active agent is unclear, default to `CLAUDE.md` for legacy compatibility.
 2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
 
    | State | Condition | Action |
@@ -1510,7 +1516,7 @@ For a fresh wiki (state = `absent`), present this single-block plan after projec
   6. docs/wiki/transcripts/ — порожня папка
   7. docs/wiki/.usage.json — порожній dict {}
   8. archive/ — поза wiki (gitignored)
-  9. Agent instruction file — додати 1-line pointer "Wiki schema → docs/wiki/schema.md" (`CLAUDE.md` by default if no instruction file exists)
+  9. Agent instruction file — додати 1-line pointer "Wiki schema → docs/wiki/schema.md" (if no instruction file exists: active agent default, or `CLAUDE.md` when unclear)
   10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
 
 [y] так, створи все  /  [n] скасувати
