@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Version: v4.2.0** — cross-agent install/export model on `master`.
+**Version: v4.2.0-dev** — cross-agent install/export model on `master` (not tagged yet).
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -17,7 +17,7 @@ Exports created by install.sh:
   ~/.gemini/skills/wiki  -> ~/.claude/skills/wiki
 ```
 
-`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на Claude entrypoint, а не на `realpath`: якщо користувач перемкне Claude-версію skill'а, Codex і Gemini побачать ту саму версію.
+`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на Claude entrypoint, а не на `realpath`: якщо користувач перемкне Claude-версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і завжди ставиться з `main`, незалежно від pinned версії wiki skill.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
 
@@ -85,10 +85,11 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 
 | Тег | Що це |
 |---|---|
-| `master` *(рекомендується, next v4.2.0)* | v4.1 + Claude-first cross-agent exports для Codex/Gemini + agent-neutral discovery |
-| **v4.1.0** | v4.0 + crystallization без скриптів (wiki/skill only) + proactive query на природних українських формах питання |
+| `master` *(рекомендується, v4.2.0-dev)* | v4.1 + Claude-first cross-agent exports для Codex/Gemini + agent-neutral discovery |
 | **v4.0.0** | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization (4 рівні зі скриптами), cleanup-flow, page protection, 8 операцій |
 | **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement |
+
+Поки не створено окремий git tag для v4.2.0, не запускайте `bash -s v4.2.0` або `bash -s v4.1.0` — таких тегів ще немає. Без аргумента інсталятор бере `master`.
 
 URL у курлі завжди вказує на `master/install.sh` — це сам інсталятор. **Версію скіла обираєш аргументом** (`bash -s v3.0.0`). Без аргумента — встановлюється `master`.
 
@@ -97,8 +98,10 @@ URL у курлі завжди вказує на `master/install.sh` — це с
 Після встановлення:
 
 - Claude читає `~/.claude/skills/wiki`
-- Codex читає `~/.agents/skills/wiki`
-- Gemini CLI читає `~/.agents/skills/wiki` або `~/.gemini/skills/wiki`
+- Codex читає `~/.agents/skills/wiki` → symlink на `~/.claude/skills/wiki`
+- Gemini CLI читає `~/.agents/skills/wiki` або `~/.gemini/skills/wiki` → symlink на `~/.claude/skills/wiki`
+
+Усі ці entrypoints ведуть до одного canonical install. Оновлювати окремо Codex/Gemini не треба.
 
 ## Ініціалізація wiki у проєкті
 
@@ -110,7 +113,7 @@ URL у курлі завжди вказує на `master/install.sh` — це с
 
 Скіл визначить стан проєкту і діятиме відповідно:
 
-- **Empty проєкт** — створить `docs/wiki/{concepts,entities,transcripts}/`, `archive/`, `index.md`, `log.md`, `schema.md` (з frontmatter `wiki_version: "4.0"` і Migration Log), `.usage.json`; додасть 1-line pointer на `schema.md` у наявний agent instruction file (`CLAUDE.md`, `AGENTS.md` або `GEMINI.md`)
+- **Empty проєкт** — створить `docs/wiki/{concepts,entities,transcripts}/`, `archive/`, `index.md`, `log.md`, `schema.md` (з frontmatter `wiki_version: "4.0"` і Migration Log), `.usage.json`; додасть 1-line pointer на `schema.md` в усі наявні agent instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), або створить файл активного агента якщо таких файлів ще немає
 - **Існуючі raw-теки з артефактами** (bootstrap) — проаналізує, запропонує план міграції: які MDs стануть concepts, які бінарники підуть в `archive/`, які дублі видалити. Кожна група — з окремим consent'ом
 - **Існуюча v1-wiki** (concepts only) — доповнить structure (entities/, transcripts/, archive/)
 
@@ -200,9 +203,11 @@ rm ~/.agents/skills/wiki
 rm ~/.gemini/skills/wiki
 rm ~/.agents/skills/doc-extract
 rm ~/.gemini/skills/doc-extract
+rm -rf ~/claude-wiki-skill ~/claude-doc-extract-skill
 ```
 
 ## Вимоги
 
 - [Claude Code](https://claude.ai/claude-code)
 - Для Codex/Gemini support достатньо створених symlink exports; окрема інсталяція не потрібна.
+- Інсталятор створює `~/.claude/skills/wiki` як canonical registry навіть якщо користувач працює лише з Codex або Gemini; це не вимагає встановленого Claude.

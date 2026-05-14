@@ -17,7 +17,14 @@ if [[ "${1:-}" == "-C" ]]; then
   dir="$2"
   shift 2
   case "${1:-}" in
-    fetch|checkout|pull)
+    fetch|pull)
+      exit 0
+      ;;
+    checkout)
+      if [[ "$dir" == *"claude-doc-extract-skill"* && "${2:-}" != "main" ]]; then
+        echo "doc-extract must be checked out at main in this fixture" >&2
+        exit 1
+      fi
       exit 0
       ;;
     symbolic-ref)
@@ -29,6 +36,10 @@ fi
 if [[ "${1:-}" == "clone" ]]; then
   repo="$2"
   dir="$3"
+  if [[ "${FAIL_DOC_EXTRACT_CLONE:-0}" == "1" && "$repo" == *"doc-extract"* ]]; then
+    echo "simulated doc-extract clone failure" >&2
+    exit 2
+  fi
   mkdir -p "$dir/.git"
   if [[ "$repo" == *"doc-extract"* ]]; then
     cat >"$dir/SKILL.md" <<'DOC'
@@ -125,6 +136,29 @@ run_install
 }
 grep -q 'do not replace' "$AGENTS_DOC_EXTRACT" || {
   echo "expected non-symlink export file content to be preserved"
+  exit 1
+}
+
+HOME_FAIL="$TMP/home-fail"
+mkdir -p "$HOME_FAIL"
+FAIL_DOC_EXTRACT_CLONE=1 PATH="$BIN_DIR:$PATH" HOME="$HOME_FAIL" bash "$ROOT/install.sh" >"$TMP/install-fail-doc.log" 2>&1
+[[ -L "$HOME_FAIL/.agents/skills/wiki" ]] || {
+  echo "expected wiki export even when optional doc-extract install fails"
+  exit 1
+}
+[[ ! -e "$HOME_FAIL/.agents/skills/doc-extract" ]] || {
+  echo "did not expect doc-extract export when optional install fails"
+  exit 1
+}
+
+HOME_CONFLICT="$TMP/home-conflict"
+mkdir -p "$HOME_CONFLICT/.claude/skills/wiki"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_CONFLICT" bash "$ROOT/install.sh" >"$TMP/install-conflict.log" 2>&1; then
+  echo "expected install to fail when canonical wiki entrypoint is a real directory"
+  exit 1
+fi
+grep -q 'не є symlink' "$TMP/install-conflict.log" || {
+  echo "expected clear non-symlink canonical conflict message"
   exit 1
 }
 

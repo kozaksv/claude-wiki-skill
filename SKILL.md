@@ -81,7 +81,7 @@ The eight operations are a **palette**, not a checklist. A code project might us
 
 **Before any operation**, locate both the wiki directory and its schema. Follow this sequence:
 
-1. **Find agent instruction files** — look in the current working directory, then walk up parent directories for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections; `CLAUDE.md` is the legacy/default source when only one convention can be followed.
+1. **Find agent instruction files** — look in the current working directory, then walk up parent directories for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections. If their wiki pointers conflict, prefer the active agent's instruction file when the active agent is clear; otherwise prefer an existing wiki directory found on disk and flag the conflict during the next lint.
 2. **Read the Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
 3. **Verify wiki exists** — check that the discovered directory contains `index.md`
 4. **If no Wiki section exists** — search for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory
@@ -103,7 +103,7 @@ _Note: this is a v3 evolution from Karpathy's original pattern, which placed sch
 
 ## Versioning & Migration
 
-Every wiki has a version stored in `{wiki}/schema.md` frontmatter:
+Every wiki has a schema version stored in `{wiki}/schema.md` frontmatter. This is the wiki schema major line, not every skill release:
 
 ```yaml
 ---
@@ -112,7 +112,7 @@ last_migration: "2026-05-01"
 ---
 ```
 
-The skill itself has a version in this file's frontmatter (`version: "4.2.0"`).
+The skill itself has a version in this file's frontmatter (`version: "4.2.0"`). For state detection, compare the schema major (`4` for `4.0`, `4.1`, `4.2`) with the skill major (`4` for `4.2.0`). v4.1/v4.2 changed agent behavior and installer behavior, not the on-disk wiki schema; a fresh v4.2 skill can still create `wiki_version: "4.0"` and be current.
 
 ### State detection on Step 0
 
@@ -120,10 +120,10 @@ After locating the wiki and reading `schema.md`, compare versions:
 
 | State | Condition | Action |
 |---|---|---|
-| `current` | `wiki_version` == skill major version | Continue with operation |
+| `current` | schema major from `wiki_version` == skill major version | Continue with operation |
 | `legacy` | Wiki exists but `wiki_version` field absent in frontmatter | Identify version interactively, then propose migration |
-| `older` | `wiki_version` < skill version | Generate migration plan, ask user once |
-| `newer` | `wiki_version` > skill version | Warn user, ask whether to continue |
+| `older` | schema major from `wiki_version` < skill major version | Generate migration plan, ask user once |
+| `newer` | schema major from `wiki_version` > skill major version | Warn user, ask whether to continue |
 | `absent` | No wiki found | Defer to Init operation (bootstrap) |
 
 ### Migration plan format
@@ -159,6 +159,12 @@ Wiki migrations involve directory/file creation, gitignore changes, and frontmat
 - Added Tiered crystallization
 - Added `wiki status` operation
 - Reformulated Lint as Karpathy content-verification
+
+### 4.1 (2026-05-07)
+- No schema migration. Skill behavior changed: removed user-runnable script crystallization tier and added proactive query triggers.
+
+### 4.2 (2026-05-14)
+- No schema migration. Installer/discovery behavior changed: Claude-first cross-agent exports and agent-neutral instruction-file discovery.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.
@@ -259,7 +265,7 @@ The wiki is not just a passive store — it is a feedback loop. After meaningful
 Reflection has two purposes:
 
 1. **Visible reasoning** — a short, predictable block that lets the user verify the agent didn't just edit files, it actually thought about the diff. Hermes-style silent telemetry stays in `.usage.json`; РЕФЛЕКСІЯ is the loud counterpart.
-2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving so the next session doesn't have to re-derive it?". Crystallization is documented in the subsection below; the reflection block names what was crystallized in the `Автоматизував:` field (one of `wiki — concepts/{name}.md`, `skill — delegated to writing-skills`, or `нічого` with reason).
+2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving so the next session doesn't have to re-derive it?". Crystallization is documented in the subsection below; the reflection block names what was crystallized in the `Автоматизував:` field (one of `wiki — concepts/{name}.md`, `skill — delegated to writing-skills`, `skill — created at {path}`, or `нічого` with reason).
 
 Reflection fires on **events**, not on a timer the skill maintains. The agent is responsible for self-checking the trigger conditions on every operation — there is no harness-side counter.
 
@@ -273,7 +279,7 @@ Print this verbatim at the end of a triggered turn. Do not paraphrase the field 
 Дізнався: {one sentence — what new insight emerged}
 Чому це краще: {one or two sentences — why it works, why this approach}
 Зберіг у wiki: [[page-a]], [[page-b]]   (or: «не торкав wiki — нічого синтетичного»)
-Автоматизував: {wiki — concepts/{name}.md  /  skill — delegated to writing-skills  /  нічого + причина}
+Автоматизував: {wiki — concepts/{name}.md  /  skill — delegated to writing-skills  /  skill — created at {path}  /  нічого + причина}
 
 [ONLY if structural files were touched (index.md / schema.md / log.md / .usage.json):]
 Перевірив:
@@ -309,6 +315,8 @@ The trailing horizontal-rule + cleanup-prompt is part of the block — see "Clea
 - **Memory flush** — only fires on the user-explicit phrase ("save before /compress" / "збережи перед стисненням" / "flush memory"). Document in your reply that you cannot detect impending compression unprompted.
 
 Treat hard events (TodoWrite-completion, pre-commit, explicit user) as the reliable signals. Periodic nudge is a backup.
+
+For agents without a TodoWrite-like plan/todo tool, the TodoWrite-completion trigger is simply unavailable. Reflection and crystallization still fire on pre-commit, explicit user requests, memory-flush requests, and periodic nudges.
 
 ### Field rules
 
@@ -389,7 +397,7 @@ A concrete wiki example:
 
 ### Skill creation / delegation
 
-A skill has the highest bar — its own SKILL.md, conventions, evals, and trigger-description. If the active agent has access to a dedicated skill-authoring helper (for example `superpowers:writing-skills`), delegate there because it knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; the helper knows skill conventions.
+A skill has the highest bar — its own SKILL.md, conventions, evals, and trigger-description. If the active agent has access to a dedicated skill-authoring helper (for example `superpowers:writing-skills` in Claude, or a native skill-authoring helper in Codex/Gemini), delegate there because it knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; the helper knows skill conventions.
 
 If the active agent does **not** have such a helper (common in Codex/Gemini contexts), create the SKILL.md directly after explicit user approval. Use the current agent's user skill registry:
 
@@ -1379,7 +1387,7 @@ Numbering continues from the AUTO/DECIDE buckets. INFO items are noted by defaul
 - **🟡** Потребує рішення — show only when DECIDE bucket has ≥ 1 finding.
 - **🔵** Примітки — each line has a trigger; the block appears only when **at least one** triggers:
   - **Захищені** — only when `K > 0`. Don't introduce the protect concept to users who haven't protected anything; «Захищених: 0» is noise.
-  - **Версія схеми** — only on **mismatch** between `{wiki}/schema.md`'s `wiki_version` and the skill's frontmatter version. When they match, this line is redundant fog.
+  - **Версія схеми** — only on **schema major mismatch** between `{wiki}/schema.md`'s `wiki_version` and the skill frontmatter version. When schema majors match, this line is redundant fog.
   - **Велика сторінка** — only when at least one page is > 200 lines **and not already in 🟡** as a split candidate (otherwise it'd be duplicated). When the skill judged a large page coherent and decided not to split, this line is the FYI; when it judged it splittable, the 🟡 entry covers it.
 
 If all three 🔵 lines lack triggers, omit the 🔵 block entirely.
@@ -1454,16 +1462,16 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Discovery
 
-1. **Find agent instruction files** (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`; walk up dirs from cwd). Use an existing file when present. If none exists during fresh bootstrap, create the pointer file that matches the active agent (`CLAUDE.md` for Claude, `AGENTS.md` for Codex, `GEMINI.md` for Gemini). If the active agent is unclear, default to `CLAUDE.md` for legacy compatibility.
+1. **Find agent instruction files** (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`; walk up dirs from cwd). Use existing files when present and keep their wiki pointers in sync. If none exists during fresh bootstrap, create the pointer file that matches the active agent (`CLAUDE.md` for Claude, `AGENTS.md` for Codex, `GEMINI.md` for Gemini). If the active agent is unclear, ask which agent file to create; only default to `CLAUDE.md` when the user wants the legacy convention or does not care.
 2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
 
    | State | Condition | Action |
    |---|---|---|
    | `absent` | No `docs/wiki/` exists | Bootstrap from scratch (proceed to project-type detection + Plan below) |
    | `legacy` | Wiki exists but no `wiki_version` field in `schema.md` frontmatter | Identify version interactively, then propose migration |
-   | `current` | `wiki_version` matches skill's version | Nothing to do — abort Init, tell user wiki is up to date |
-   | `older` | `wiki_version` < skill's version | Generate migration plan, ask user once |
-   | `newer` | `wiki_version` > skill's version | Warn user, ask whether to continue |
+   | `current` | schema major from `wiki_version` matches skill major | Nothing to do — abort Init, tell user wiki is up to date |
+   | `older` | schema major from `wiki_version` < skill major | Generate migration plan, ask user once |
+   | `newer` | schema major from `wiki_version` > skill major | Warn user, ask whether to continue |
 
 3. **Scan project for migration candidates** (only if state is `legacy` or `older`):
    - Raw binaries (PDF, DOCX, images, spreadsheets) in non-hidden, non-wiki dirs
@@ -1516,13 +1524,13 @@ For a fresh wiki (state = `absent`), present this single-block plan after projec
   6. docs/wiki/transcripts/ — порожня папка
   7. docs/wiki/.usage.json — порожній dict {}
   8. archive/ — поза wiki (gitignored)
-  9. Agent instruction file — додати 1-line pointer "Wiki schema → docs/wiki/schema.md" (if no instruction file exists: active agent default, or `CLAUDE.md` when unclear)
+  9. Agent instruction file(s) — додати 1-line pointer "Wiki schema → docs/wiki/schema.md" to every existing instruction file; if none exists, create the active-agent default (or ask when unclear)
   10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
 
 [y] так, створи все  /  [n] скасувати
 ```
 
-After confirmation (`y`), execute all 10 steps in order using the Execute checklist below. After execution, append `## [{today}] init | bootstrap fresh wiki v4.0` to `log.md`. On `n`, abort and leave the project untouched.
+After confirmation (`y`), execute all 10 steps in order using the Execute checklist below. After execution, append `## [{today}] init | bootstrap fresh wiki schema v4` to `log.md`. On `n`, abort and leave the project untouched.
 
 ### Execute
 
@@ -1546,7 +1554,7 @@ After consent:
    ---
    ```
 
-   Add a single `## Wiki` pointer in the active agent instruction file (`CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`): _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace them with the pointer.
+   Add a single `## Wiki` pointer in every discovered agent instruction file (`CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`): _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ If no instruction file exists, create the active-agent default first (ask the user when unclear). For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace them with the pointer.
 6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
@@ -1629,7 +1637,7 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Writing wiki schema into an instruction file on init | Schema belongs in `{wiki}/schema.md`. Instruction files only get a 1-line pointer. |
 | Maintaining duplicate schema in both locations | Collapse to `{wiki}/schema.md` only. Leave 1-line pointer in the instruction file. |
 | Auto-flagging staleness by timestamp | Use Karpathy content-verification — read pages and judge claims. Telemetry is for prioritization, not flagging. |
-| Creating crystallization artifact silently | Skill ALWAYS proposes (y/n/пізніше). Never `Write` a wiki page or hand off to writing-skills without explicit user approval. |
+| Creating crystallization artifact silently | Skill ALWAYS proposes (y/n/пізніше). Never `Write` a wiki page, create a skill, or hand off to a skill-authoring helper without explicit user approval. |
 | Proposing `scripts/*.sh` or `scripts/*.py` as crystallization | Removed in v4.1 — user-runnable scripts violate Division of Labor (mechanical work belongs to LLM, not user). Crystallize content as a wiki page the agent reads back, or run inline at the moment of need. |
 | Treating `.usage.json` as user-visible | It's metadata, gitignored, per-clone. Don't mention specific counter values to user unless `wiki status` is invoked. |
 | Migrating `wiki_version` silently | Migration is explicit plan-then-confirm for structural changes. Only field-level backfill in `.usage.json` is silent. |
