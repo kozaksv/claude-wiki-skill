@@ -399,10 +399,13 @@ A concrete wiki example:
 
 A skill has the highest bar — its own SKILL.md, conventions, evals, and trigger-description. If the active agent has access to a dedicated skill-authoring helper (for example `superpowers:writing-skills` in Claude, or a native skill-authoring helper in Codex/Gemini), delegate there because it knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; the helper knows skill conventions.
 
-If the active agent does **not** have such a helper (common in Codex/Gemini contexts), create the SKILL.md directly after explicit user approval. Use the current agent's user skill registry:
+If the active agent does **not** have such a helper (common in Codex/Gemini contexts), create the SKILL.md directly after explicit user approval. Use the same Claude-first topology as the installer so future client changes do not strand the skill in one agent's private registry:
 
-- Claude-first stack: create canonical `~/.claude/skills/{name}/SKILL.md`, and for cross-agent availability create exports `~/.agents/skills/{name}` and `~/.gemini/skills/{name}` pointing to the Claude entrypoint.
-- Codex/Gemini-only stack: create `~/.agents/skills/{name}/SKILL.md` as the neutral user-skill location. If Gemini requires a direct path, add `~/.gemini/skills/{name}` as a symlink export.
+- Canonical skill: `~/.claude/skills/{name}/SKILL.md`
+- Codex export: `~/.agents/skills/{name}` → `~/.claude/skills/{name}`
+- Gemini export: `~/.gemini/skills/{name}` → `~/.claude/skills/{name}`
+
+This applies even when the user currently works only from Codex or Gemini. `~/.claude/skills/` is the shared canonical registry for this stack; it does not require Claude Code to be installed.
 
 Keep the generated skill minimal: frontmatter with `name` and trigger-only `description`, concise instructions, and no extra README unless the target skill format explicitly requires it.
 
@@ -415,7 +418,7 @@ The skill proposal therefore looks slightly different — it asks for permission
    [y] створи  /  [n] не зараз  /  [пізніше]
 ```
 
-On `y`, prefer handing off to `superpowers:writing-skills` when available, with a one-paragraph brief describing the flow, triggers, and intended scope. If no helper is available, create the skill directly in the registry described above and show the path. The reflection's `Автоматизував:` field records either `skill — delegated to writing-skills (subject: {brief})` or `skill — created at {path}`.
+On `y`, prefer handing off to `superpowers:writing-skills` when available, with a one-paragraph brief describing the flow, triggers, intended scope, and the Claude-first canonical + symlink export topology. If no helper is available, create the skill directly in the registry described above and show the path. The reflection's `Автоматизував:` field records either `skill — delegated to writing-skills (subject: {brief})` or `skill — created at {path}`.
 
 ### Anti-noise rules for crystallization
 
@@ -821,8 +824,12 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    Єдиний шлях до LLM — явне рішення юзера у відповідь на exit 10.
    Це уникає дорогих silent fallback'ів.
 
-   Если `doc-extract` скіл відсутній — повідом юзера, покажи
-   install-команду: `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-doc-extract-skill/main/install.sh | bash`
+   Якщо `doc-extract` скіл відсутній — повідом юзера, покажи
+   install-команду wiki stack'а: `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash`.
+   Do not send the user to the standalone `doc-extract` installer here: the wiki
+   installer provisions the dependency and creates the cross-agent exports
+   (`~/.agents/skills/doc-extract`, `~/.gemini/skills/doc-extract`) expected by
+   the command above.
 5. **Move binary → `archive/{path}/{slug}.{ext}`** (per File Naming convention)
 6. **Create entity page → `entities/{category}/{slug}.md`:**
    - Frontmatter (type=entity, category, key, binary, transcript, project-specific fields)

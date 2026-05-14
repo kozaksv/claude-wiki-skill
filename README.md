@@ -19,7 +19,7 @@ Exports created by install.sh:
 
 `doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на Claude entrypoint, а не на `realpath`: якщо користувач перемкне Claude-версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і завжди ставиться з `main`, незалежно від pinned версії wiki skill.
 
-`~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
+`~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
 
 ## What changed in v4.2
 
@@ -208,6 +208,6 @@ rm -rf ~/claude-wiki-skill ~/claude-doc-extract-skill
 
 ## Вимоги
 
-- [Claude Code](https://claude.ai/claude-code)
-- Для Codex/Gemini support достатньо створених symlink exports; окрема інсталяція не потрібна.
+- Claude Code, Codex або Gemini CLI
+- Для cross-agent support достатньо створених symlink exports; окрема інсталяція під кожен агент не потрібна.
 - Інсталятор створює `~/.claude/skills/wiki` як canonical registry навіть якщо користувач працює лише з Codex або Gemini; це не вимагає встановленого Claude.
