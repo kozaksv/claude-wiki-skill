@@ -16,7 +16,7 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 
 ### Eight operations cross-referenced from intro/frontmatter
 
-- ✅ Frontmatter `description` lists all 8 by name (init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki-status).
+- ✅ Frontmatter `description` lists all 8 by name (init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki status).
 - ✅ `## Modularity` paragraph: "The eight operations are a palette, not a checklist."
 - ✅ All 8 `## Operation: <Name>` headers present — no orphan operations described elsewhere.
 

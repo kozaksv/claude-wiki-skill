@@ -6,24 +6,27 @@
 
 ## Cross-agent install model
 
-Інсталятор zero-config і Claude-first: користувач запускає одну команду, а скіл стає доступним для трьох агентів.
+Інсталятор zero-config зі спільним canonical registry: користувач запускає одну команду, а скіл стає доступним для трьох агентів.
 
 ```text
-Canonical install:
-  ~/.claude/skills/wiki
+Git clone:
+  ~/claude-wiki-skill
+
+Canonical entrypoint:
+  ~/.claude/skills/wiki  ->  ~/claude-wiki-skill
 
 Exports created by install.sh:
   ~/.agents/skills/wiki  -> ~/.claude/skills/wiki
   ~/.gemini/skills/wiki  -> ~/.claude/skills/wiki
 ```
 
-`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на Claude entrypoint, а не на `realpath`: якщо користувач перемкне Claude-версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і завжди ставиться з `main`, незалежно від pinned версії wiki skill.
+`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і завжди ставиться з `main`, незалежно від pinned версії wiki skill.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
 
 ## What changed in v4.2
 
-- **Claude-first, cross-agent installer.** `install.sh` ставить canonical skill у `~/.claude/skills/wiki`, а потім створює symlink exports для Codex/Gemini.
+- **Shared canonical cross-agent installer.** `install.sh` ставить canonical skill у `~/.claude/skills/wiki`, а потім створює symlink exports для Codex/Gemini.
 - **Agent-neutral discovery.** Wiki discovery читає `CLAUDE.md`, `AGENTS.md`, і `GEMINI.md`, а не тільки Claude-specific інструкції.
 - **Installer safety tests.** Додано shell-тест для fresh install, idempotency, broken symlink replacement, conflict preservation, і reachability через exports.
 
@@ -85,7 +88,7 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 
 | Тег | Що це |
 |---|---|
-| `master` *(рекомендується, v4.2.0-dev)* | v4.1 + Claude-first cross-agent exports для Codex/Gemini + agent-neutral discovery |
+| `master` *(рекомендується, v4.2.0-dev)* | v4.1 + shared canonical cross-agent exports для Codex/Gemini + agent-neutral discovery |
 | **v4.0.0** | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization (4 рівні зі скриптами), cleanup-flow, page protection, 8 операцій |
 | **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement |
 
@@ -116,6 +119,8 @@ URL у курлі завжди вказує на `master/install.sh` — це с
 - **Empty проєкт** — створить `docs/wiki/{concepts,entities,transcripts}/`, `archive/`, `index.md`, `log.md`, `schema.md` (з frontmatter `wiki_version: "4.0"` і Migration Log), `.usage.json`; додасть 1-line pointer на `schema.md` в усі наявні agent instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), або створить файл активного агента якщо таких файлів ще немає
 - **Існуючі raw-теки з артефактами** (bootstrap) — проаналізує, запропонує план міграції: які MDs стануть concepts, які бінарники підуть в `archive/`, які дублі видалити. Кожна група — з окремим consent'ом
 - **Існуюча v1-wiki** (concepts only) — доповнить structure (entities/, transcripts/, archive/)
+
+Якщо в проєкті немає жодного `CLAUDE.md`, `AGENTS.md` або `GEMINI.md` і активний агент неочевидний, скіл запитає, який instruction file створити. Якщо агент очевидний із середовища, він створить відповідний файл автоматично.
 
 Після ініціалізації wiki працює автоматично у всіх сесіях цього проєкту — скіл знаходить її через `## Wiki` секцію в `CLAUDE.md`, `AGENTS.md` або `GEMINI.md`.
 
@@ -196,6 +201,8 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 
 ## Видалення
 
+Перед видаленням реальних clone-директорій перевірте, що в `~/claude-wiki-skill` або `~/claude-doc-extract-skill` немає ваших незбережених локальних змін.
+
 ```bash
 rm ~/.claude/skills/wiki
 rm ~/.claude/skills/doc-extract
@@ -204,6 +211,7 @@ rm ~/.gemini/skills/wiki
 rm ~/.agents/skills/doc-extract
 rm ~/.gemini/skills/doc-extract
 rm -rf ~/claude-wiki-skill ~/claude-doc-extract-skill
+rmdir ~/.agents/skills ~/.agents ~/.gemini/skills ~/.gemini 2>/dev/null || true
 ```
 
 ## Вимоги

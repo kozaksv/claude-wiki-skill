@@ -17,6 +17,21 @@ DOC_EXTRACT_REF="main"
 
 set_skill_link() {
   local name="$1" target_dir="$2" link="$3"
+  if [ -L "$link" ]; then
+    local current
+    current="$(readlink "$link")"
+    if [ "$current" = "$target_dir" ]; then
+      ln -sfn "$target_dir" "$link"
+      return 0
+    fi
+    if [ ! -e "$link" ]; then
+      echo "[$name] замінюю битий canonical link: $link"
+      ln -sfn "$target_dir" "$link"
+      return 0
+    fi
+    echo "Помилка: $link вже вказує на $current — не перезаписую canonical link. Видаліть його вручну або перемкніть самостійно."
+    return 1
+  fi
   if [ -e "$link" ] && [ ! -L "$link" ]; then
     echo "Помилка: $link вже існує і не є symlink. Видаліть або перейменуйте вручну і спробуйте знову."
     return 1
@@ -24,11 +39,22 @@ set_skill_link() {
   ln -sfn "$target_dir" "$link"
 }
 
+ensure_ref_exists() {
+  local name="$1" dir="$2" ref="$3"
+  if git -C "$dir" rev-parse --verify --quiet "$ref^{commit}" >/dev/null ||
+     git -C "$dir" rev-parse --verify --quiet "origin/$ref^{commit}" >/dev/null; then
+    return 0
+  fi
+  echo "Помилка: ref '$ref' не знайдено для $name. Перевірте доступні теги/гілки або запустіть без аргумента для master."
+  return 1
+}
+
 install_skill_at_ref() {
   local name="$1" repo="$2" dir="$3" link="$4" ref="$5"
   if [ -d "$dir/.git" ]; then
     echo "[$name] репо вже існує — переключаю на $ref..."
     git -C "$dir" fetch --tags --force origin || return 1
+    ensure_ref_exists "$name" "$dir" "$ref" || return 1
     git -C "$dir" checkout "$ref" || return 1
     if git -C "$dir" symbolic-ref -q HEAD >/dev/null; then
       git -C "$dir" pull --ff-only || return 1
@@ -40,6 +66,7 @@ install_skill_at_ref() {
     fi
     echo "[$name] клоную $repo → $dir..."
     git clone "$repo" "$dir" || return 1
+    ensure_ref_exists "$name" "$dir" "$ref" || return 1
     git -C "$dir" checkout "$ref" || return 1
   fi
   set_skill_link "$name" "$dir" "$link"
@@ -88,18 +115,20 @@ mkdir -p "$SKILLS_ROOT"
 # 1. Wiki skill — користувацький pin (за замовчуванням master)
 install_skill_at_ref "wiki" "$REPO" "$SKILL_DIR" "$SKILL_LINK" "$WIKI_VERSION"
 
-# 2. Cross-agent wiki exports — Claude лишається canonical registry.
+# 2. Cross-agent wiki exports — ~/.claude/skills лишається shared canonical registry.
 # Codex uses ~/.agents/skills as its shared user skill path in the current
 # Codex skill runtime. Gemini CLI documents ~/.gemini/skills and
 # ~/.agents/skills as user-skill discovery locations:
 # https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
-# Лінкуємо на Claude entrypoint, не на realpath, щоб перемикання Claude-версії
+# Лінкуємо на canonical entrypoint, не на realpath, щоб перемикання canonical версії
 # автоматично підхоплювали Codex і Gemini.
 export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"
 export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"
 
-# 3. doc-extract (optional dependency for ingest-binary). Keep wiki available
-# even if this dependency cannot be installed; text/source wiki operations still work.
+# 3. doc-extract (optional dependency for ingest-binary). It tracks main because
+# its extractor CLI is treated as a stable integration contract for the wiki.
+# Keep wiki available even if this dependency cannot be installed; text/source
+# wiki operations still work.
 DOC_EXTRACT_INSTALLED=0
 if install_skill_at_ref "doc-extract" "$DOC_EXTRACT_REPO" "$DOC_EXTRACT_DIR" "$DOC_EXTRACT_LINK" "$DOC_EXTRACT_REF"; then
   DOC_EXTRACT_INSTALLED=1
@@ -112,7 +141,7 @@ fi
 echo ""
 echo "Готово! Встановлено:"
 echo "  $SKILL_LINK → $SKILL_DIR  (@ $WIKI_VERSION)"
-echo "Cross-agent exports (symlinks to Claude canonical):"
+echo "Cross-agent exports (symlinks to shared canonical):"
 echo "  $AGENTS_SKILLS_ROOT/wiki → $SKILL_LINK"
 echo "  $GEMINI_SKILLS_ROOT/wiki → $SKILL_LINK"
 if [ "$DOC_EXTRACT_INSTALLED" -eq 1 ]; then

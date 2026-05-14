@@ -4,7 +4,7 @@ version: "4.2.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern) — three layers (concepts,
   entities, transcripts) plus archive/ for binaries. Eight operations:
-  init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki-status.
+  init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki status.
   Triggers: "ingest"/"додай до wiki/вікі", "wiki/вікі lint/query/cleanup/status",
   "оновити/перевір wiki/вікі", "що каже wiki про...", "знайди у вікі",
   any binary in tmp/. "вікі" = "wiki". Also use PROACTIVELY: (a) after feat/
@@ -164,7 +164,7 @@ Wiki migrations involve directory/file creation, gitignore changes, and frontmat
 - No schema migration. Skill behavior changed: removed user-runnable script crystallization tier and added proactive query triggers.
 
 ### 4.2 (2026-05-14)
-- No schema migration. Installer/discovery behavior changed: Claude-first cross-agent exports and agent-neutral instruction-file discovery.
+- No schema migration. Installer/discovery behavior changed: shared canonical cross-agent exports and agent-neutral instruction-file discovery.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.
@@ -214,9 +214,9 @@ All ten fields are present for every record. Timestamps are ISO 8601 UTC. `state
 
 | Field | Meaning in wiki | When to increment |
 |---|---|---|
-| `view_count` / `last_viewed_at` | view = consult | You read the page via the `Read` tool (level-1 disclosure during Query, Lint, Ingest) |
+| `view_count` / `last_viewed_at` | view = consult | You read the page file (Claude `Read`, Codex/Gemini equivalent file-read; level-1 disclosure during Query, Lint, Ingest) |
 | `use_count` / `last_used_at` | use = synthesis-applied | The page is cited as `[[wikilink]]` in a new or updated page body |
-| `patch_count` / `last_patched_at` | patch = modified | You perform `Edit` or `Write` on the page |
+| `patch_count` / `last_patched_at` | patch = modified | You modify the page file (Claude `Edit`/`Write`, Codex `apply_patch`, Gemini equivalent edit/write) |
 | `created_at` | birth timestamp | Set once on first record creation; never changes |
 | `state`, `protected`, `archived_at` | forward-compat | v4.0 does not write these except defaults (`"active"`, `false`, `null`) |
 
@@ -226,9 +226,9 @@ These are the actions you must perform on `.usage.json` during operations. Read 
 
 | Action | When to call | Effect |
 |---|---|---|
-| `bump_view(path)` | After reading a wiki page with the `Read` tool | `view_count += 1`; `last_viewed_at = now`; create record if absent |
+| `bump_view(path)` | After reading a wiki page file | `view_count += 1`; `last_viewed_at = now`; create record if absent |
 | `bump_use(path)` | After adding a new `[[wikilink]]` to `path` from another page's body | `use_count += 1`; `last_used_at = now`; create record if absent |
-| `bump_patch(path)` | After `Edit`/`Write` on the page (including new file creation) | `patch_count += 1`; `last_patched_at = now`; create record with `created_at = now` if absent |
+| `bump_patch(path)` | After modifying the page (including new file creation) | `patch_count += 1`; `last_patched_at = now`; create record with `created_at = now` if absent |
 | `forget(path)` | After `Cleanup` deletes an orphan, after `Split` deletes the original | Remove the key from the dict |
 | `report()` | During `Lint` and `wiki status` | Return the full sortable list (path + all fields) for prioritization |
 
@@ -299,8 +299,8 @@ The trailing horizontal-rule + cleanup-prompt is part of the block — see "Clea
 
 | Event | Fires reflection? | Notes |
 |---|---|---|
-| Last todo in TodoWrite → `completed` | ✅ | Hard event — fires once per todo-list completion |
-| TodoWrite cleared (all todos removed) | ✅ | Treat as completion |
+| Task/todo item → `completed` in the active agent's plan tool | ✅ | Hard event — fires once per todo-list completion |
+| Plan/todo list cleared (all todos removed) | ✅ | Treat as completion |
 | Pre-commit moment (immediately before `git commit`) | ✅ | Hard event — paired with crystallization nudge |
 | Both above within ~60 seconds | One block, deduplicated | Don't double-fire when a todo completes and you commit right after |
 | Memory flush (user says "save before /compress" or "flush memory") | ✅ | User-explicit — the harness does not signal compression to skills |
@@ -314,7 +314,7 @@ The trailing horizontal-rule + cleanup-prompt is part of the block — see "Clea
 - **Periodic nudge** — on every wiki operation, briefly check whether ~15 tool calls have happened since the last reflection block was emitted. If yes, fire a reflection. This is approximate self-checking, not a precise counter.
 - **Memory flush** — only fires on the user-explicit phrase ("save before /compress" / "збережи перед стисненням" / "flush memory"). Document in your reply that you cannot detect impending compression unprompted.
 
-Treat hard events (TodoWrite-completion, pre-commit, explicit user) as the reliable signals. Periodic nudge is a backup.
+Treat hard events (task-completion, pre-commit, explicit user) as the reliable signals. Periodic nudge is a backup.
 
 For agents without a TodoWrite-like plan/todo tool, the TodoWrite-completion trigger is simply unavailable. Reflection and crystallization still fire on pre-commit, explicit user requests, memory-flush requests, and periodic nudges.
 
@@ -362,10 +362,10 @@ The reflection's `Автоматизував:` field isn't decorative — it's t
 |---|---|---|
 | Periodic nudge | Every ~15 tool-calling iterations since the last crystallization check | Self-checked. On each operation, briefly notice whether ~15 tool calls have passed; if yes, ask yourself "є щось варте автоматизації?" and surface a proposal if the answer is yes. The skill is purely instructional — there is no harness-side counter; the model is responsible for self-pacing. |
 | Pre-commit | Immediately before `git commit` | Hard trigger — paired with reflection. Always check for crystallization candidates at this moment. |
-| TodoWrite-completion | Last todo → `completed` | Hard trigger — paired with reflection. |
+| Task-completion | Last todo/plan item → `completed` | Hard trigger — paired with reflection. |
 | Pre-compression flush | User-explicit ("save before /compress" / "збережи перед стисненням") | Guaranteed turn for writing crystallizable patterns out before context is lost. The harness does not signal compression to skills, so this depends on the user. |
 | Explicit user | "збережи у вікі" / "винеси в скіл" / "save as wiki page" | Manual override — skip judgment, go straight to proposal at the requested type. If the user asks for a script (`scripts/*.sh` / `*.py`), explain that this skill no longer crystallizes user-runnable scripts (Division of Labor) and offer the wiki-page equivalent. The user can still create a script manually if they want — the skill just doesn't propose it. |
-| Disabled | `nudge_interval: 0` in `{wiki}/schema.md` frontmatter | Disables the periodic nudge only. Hard triggers (pre-commit, TodoWrite-completion, explicit user) still fire. |
+| Disabled | `nudge_interval: 0` in `{wiki}/schema.md` frontmatter | Disables the periodic nudge only. Hard triggers (task-completion, pre-commit, explicit user) still fire. |
 
 The default cadence (~15 iterations) can be overridden per-wiki via `nudge_interval: <N>` in `schema.md` frontmatter — see `## Versioning & Migration` for the knob.
 
@@ -399,7 +399,7 @@ A concrete wiki example:
 
 A skill has the highest bar — its own SKILL.md, conventions, evals, and trigger-description. If the active agent has access to a dedicated skill-authoring helper (for example `superpowers:writing-skills` in Claude, or a native skill-authoring helper in Codex/Gemini), delegate there because it knows skill conventions (frontmatter format, evals, naming, the broader skill ecosystem). This skill knows wiki conventions; the helper knows skill conventions.
 
-If the active agent does **not** have such a helper (common in Codex/Gemini contexts), create the SKILL.md directly after explicit user approval. Use the same Claude-first topology as the installer so future client changes do not strand the skill in one agent's private registry:
+If the active agent does **not** have such a helper (common in Codex/Gemini contexts), create the SKILL.md directly after explicit user approval. Use the same shared canonical topology as the installer so future client changes do not strand the skill in one agent's private registry:
 
 - Canonical skill: `~/.claude/skills/{name}/SKILL.md`
 - Codex export: `~/.agents/skills/{name}` → `~/.claude/skills/{name}`
@@ -418,7 +418,7 @@ The skill proposal therefore looks slightly different — it asks for permission
    [y] створи  /  [n] не зараз  /  [пізніше]
 ```
 
-On `y`, prefer handing off to `superpowers:writing-skills` when available, with a one-paragraph brief describing the flow, triggers, intended scope, and the Claude-first canonical + symlink export topology. If no helper is available, create the skill directly in the registry described above and show the path. The reflection's `Автоматизував:` field records either `skill — delegated to writing-skills (subject: {brief})` or `skill — created at {path}`.
+On `y`, prefer handing off to `superpowers:writing-skills` when available, with a one-paragraph brief describing the flow, triggers, intended scope, and the shared canonical + symlink export topology. If no helper is available, create the skill directly in the registry described above and show the path. The reflection's `Автоматизував:` field records either `skill — delegated to writing-skills (subject: {brief})` or `skill — created at {path}`.
 
 ### Anti-noise rules for crystallization
 
@@ -797,14 +797,27 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
 3. **Propose slug** — from filename + date + parties;
    ask user to confirm or edit
 4. **Extract text → transcript (via `doc-extract` skill):**
-   Use the neutral export path below. In the default installer stack this is a
-   symlink to the Claude-first canonical entrypoint (`~/.claude/skills/doc-extract`),
-   so all agents run the same dependency while avoiding Claude-only command text.
+   Prefer the neutral export path. If it is missing or broken, fall back to the
+   shared canonical entrypoint (`~/.claude/skills/doc-extract`). This makes the
+   contract explicit: `~/.agents/skills/doc-extract` is the cross-agent default,
+   while `~/.claude/skills/doc-extract` is the recovery path when the export was
+   removed or not yet created.
 
    Call:
    ```bash
-   bash ~/.agents/skills/doc-extract/bin/extract.sh <source_file> \
-     --out <wiki>/transcripts/<slug>.md \
+   SOURCE_FILE="<source_file>"
+   TRANSCRIPT_OUT="<wiki>/transcripts/<slug>.md"
+   DOC_EXTRACT_ROOT="$HOME/.agents/skills/doc-extract"
+   if [ ! -x "$DOC_EXTRACT_ROOT/bin/extract.sh" ]; then
+     DOC_EXTRACT_ROOT="$HOME/.claude/skills/doc-extract"
+   fi
+   if [ ! -x "$DOC_EXTRACT_ROOT/bin/extract.sh" ]; then
+     echo "doc-extract не знайдено. Повторіть інсталяцію wiki stack:"
+     echo "curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash"
+     exit 1
+   fi
+   bash "$DOC_EXTRACT_ROOT/bin/extract.sh" "$SOURCE_FILE" \
+     --out "$TRANSCRIPT_OUT" \
      --format md
    ```
 
@@ -815,7 +828,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
      Варіанти: (1) вручну → summary, (2) vision-capable file read if this agent supports it, explicit and potentially expensive,
      (3) пропустити". Wait for user decision.
    - `20` (missing_dependency) — STOP. Run
-     `bash ~/.agents/skills/doc-extract/bin/doctor.sh`, show output,
+     `bash "$DOC_EXTRACT_ROOT/bin/doctor.sh"`, show output,
      ask user to install missing deps, then retry.
    - `30` (unsupported_format) — ask user to skip or convert first.
    - `40/50` — caller bug, show stderr.
@@ -1469,7 +1482,7 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Discovery
 
-1. **Find agent instruction files** (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`; walk up dirs from cwd). Use existing files when present and keep their wiki pointers in sync. If none exists during fresh bootstrap, create the pointer file that matches the active agent (`CLAUDE.md` for Claude, `AGENTS.md` for Codex, `GEMINI.md` for Gemini). If the active agent is unclear, ask which agent file to create; only default to `CLAUDE.md` when the user wants the legacy convention or does not care.
+1. **Find agent instruction files** (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`; walk up dirs from cwd). Use existing files when present and keep their wiki pointers in sync. Infer the active agent from the runtime context when it is explicit (Claude → `CLAUDE.md`, Codex → `AGENTS.md`, Gemini → `GEMINI.md`). If none exists during fresh bootstrap, create the pointer file that matches the active agent. If the active agent is unclear, ask which agent file to create; only default to `CLAUDE.md` when the user wants the legacy convention or does not care.
 2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
 
    | State | Condition | Action |

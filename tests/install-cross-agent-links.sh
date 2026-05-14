@@ -27,6 +27,17 @@ if [[ "${1:-}" == "-C" ]]; then
       fi
       exit 0
       ;;
+    rev-parse)
+      ref="${@: -1}"
+      case "$ref" in
+        master*|origin/master*|main*|origin/main*)
+          exit 0
+          ;;
+        *)
+          exit 1
+          ;;
+      esac
+      ;;
     symbolic-ref)
       exit 0
       ;;
@@ -159,6 +170,33 @@ if PATH="$BIN_DIR:$PATH" HOME="$HOME_CONFLICT" bash "$ROOT/install.sh" >"$TMP/in
 fi
 grep -q 'не є symlink' "$TMP/install-conflict.log" || {
   echo "expected clear non-symlink canonical conflict message"
+  exit 1
+}
+
+HOME_FOREIGN="$TMP/home-foreign"
+mkdir -p "$HOME_FOREIGN/.claude/skills" "$TMP/foreign-wiki"
+ln -s "$TMP/foreign-wiki" "$HOME_FOREIGN/.claude/skills/wiki"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_FOREIGN" bash "$ROOT/install.sh" >"$TMP/install-foreign.log" 2>&1; then
+  echo "expected install to fail when canonical wiki symlink points at a foreign target"
+  exit 1
+fi
+[[ "$(readlink "$HOME_FOREIGN/.claude/skills/wiki")" == "$TMP/foreign-wiki" ]] || {
+  echo "expected foreign canonical symlink to be preserved"
+  exit 1
+}
+grep -q 'не перезаписую canonical link' "$TMP/install-foreign.log" || {
+  echo "expected clear foreign canonical symlink message"
+  exit 1
+}
+
+HOME_BAD_REF="$TMP/home-bad-ref"
+mkdir -p "$HOME_BAD_REF"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_BAD_REF" bash "$ROOT/install.sh" v4.2.0 >"$TMP/install-bad-ref.log" 2>&1; then
+  echo "expected install to fail with a friendly message for missing ref"
+  exit 1
+fi
+grep -q "ref 'v4.2.0' не знайдено" "$TMP/install-bad-ref.log" || {
+  echo "expected clear missing ref message"
   exit 1
 }
 
