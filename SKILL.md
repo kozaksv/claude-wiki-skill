@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.1.0"
+version: "4.2.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern) — three layers (concepts,
   entities, transcripts) plus archive/ for binaries. Eight operations:
@@ -20,9 +20,22 @@ description: >
 
 # LLM Wiki (Karpathy Pattern)
 
-A persistent, compounding knowledge base maintained by Claude. Instead of re-discovering knowledge each session, the wiki accumulates synthesized understanding across conversations.
+A persistent, compounding knowledge base maintained by an AI coding agent. Instead of re-discovering knowledge each session, the wiki accumulates synthesized understanding across conversations.
 
-This skill is **project-agnostic** — it discovers the wiki location automatically.
+This skill is **project-agnostic** and **agent-neutral** — it discovers the wiki location automatically and can be used from Claude, Codex, or Gemini.
+
+## Platform Compatibility
+
+The workflow is written in Claude-era terms, but the contract is platform-neutral:
+
+| Generic action | Claude Code | Codex | Gemini CLI |
+|---|---|---|---|
+| Read file(s) | Read | shell/read tools | shell/read tools |
+| Edit file(s) | Edit/Write | apply_patch | shell/edit tools |
+| Run commands | Bash | exec_command | shell tool |
+| Track tasks | TodoWrite | update_plan | native plan/todo mechanism if available |
+
+When this document names a platform-specific tool (`Read`, `Edit`, `Write`, `Bash`, `TodoWrite`), translate it to the current agent's equivalent. The behavior is normative; the tool names are examples. The sections below still use Claude Code naming in many places because that is the historical source language of the skill — apply this table once and proceed.
 
 ## Philosophy
 
@@ -68,25 +81,25 @@ The eight operations are a **palette**, not a checklist. A code project might us
 
 **Before any operation**, locate both the wiki directory and its schema. Follow this sequence:
 
-1. **Find CLAUDE.md** — look in the current working directory, then walk up parent directories until found
-2. **Read CLAUDE.md's Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
+1. **Find agent instruction files** — look in the current working directory, then walk up parent directories for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections; `CLAUDE.md` is the legacy/default source when only one convention can be followed.
+2. **Read the Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
 3. **Verify wiki exists** — check that the discovered directory contains `index.md`
-4. **If no Wiki section in CLAUDE.md** — search for `docs/wiki/index.md` relative to CLAUDE.md location
+4. **If no Wiki section exists** — search for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory
 5. **Locate schema** — wiki schema (layers, operations, conventions, `Entity Categories`, `Document Types`, `File Naming`) lives in exactly one of:
-   - **Preferred (v3+):** `{wiki}/schema.md` — canonical location, keeps wiki metadata out of CLAUDE.md resident context
-   - **Legacy (v1–v2):** sections inside `CLAUDE.md` itself (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
+   - **Preferred (v3+):** `{wiki}/schema.md` — canonical location, keeps wiki metadata out of resident agent-instruction context
+   - **Legacy (v1–v2):** sections inside an agent instruction file, usually `CLAUDE.md` (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
 
-   Try `{wiki}/schema.md` first. Fall back to CLAUDE.md sections. When both exist, prefer `schema.md` and flag the duplication during next lint.
+   Try `{wiki}/schema.md` first. Fall back to agent instruction file sections. When both exist, prefer `schema.md` and flag the duplication during next lint.
 6. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (5-state model: `absent` / `legacy` / `current` / `older` / `newer`), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
 7. **Compare versions** — read `wiki_version` from `{wiki}/schema.md` frontmatter (if absent → state = `legacy`). Read your own `version` from this SKILL.md frontmatter. Determine state per the Versioning & Migration table. If state ≠ `current`, halt the requested operation and follow the migration flow.
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
-**CRITICAL: Never create a second wiki.** If you find an existing wiki, use it. If CLAUDE.md references a wiki path, trust it. Only create a new wiki when none exists anywhere in the project.
+**CRITICAL: Never create a second wiki.** If you find an existing wiki, use it. If an agent instruction file references a wiki path, trust it. Only create a new wiki when none exists anywhere in the project.
 
-**Why schema.md is preferred over CLAUDE.md sections:** CLAUDE.md loads into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
+**Why schema.md is preferred over agent instruction file sections:** files like `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` can load into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
 
-_Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the CLAUDE.md fallback._
+_Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in resident instruction files such as CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the instruction-file fallback._
 
 ## Versioning & Migration
 
@@ -99,7 +112,7 @@ last_migration: "2026-05-01"
 ---
 ```
 
-The skill itself has a version in this file's frontmatter (`version: "4.1.0"`).
+The skill itself has a version in this file's frontmatter (`version: "4.2.0"`).
 
 ### State detection on Step 0
 
@@ -329,7 +342,7 @@ The reflection's `Автоматизував:` field isn't decorative — it's t
 | **wiki** | new or extended `concepts/{name}.md` (recipe, ready-made block, concept explanation) | `{wiki}/concepts/` | "I re-derived this content from scratch this session — paste-able block, recipe, or concept the next session would also need. File it so the next read finds it instead of regenerating." |
 | **skill** | new `~/.claude/skills/{name}/SKILL.md` (delegated to `superpowers:writing-skills`) | user-level skills | "Multi-step flow with clear trigger conditions, reusable across projects — warrants a real skill, not just a wiki page." |
 
-**Why no `scripts/` tier.** Earlier versions proposed `scripts/{name}.sh` and `scripts/{name}.py` as crystallization tiers. They violated the Division of Labor stated at the top of this file: those scripts are **user-runnable** artifacts (`bash scripts/x.sh`, `python scripts/x.py | pbcopy`) — that pushes mechanical work onto the user, who in this skill's model only directs and curates. The right artifact for "I generated the same content twice" is a wiki page Claude reads back, not a generator the user runs. If a one-shot inline command is genuinely useful, write it inline at the moment of use; do not crystallize it as a user-facing tier.
+**Why no `scripts/` tier.** Earlier versions proposed `scripts/{name}.sh` and `scripts/{name}.py` as crystallization tiers. They violated the Division of Labor stated at the top of this file: those scripts are **user-runnable** artifacts (`bash scripts/x.sh`, `python scripts/x.py | pbcopy`) — that pushes mechanical work onto the user, who in this skill's model only directs and curates. The right artifact for "I generated the same content twice" is a wiki page the agent reads back, not a generator the user runs. If a one-shot inline command is genuinely useful, write it inline at the moment of use; do not crystallize it as a user-facing tier.
 
 **Memory is not a tier either.** The auto-memory mechanism in the system prompt already saves user feedback / preferences automatically (e.g. "user dislikes script-tier proposals" lands in `~/.claude/.../memory/feedback_*.md` without skill involvement). Wiki is the project-scoped, version-controlled, lint-verified store — auto-memory is the volatile sticky-note layer. They are perpendicular; this skill operates only on wiki and skill artifacts.
 
@@ -398,7 +411,7 @@ The proposal flow has its own anti-noise constraints, separate from the reflecti
 - **Don't propose if arguments are radically different each time.** If you ran `curl` against five different URLs with five different cookies, that's ad-hoc exploration, not a crystallizable pattern. Look for repeated *shape*, not repeated *invocation*.
 - **Don't propose wiki for one-shot content** — deploys, schema migrations, one-time data fixes. Even if the same block was generated three times in a row, if it has no recurring lookup value (the script will never run again, the migration is done), filing it wastes wiki real estate. Crystallize only when "next session will need to read this" is plausibly true.
 - **Don't propose a skill when a wiki page covers it.** Wiki is the cheaper, lower-maintenance store. Promote to skill only when the pattern is multi-step, has clear triggers, and is reusable across projects. Over-promotion is its own form of noise.
-- **Don't crystallize user-runnable scripts.** If you find yourself wanting to propose `scripts/{name}.sh` or `scripts/{name}.py` as a saved artifact, stop — that route was deliberately removed (Division of Labor). Either capture the underlying content as a wiki page Claude reads back, or run an inline command at the moment of need without crystallizing.
+- **Don't crystallize user-runnable scripts.** If you find yourself wanting to propose `scripts/{name}.sh` or `scripts/{name}.py` as a saved artifact, stop — that route was deliberately removed (Division of Labor). Either capture the underlying content as a wiki page the agent reads back, or run an inline command at the moment of need without crystallizing.
 
 ### Cleanup-prompt embedded in reflection
 
@@ -582,7 +595,7 @@ Plus external layers:
 ```
 Raw Binaries (immutable) → archive/ (gitignored, outside wiki)
 Schema (conventions)     → {wiki}/schema.md (preferred, v3+)
-                         → CLAUDE.md sections (legacy, v1–v2)
+                         → agent instruction file sections (legacy, v1–v2)
 ```
 
 **Concepts** — the existing layer. Themes, gotchas, architectural decisions.
@@ -732,13 +745,13 @@ One-paragraph description of what this page covers.
 | Cross-cutting concerns spanning multiple files | One-off fix recipes |
 | Semantic labels (a commit/migration/version identifier paired with what it meant) | Derivable counts / inventories — test counts, migration counts, route counts, endpoint counts (use `ls`/`grep`/`wc`) |
 
-### IMPORTANT: Wiki vs. CLAUDE.md
+### IMPORTANT: Wiki vs. Agent Instruction Files
 
 When updating documentation after implementing a feature:
-- **CLAUDE.md** gets ONLY: new conventions, rules, data model summary changes (1-2 lines max)
+- **Agent instruction files** (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) get ONLY: new conventions, rules, data model summary changes (1-2 lines max)
 - **Wiki** gets: implementation details, how things work, component behavior, API specifics
 - If in doubt whether something is a "convention" or "implementation detail" — it's wiki
-- Reference wiki from CLAUDE.md when needed: "Details → see [[page-name]] in wiki"
+- Reference wiki from instruction files when needed: "Details → see [[page-name]] in wiki"
 
 ### After completion
 
@@ -759,13 +772,17 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
 ### Process
 
 1. **Detect / ask category** — suggest from `Entity Categories` in schema
-   (`{wiki}/schema.md`, fallback to CLAUDE.md). If user wants a new category,
-   add a row to schema.md (or CLAUDE.md for legacy v1–v2 layout)
+   (`{wiki}/schema.md`, fallback to an agent instruction file). If user wants a new category,
+   add a row to schema.md (or the legacy instruction-file schema for v1–v2 layout)
 2. **Detect / ask type** — suggest from `Document Types` in schema
-   (same fallback order). If new type, add a row to schema.md (or CLAUDE.md legacy)
+   (same fallback order). If new type, add a row to schema.md (or the legacy instruction-file schema)
 3. **Propose slug** — from filename + date + parties;
    ask user to confirm or edit
 4. **Extract text → transcript (via `doc-extract` skill):**
+   The installer treats `~/.claude/skills` as the canonical skill registry for
+   this stack and exports the same `doc-extract` skill to Codex/Gemini via
+   symlinks (`~/.agents/skills/doc-extract`, `~/.gemini/skills/doc-extract`).
+   Use the canonical path below unless the local installation clearly differs.
 
    Call:
    ```bash
@@ -778,7 +795,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    - `0` — transcript created, proceed.
    - `10` (extraction_failed) — STOP. Read stderr method_chain;
      tell user: "doc-extract пройшов каскад [методи], вийшло N символів.
-     Варіанти: (1) вручну → summary, (2) Read tool (LLM, дорого),
+     Варіанти: (1) вручну → summary, (2) vision-capable file read if this agent supports it, explicit and potentially expensive,
      (3) пропустити". Wait for user decision.
    - `20` (missing_dependency) — STOP. Run
      `bash ~/.claude/skills/doc-extract/bin/doctor.sh`, show output,
@@ -786,7 +803,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    - `30` (unsupported_format) — ask user to skip or convert first.
    - `40/50` — caller bug, show stderr.
 
-   **Важливо:** wiki більше НЕ падає на Read tool (LLM vision) сам.
+   **Важливо:** wiki більше НЕ падає на vision-capable file read сам.
    Єдиний шлях до LLM — явне рішення юзера у відповідь на exit 10.
    Це уникає дорогих silent fallback'ів.
 
@@ -839,7 +856,7 @@ Search the wiki to answer a question about the project.
 
 **Master rule: before generating any project-specific content from memory, query first — even when you think you know.** The wiki captures project-specific facts (paths, configs, prior decisions, gotchas) that may not match general training knowledge. Default-answering from memory is a gamble; query is cheap (3-5 file reads).
 
-This rule exists because the user should not have to know wiki keywords. The user types in plain Ukrainian — "як налаштувати X", "де лежить Y", "пам'ятаєш як ми Z" — and Claude is responsible for translating that into a wiki check before generating anything.
+This rule exists because the user should not have to know wiki keywords. The user types in plain Ukrainian — "як налаштувати X", "де лежить Y", "пам'ятаєш як ми Z" — and the active agent is responsible for translating that into a wiki check before generating anything.
 
 Concretely, query when:
 
@@ -858,7 +875,7 @@ Concretely, query when:
 
 **Don't query for ambient operations** — `ls`, `pwd`, `git status`, generic shell exploration. Those don't have project-specific knowledge to retrieve.
 
-**Pair with crystallization.** If you query and find nothing relevant, that's a discovery signal: this topic isn't yet captured. Hold it in mind — once you derive the answer, it becomes a candidate for crystallization (see `## Self-Improvement Loop > ### Crystallization`). Discovery and crystallization are two halves of the same loop: query reads what was saved, crystallization saves what was re-derived. The OpenSSH-on-Windows-DC scenario in the SKILL's reflection examples is the canonical case — a wiki entity existed but lacked the paste-able block, so Claude re-derived from memory; query before generating would have surfaced the gap and prompted crystallization the first time, not the second.
+**Pair with crystallization.** If you query and find nothing relevant, that's a discovery signal: this topic isn't yet captured. Hold it in mind — once you derive the answer, it becomes a candidate for crystallization (see `## Self-Improvement Loop > ### Crystallization`). Discovery and crystallization are two halves of the same loop: query reads what was saved, crystallization saves what was re-derived. The OpenSSH-on-Windows-DC scenario in the SKILL's reflection examples is the canonical case — a wiki entity existed but lacked the paste-able block, so the agent re-derived it from memory; query before generating would have surfaced the gap and prompted crystallization the first time, not the second.
 
 ### Process
 
@@ -1102,7 +1119,7 @@ Page protection always applies during resolution: protected pages are excluded f
    - **Internal `[[wikilinks]]` resolve** — every wikilink in the body points to a page that exists
    - **Stated counts AND inventories match reality** — if the page asserts "N tests / N migrations / N routes" (count) OR contains a one-row-per-file table/list (inventory of specs, migrations, routes), run `ls`/`grep`/`wc` and compare. **Default action: DROP, not UPDATE.** Derivable counts and inventories drift faster than any maintenance cadence can catch; deleting them pushes the read to `ls`/`grep` which is always current. Keep cross-cutting semantic synthesis (clusters, conceptual groupings, criteria for adding new entries) — but a row-per-file mirror of the disk is the inventory anti-pattern, drop the table and replace with a pointer.
 
-   **2a. ALWAYS also content-verify CLAUDE.md** — regardless of subset (full / швидко / scope / topic), the project's `CLAUDE.md` is **always** read and verified per check #11 (Karpathy content-classification: convention/detail/history/dead/verbose). Findings flow into the same AUTO/DECIDE/INFO buckets and share the report's sequential numbering. CLAUDE.md is not a wiki page (no `.usage.json` record), so prioritization signals don't apply — it's verified every lint run as a first-class target. If you complete a lint run without reading CLAUDE.md, the lint is **incomplete** — that's a hard rule, not a guideline. Common failure mode: LLM treats "selected pages" (wiki) as the only verification target and skips CLAUDE.md silently. The spec wires CLAUDE.md in explicitly to prevent this.
+   **2a. ALWAYS also content-verify resident agent instruction files** — regardless of subset (full / швидко / scope / topic), every discovered `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` that can affect this project is read and verified per check #11 (Karpathy content-classification: convention/detail/history/dead/verbose). Findings flow into the same AUTO/DECIDE/INFO buckets and share the report's sequential numbering. Instruction files are not wiki pages (no `.usage.json` record), so prioritization signals don't apply — they are verified every lint run as first-class targets. If you complete a lint run without reading the discovered instruction files, the lint is **incomplete** — that's a hard rule, not a guideline.
 
 3. **Classify findings into three tiers (AUTO / DECIDE / INFO), then act accordingly.** This is the autonomy contract — Lint is no longer a read-only operation. See `### Two-Tier Autonomy` subsection below for full rules. Short version:
    - **AUTO findings** (no genuinely competing alternative — there's an obvious correct fix): apply automatically after creating a snapshot. Each fix is its own commit.
@@ -1165,13 +1182,13 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 - Entity `key` matches filename (without `.md`)
 
 **10. Schema Drift:**
-- Are all categories used in `entities/` declared in schema (`{wiki}/schema.md` preferred, CLAUDE.md legacy)?
+- Are all categories used in `entities/` declared in schema (`{wiki}/schema.md` preferred, instruction-file schema legacy)?
 - Are all types in slugs declared in schema `## Document Types`?
-- Is schema split between `{wiki}/schema.md` AND CLAUDE.md sections (duplication)? → propose collapsing to schema.md only
-- Does CLAUDE.md still carry full schema instead of a 1-line pointer? → propose migration
+- Is schema split between `{wiki}/schema.md` AND instruction-file sections (duplication)? → propose collapsing to schema.md only
+- Does an agent instruction file still carry full schema instead of a 1-line pointer? → propose migration
 - If drift found — propose updating schema
 
-**11. CLAUDE.md Content Verification (Karpathy-style)** — CLAUDE.md is resident context paid on every session, every conversation, every tool call. Wiki is lazy (read on demand). The skill **reads CLAUDE.md in full** and judges each line/section by content type — **no algorithmic line-count threshold**. Length is a symptom, content-type ratio is the real question.
+**11. Agent Instruction File Content Verification (Karpathy-style)** — `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` are resident or high-priority context paid across sessions. Wiki is lazy (read on demand). The skill **reads discovered instruction files in full** and judges each line/section by content type — **no algorithmic line-count threshold**. Length is a symptom, content-type ratio is the real question.
 
 **Per-line classification** — every line falls into one of these:
 
@@ -1187,14 +1204,14 @@ e. **VERBOSE PHRASING (CONDENSE)** — sentence that's 400+ chars when 80 would 
 
 **Cross-checks:**
 
-- For each `[[wikilink]]` in CLAUDE.md: target page exists AND covers the cross-linked topic (otherwise CLAUDE.md carries duplicated content).
+- For each `[[wikilink]]` in an instruction file: target page exists AND covers the cross-linked topic (otherwise the instruction file carries duplicated content).
 - For each convention line: doesn't contradict the wiki page that elaborates it.
 
-**Bias toward shrinking.** When a line could plausibly live in either CLAUDE.md or wiki, default to wiki. Resident context is a precious budget — every byte is paid forever. The default question is «can this be shorter? can this move to a lazy page?», not «is this important enough to delete?».
+**Bias toward shrinking.** When a line could plausibly live in either an instruction file or wiki, default to wiki. Resident context is a precious budget — every byte is paid forever. The default question is «can this be shorter? can this move to a lazy page?», not «is this important enough to delete?».
 
 **Tier mapping** (per the standard AUTO/DECIDE/INFO contract):
 
-- **AUTO**: dead wikilinks (point to non-existent pages — verify via wiki tree), dead file path references (verify via `ls`), confirmed-stale history notes (`grep` confirms the migrated/removed thing is gone), drift-prone counts inside CLAUDE.md ("N tests").
+- **AUTO**: dead wikilinks (point to non-existent pages — verify via wiki tree), dead file path references (verify via `ls`), confirmed-stale history notes (`grep` confirms the migrated/removed thing is gone), drift-prone counts inside instruction files ("N tests").
 - **DECIDE**: convention-vs-implementation-detail calls (line is genuinely ambiguous), section-level migration proposals (move whole H2 to wiki), condensation rewrites (3 paragraphs → 1 sentence — preserve meaning vs. acceptable loss).
 - **INFO**: content-type breakdown (e.g. «CLAUDE.md: 42 рядки конвенцій, 18 implementation details, 5 history notes, 3 dead refs — 68 рядків загалом»). User sees ratio at a glance.
 
@@ -1431,7 +1448,7 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Discovery
 
-1. **Find CLAUDE.md** (walk up dirs from cwd)
+1. **Find agent instruction files** (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`; walk up dirs from cwd). Use an existing file when present; if none exists during fresh bootstrap, create `CLAUDE.md` as the default pointer file.
 2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
 
    | State | Condition | Action |
@@ -1493,7 +1510,7 @@ For a fresh wiki (state = `absent`), present this single-block plan after projec
   6. docs/wiki/transcripts/ — порожня папка
   7. docs/wiki/.usage.json — порожній dict {}
   8. archive/ — поза wiki (gitignored)
-  9. CLAUDE.md — додати 1-line pointer "Wiki schema → docs/wiki/schema.md"
+  9. Agent instruction file — додати 1-line pointer "Wiki schema → docs/wiki/schema.md" (`CLAUDE.md` by default if no instruction file exists)
   10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
 
 [y] так, створи все  /  [n] скасувати
@@ -1523,7 +1540,7 @@ After consent:
    ---
    ```
 
-   Add a single `## Wiki` pointer in CLAUDE.md: _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ (for v1/v2 migrations — move existing CLAUDE.md sections into `schema.md` and replace them with the pointer)
+   Add a single `## Wiki` pointer in the active agent instruction file (`CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`): _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace them with the pointer.
 6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
@@ -1536,7 +1553,7 @@ For all migration-from-legacy paths, follow the explicit plan format described i
 
 ### After completion
 
-Init is the most structurally heavy operation in the skill — it creates `schema.md`, `index.md`, `log.md`, `.usage.json`, edits `.gitignore`, writes a CLAUDE.md pointer, and may move binaries into `archive/`. Always emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop` after Init completes (regardless of trigger), and always include the `Перевірив:` section listing every structural file created or modified. Anti-noise does not apply — Init by definition writes.
+Init is the most structurally heavy operation in the skill — it creates `schema.md`, `index.md`, `log.md`, `.usage.json`, edits `.gitignore`, writes an agent-instruction pointer, and may move binaries into `archive/`. Always emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop` after Init completes (regardless of trigger), and always include the `Перевірив:` section listing every structural file created or modified. Anti-noise does not apply — Init by definition writes.
 
 ---
 
@@ -1549,13 +1566,13 @@ Post-migration / periodic housekeeping AND structural reorganization of existing
 - After init/bootstrap completes
 - User says "wiki cleanup", "почисть wiki/вікі"
 - Periodically (every ~10 sessions or after major changes)
-- **When migrating content between CLAUDE.md and wiki** (e.g. extracting implementation details, consolidating duplicates). This is the canonical home for "wiki refactor" — not `ingest-source` (no new material entering) and not `lint` (not read-only report). Use the log tag `cleanup` with a descriptive subject.
+- **When migrating content between agent instruction files and wiki** (e.g. extracting implementation details, consolidating duplicates). This is the canonical home for "wiki refactor" — not `ingest-source` (no new material entering) and not `lint` (not read-only report). Use the log tag `cleanup` with a descriptive subject.
 
 ### Process
 
 1. Remove empty directories under `docs/wiki/` and `archive/`
 2. Verify `archive/` is in `.gitignore`; add if missing
-3. Verify schema exists at `{wiki}/schema.md` (preferred). If schema lives in CLAUDE.md sections instead, propose migration: move to `{wiki}/schema.md`, leave a 1-line pointer in CLAUDE.md. If both exist — propose collapsing into schema.md only.
+3. Verify schema exists at `{wiki}/schema.md` (preferred). If schema lives in instruction-file sections instead, propose migration: move to `{wiki}/schema.md`, leave a 1-line pointer in the instruction file. If both exist — propose collapsing into schema.md only.
 4. Find unused entity stubs (entity pages with no cross-refs from anywhere) — propose deletion. For each page deleted, call `forget(path)` against `.usage.json` (see `## Telemetry Sidecar`).
 5. Find concept pages not in `index.md` and vice versa — propose fixes
 6. Append cleanup actions to `log.md`
@@ -1576,7 +1593,7 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 
 **Commit scope `docs(`** touching `docs/superpowers/specs/` (or equivalent raw-sources dir) → `ingest-source` is mandatory. Specs are the primary wiki feedstock.
 
-**Commit touches CLAUDE.md** → check whether added/edited lines are convention (keep) vs implementation detail (propose `cleanup` to migrate into wiki). This is the counterpart to Lint check #11 but catches drift at commit time, before it accumulates.
+**Commit touches an agent instruction file** → check whether added/edited lines are convention (keep) vs implementation detail (propose `cleanup` to migrate into wiki). This is the counterpart to Lint check #11 but catches drift at commit time, before it accumulates.
 
 **Binary file appears in `tmp/`** → suggest `ingest-binary` (already covered by description triggers).
 
@@ -1592,8 +1609,8 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 
 | Mistake | Fix |
 |---------|-----|
-| Creating a second wiki when one exists | ALWAYS run discovery (Step 0) first. Check CLAUDE.md, search for existing index.md. |
-| Adding implementation details to CLAUDE.md | CLAUDE.md = rules and conventions only. Details → wiki pages. |
+| Creating a second wiki when one exists | ALWAYS run discovery (Step 0) first. Check agent instruction files, search for existing index.md. |
+| Adding implementation details to agent instruction files | Instruction files = rules and conventions only. Details → wiki pages. |
 | Duplicating code in wiki | Wiki describes WHAT and WHY. Code shows HOW. |
 | Forgetting to update index.md | ALWAYS update index after creating/renaming pages |
 | Forgetting to append to log.md | ALWAYS append after any ingest or significant update |
@@ -1602,12 +1619,12 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Missing cross-references | Every page should have `## See also`. Check related pages too. |
 | Ingesting without reading existing pages first | ALWAYS read index + relevant pages before writing. Integrate, don't duplicate. |
 | Leaving stale info when updating | When adding new info, also check and fix outdated facts on the same page. |
-| Using hardcoded wiki paths | ALWAYS discover wiki location via CLAUDE.md first. |
-| Writing wiki schema into CLAUDE.md on init | Schema belongs in `{wiki}/schema.md`. CLAUDE.md only gets a 1-line pointer. |
-| Maintaining duplicate schema in both locations | Collapse to `{wiki}/schema.md` only. Leave 1-line pointer in CLAUDE.md. |
+| Using hardcoded wiki paths | ALWAYS discover wiki location via agent instruction files first. |
+| Writing wiki schema into an instruction file on init | Schema belongs in `{wiki}/schema.md`. Instruction files only get a 1-line pointer. |
+| Maintaining duplicate schema in both locations | Collapse to `{wiki}/schema.md` only. Leave 1-line pointer in the instruction file. |
 | Auto-flagging staleness by timestamp | Use Karpathy content-verification — read pages and judge claims. Telemetry is for prioritization, not flagging. |
 | Creating crystallization artifact silently | Skill ALWAYS proposes (y/n/пізніше). Never `Write` a wiki page or hand off to writing-skills without explicit user approval. |
-| Proposing `scripts/*.sh` or `scripts/*.py` as crystallization | Removed in v4.1 — user-runnable scripts violate Division of Labor (mechanical work belongs to LLM, not user). Crystallize content as a wiki page Claude reads back, or run inline at the moment of need. |
+| Proposing `scripts/*.sh` or `scripts/*.py` as crystallization | Removed in v4.1 — user-runnable scripts violate Division of Labor (mechanical work belongs to LLM, not user). Crystallize content as a wiki page the agent reads back, or run inline at the moment of need. |
 | Treating `.usage.json` as user-visible | It's metadata, gitignored, per-clone. Don't mention specific counter values to user unless `wiki status` is invoked. |
 | Migrating `wiki_version` silently | Migration is explicit plan-then-confirm for structural changes. Only field-level backfill in `.usage.json` is silent. |
 | Skipping reflection because "small change" | Anti-noise rule applies only to read-only blocks. Any edit/write block produces reflection. |
@@ -1621,7 +1638,7 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 | Numbering AUTO and DECIDE both starting at 1 | Use a SINGLE sequential namespace 1..N across the whole report (AUTO + DECIDE + INFO). No A/D prefixes. Verb context disambiguates intent: `відкат N` only applies to AUTO; `<N> <verb>` applies to DECIDE / INFO elevation. Renderer never restarts numbering between blocks. |
 | Per-finding numbered sub-menu inside a DECIDE entry | DECIDE finding's action menu shows **verbs only**, no numbered sub-menu. User invokes by `<N> <verb>` where `<N>` is the item's report-wide number. Numbered sub-menus inside a finding recreate exactly the ambiguity sequential numbering was designed to prevent. |
 | Leaving INFO items unnumbered while AUTO/DECIDE have numbers | All items in the report get a number, including 🔵 Примітки. Without numbering, the user can't reference an INFO item to elevate it (e.g. say `9 розбий` to split a noted large page). Bullet points (`•`) for INFO items violate the «every assertion has a number» rule. |
-| Using a line-count threshold for CLAUDE.md (e.g. ">150 lines") | Algorithmic threshold contradicts Karpathy content-verification. Read CLAUDE.md in full, classify each line (convention/detail/history/dead/verbose), propose AUTO for verifiable dead refs, DECIDE for judgment calls, INFO for the content-type breakdown. Length is a symptom; the real question is content-type ratio. Default bias: when ambiguous, propose moving to wiki — CLAUDE.md is paid every session, every byte counts. |
+| Using a line-count threshold for instruction files (e.g. ">150 lines") | Algorithmic threshold contradicts Karpathy content-verification. Read instruction files in full, classify each line (convention/detail/history/dead/verbose), propose AUTO for verifiable dead refs, DECIDE for judgment calls, INFO for the content-type breakdown. Length is a symptom; the real question is content-type ratio. Default bias: when ambiguous, propose moving to wiki — resident instruction files are paid often, every byte counts. |
 | Maintaining row-per-file inventory tables (specs, migrations, routes) in wiki | Disk maintains the inventory authoritatively (`ls`/`grep`); wiki copy is Sisyphean — every new file requires a wiki edit, drift is guaranteed. AUTO-drop the inventory; replace with a pointer command (`\`ls apps/web/e2e/*.spec.ts\``). Keep cross-cutting synthesis only — clusters («auth*.spec.ts — auth-flow group»), criteria («коли додавати новий e2e»), conceptual categories («3 типи: smoke / integration / regression»). Do NOT auto-add per-file labels for missing specs — that recreates the very pattern lint is removing. |
-| Skipping CLAUDE.md during lint (treating "selected pages" as wiki-only) | CLAUDE.md is project-wide convention, **always** verified, regardless of subset. Step 2a in Process explicitly wires this in. If a lint run finishes without producing a CLAUDE.md classification breakdown (or auto-fixes for dead refs), the lint is incomplete — re-run or finish the missed verification. CLAUDE.md doesn't sit in `.usage.json`, so don't expect prioritization signals to surface it; the spec adds it as an always-on target separate from the wiki subset. |
+| Skipping instruction files during lint (treating "selected pages" as wiki-only) | Agent instruction files are project-wide convention, **always** verified, regardless of subset. Step 2a in Process explicitly wires this in. If a lint run finishes without producing an instruction-file classification breakdown (or auto-fixes for dead refs), the lint is incomplete — re-run or finish the missed verification. Instruction files don't sit in `.usage.json`, so don't expect prioritization signals to surface them; the spec adds them as always-on targets separate from the wiki subset. |
 | Emitting cleanup-prompt or РЕФЛЕКСІЯ block after `вікі лінт` / `вікі статус` / cleanup-flow | Recursive: lint *is* the cleanup, the report *is* the visible reasoning. Cleanup-prompt is for bridging normal work (commit / todo done) into a cleanup pass — bridging from a cleanup to a cleanup offers the user «показати те, що ми щойно показали?». Anti-noise rule (line 308) and the explicit Anti-recursion rule in Cleanup-prompt section together require: no reflection after lint, no cleanup-prompt after lint. The lint report ends the turn — period. |
