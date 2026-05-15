@@ -13,7 +13,7 @@ GEMINI_SKILLS_ROOT="$HOME/.gemini/skills"
 DOC_EXTRACT_REPO="https://github.com/kozaksv/claude-doc-extract-skill.git"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
 DOC_EXTRACT_LINK="$SKILLS_ROOT/doc-extract"
-DOC_EXTRACT_REF="${WIKI_DOC_EXTRACT_REF:-main}"
+DOC_EXTRACT_REF="${WIKI_DOC_EXTRACT_REF:-96d6bf9e1df309c4b76d924d3a1f774f7ee33d12}"
 
 set_skill_link() {
   local name="$1" target_dir="$2" link="$3"
@@ -52,7 +52,10 @@ install_skill_at_ref() {
   local name="$1" repo="$2" dir="$3" link="$4" ref="$5"
   if [ -d "$dir/.git" ]; then
     echo "[$name] репо вже існує — переключаю на $ref..."
-    git -C "$dir" fetch --tags --force origin || return 1
+    git -C "$dir" fetch --tags --force origin || {
+      echo "Помилка: не вдалося оновити $dir. Якщо це partial або corrupt clone після обірваного git clone, перейменуйте/видаліть цю директорію і запустіть installer повторно."
+      return 1
+    }
     ensure_ref_exists "$name" "$dir" "$ref" || return 1
     git -C "$dir" checkout "$ref" || return 1
     if git -C "$dir" symbolic-ref -q HEAD >/dev/null; then
@@ -128,8 +131,10 @@ export_skill_link() {
 
 echo "=== Wiki Skill — встановлення (версія: $WIKI_VERSION) ==="
 
-if [[ ! "$WIKI_VERSION" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-  echo "Помилка: invalid install ref '$WIKI_VERSION'. Дозволені символи: A-Z a-z 0-9 . _ / -"
+if [[ ! "$WIKI_VERSION" =~ ^[A-Za-z0-9._/-]+$ ]] ||
+   [[ "$WIKI_VERSION" == -* ]] ||
+   [[ "$WIKI_VERSION" == *..* ]]; then
+  echo "Помилка: invalid install ref '$WIKI_VERSION'. Дозволені символи: A-Z a-z 0-9 . _ / -; ref не може починатися з '-' або містити '..'."
   exit 2
 fi
 
@@ -162,9 +167,9 @@ if ! export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"; then
   WIKI_GEMINI_STATUS="skipped"
 fi
 
-# 3. doc-extract (optional dependency for ingest-binary). It tracks main by
-# default because its extractor CLI is treated as a stable integration contract
-# for the wiki; WIKI_DOC_EXTRACT_REF can pin it for reproducible installs.
+# 3. doc-extract (optional dependency for ingest-binary). It is pinned to a
+# known-good commit for reproducible wiki installs; WIKI_DOC_EXTRACT_REF can
+# override it when deliberately testing/upgrading the extractor contract.
 # Keep wiki available even if this dependency cannot be installed; text/source
 # wiki operations still work.
 DOC_EXTRACT_INSTALLED=0
@@ -214,6 +219,7 @@ done
 echo ""
 echo "Готово! Встановлено:"
 echo "  $SKILL_LINK → $SKILL_DIR  (@ $WIKI_VERSION)"
+echo "  Note: ~/.claude/skills is the shared canonical registry; Claude Code is not required."
 echo "Cross-agent exports (symlinks to shared canonical):"
 print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_AGENTS_STATUS"
 print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_GEMINI_STATUS"

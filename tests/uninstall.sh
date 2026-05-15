@@ -66,6 +66,8 @@ for path in \
   "$HOME_DIR/.gemini/skills/doc-extract"; do
   expect_missing "$path"
 done
+expect_exists "$HOME_DIR/.agents"
+expect_exists "$HOME_DIR/.gemini"
 expect_exists "$HOME_DIR/claude-wiki-skill"
 expect_exists "$HOME_DIR/claude-doc-extract-skill"
 grep -q 'Real clone directories kept' "$TMP/uninstall-default.log" || {

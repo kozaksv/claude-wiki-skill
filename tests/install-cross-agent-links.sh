@@ -18,6 +18,10 @@ if [[ "${1:-}" == "-C" ]]; then
   shift 2
   case "${1:-}" in
     fetch)
+      if [[ "${FAIL_FETCH:-0}" == "1" ]]; then
+        echo "simulated fetch failure" >&2
+        exit 2
+      fi
       exit 0
       ;;
     pull)
@@ -28,7 +32,7 @@ if [[ "${1:-}" == "-C" ]]; then
       exit 0
       ;;
     checkout)
-      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-main}"
+      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-96d6bf9e1df309c4b76d924d3a1f774f7ee33d12}"
       if [[ "$dir" == *"claude-doc-extract-skill"* && "${2:-}" != "$expected_doc_ref" ]]; then
         echo "doc-extract must be checked out at $expected_doc_ref in this fixture" >&2
         exit 1
@@ -36,7 +40,7 @@ if [[ "${1:-}" == "-C" ]]; then
       exit 0
       ;;
     rev-parse)
-      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-main}"
+      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-96d6bf9e1df309c4b76d924d3a1f774f7ee33d12}"
       ref="${@: -1}"
       case "$ref" in
         master*|origin/master*|main*|origin/main*|v4.2.0*|origin/v4.2.0*|"$expected_doc_ref"*|"origin/$expected_doc_ref"*)
@@ -118,6 +122,10 @@ run_install
 [[ -L "$GEMINI_WIKI" ]] || { echo "expected Gemini wiki symlink"; exit 1; }
 [[ -L "$AGENTS_DOC_EXTRACT" ]] || { echo "expected .agents doc-extract symlink"; exit 1; }
 [[ -L "$GEMINI_DOC_EXTRACT" ]] || { echo "expected Gemini doc-extract symlink"; exit 1; }
+grep -q '~/.claude/skills is the shared canonical registry' "$LOG" || {
+  echo "expected install summary to explain the shared canonical registry"
+  exit 1
+}
 
 expect_link_target "$AGENTS_WIKI" "$CLAUDE_WIKI"
 expect_link_target "$GEMINI_WIKI" "$CLAUDE_WIKI"
@@ -275,6 +283,12 @@ grep -q "invalid install ref" "$TMP/install-invalid-ref.log" || {
   echo "expected clear invalid ref syntax message"
   exit 1
 }
+for invalid_ref in '..' '-bad-ref' 'foo/../bar'; do
+  if PATH="$BIN_DIR:$PATH" HOME="$HOME_INVALID_REF" bash "$ROOT/install.sh" "$invalid_ref" >>"$TMP/install-invalid-ref.log" 2>&1; then
+    echo "expected install to fail before git for invalid ref syntax: $invalid_ref"
+    exit 1
+  fi
+done
 
 HOME_PULL_FAIL="$TMP/home-pull-fail"
 mkdir -p "$HOME_PULL_FAIL/claude-wiki-skill/.git"
@@ -284,6 +298,17 @@ if FAIL_PULL=1 PATH="$BIN_DIR:$PATH" HOME="$HOME_PULL_FAIL" bash "$ROOT/install.
 fi
 grep -q "неможливо оновити $HOME_PULL_FAIL/claude-wiki-skill" "$TMP/install-pull-fail.log" || {
   echo "expected clear git pull failure message"
+  exit 1
+}
+
+HOME_FETCH_FAIL="$TMP/home-fetch-fail"
+mkdir -p "$HOME_FETCH_FAIL/claude-wiki-skill/.git"
+if FAIL_FETCH=1 PATH="$BIN_DIR:$PATH" HOME="$HOME_FETCH_FAIL" bash "$ROOT/install.sh" >"$TMP/install-fetch-fail.log" 2>&1; then
+  echo "expected install to fail with partial/corrupt clone guidance when git fetch fails"
+  exit 1
+fi
+grep -q "partial або corrupt clone" "$TMP/install-fetch-fail.log" || {
+  echo "expected fetch failure to mention partial/corrupt clone recovery"
   exit 1
 }
 

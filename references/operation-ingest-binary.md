@@ -47,6 +47,11 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
      --format md
    ```
 
+   The `-x` checks are intentional: a present but non-executable
+   `bin/extract.sh` is treated as a broken export/install and the fallback chain
+   continues. Do not silently `chmod` skill files during ingest-binary; ask the
+   user to rerun the wiki installer or repair file permissions explicitly.
+
    Handle exit code:
    - `0` — transcript created, proceed.
    - `10` (extraction_failed) — STOP. Read stderr method_chain;

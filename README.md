@@ -23,7 +23,7 @@ Exports created by install.sh:
 The `claude-wiki-skill` directory name is historical; functionally this is the
 shared cross-agent canonical install used by Claude, Codex, and Gemini.
 
-`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням ставиться з `main`; за потреби його ref можна pin'нути через `WIKI_DOC_EXTRACT_REF`.
+`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `96d6bf9e1df309c4b76d924d3a1f774f7ee33d12`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
 
@@ -35,6 +35,9 @@ shared cross-agent canonical install used by Claude, Codex, and Gemini.
 - **Release safety tests.** Додано shell-тести для install/export edge-cases, safe uninstall, і статичний contract-test для `SKILL.md`/`references/` layout.
 
 ## What changed in v4.1
+
+v4.1 describes behavior changes that shipped on the path to v4.2. There is no
+separate `v4.1.0` install tag; use `v4.2.0` for the stable cross-agent release.
 
 - **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до двох артефактних типів: `wiki` і `skill`. User-runnable скрипти (`scripts/*.sh` / `*.py`) видалено як target крихталізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/crystallization.md`.
 - **Proactive query trigger.** Скіл активується на природних українських формах питання («як налаштувати X», «що таке X», «де лежить Y», «пам'ятаєш як ми Z», «потрібно знову W», «розкажи про…») — без вимоги вживати ключове слово "wiki" / "вікі". Master rule: query перед генерацією проєктно-специфічного контенту з пам'яті, навіть коли «знаю відповідь». Деталі: `references/operation-query.md`.
@@ -103,10 +106,10 @@ URL у курлі завжди вказує на `master/install.sh` — це с
 
 Тег — це закладка на конкретний коміт; версія, яку ти отримаєш через `v3.0.0`, `v4.0.0` або `v4.2.0`, не зміниться навіть коли вийдуть нові релізи. `master` навпаки рухається вперед.
 
-`doc-extract` є optional dependency для `ingest-binary` і за замовчуванням ставиться з `main`, бо його CLI вважається стабільним integration contract. Якщо треба pin для відтворюваної інсталяції, передайте env override:
+`doc-extract` є optional dependency для `ingest-binary` і за замовчуванням ставиться з pinned known-good commit, щоб `bash -s v4.2.0` був відтворюваним end-to-end. Якщо треба навмисно протестувати інший extractor ref, передайте env override:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | WIKI_DOC_EXTRACT_REF=v1.0.0 bash
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | WIKI_DOC_EXTRACT_REF=main bash
 ```
 
 Для PDF/DOCX ingest є другий системний setup-крок: після install запустіть

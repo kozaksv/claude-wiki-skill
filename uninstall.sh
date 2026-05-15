@@ -15,6 +15,9 @@ git clone directories intact:
   ~/claude-wiki-skill
   ~/claude-doc-extract-skill
 
+It removes empty skills subdirectories when possible, but keeps parent
+~/.agents and ~/.gemini directories in place.
+
 Use --remove-clones to remove those clone directories too, but only when each
 directory is a git repo and has no local changes.
 USAGE
@@ -100,8 +103,8 @@ remove_symlink_entry "$GEMINI_SKILLS_ROOT/doc-extract"
 remove_symlink_entry "$SKILLS_ROOT/wiki"
 remove_symlink_entry "$SKILLS_ROOT/doc-extract"
 
-rmdir "$AGENTS_SKILLS_ROOT" "$HOME/.agents" 2>/dev/null || true
-rmdir "$GEMINI_SKILLS_ROOT" "$HOME/.gemini" 2>/dev/null || true
+rmdir "$AGENTS_SKILLS_ROOT" 2>/dev/null || true
+rmdir "$GEMINI_SKILLS_ROOT" 2>/dev/null || true
 rmdir "$SKILLS_ROOT" 2>/dev/null || true
 
 if [ "$REMOVE_CLONES" -eq 1 ]; then
