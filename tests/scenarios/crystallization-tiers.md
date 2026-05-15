@@ -1,7 +1,7 @@
 # Scenario: Crystallization proposals
 
-Six sub-scenarios that exercise the proposal flow defined in `SKILL.md` →
-`## Self-Improvement Loop` → `### Crystallization`. Each runs against a
+Six sub-scenarios that exercise the proposal flow defined in
+`references/self-improvement.md` → `### Crystallization`. Each runs against a
 v4-shaped test wiki and asserts whether the skill emitted a `🔁 Помічаю патерн:`
 proposal (or correctly suppressed one), at which artifact type (`wiki` or
 `skill`), and what landed in the reflection's `Автоматизував:` field.
@@ -21,10 +21,12 @@ check) unless noted otherwise. The `Автоматизував:` field cited in 
 appears in the РЕФЛЕКСІЯ block at the close of the relevant turn — see
 `reflection-triggers.md` for the surrounding block format.
 
-The skill recognizes only **two artifact types**: `wiki` (a concept page Claude
-reads back) and `skill` (delegated to `superpowers:writing-skills`). User-runnable
+The skill recognizes only **two artifact types**: `wiki` (a concept page the
+active agent reads back) and `skill` (delegated to a skill-authoring helper when
+available, otherwise direct-created in the shared canonical topology). User-runnable
 `scripts/*.sh` and `scripts/*.py` were intentionally removed as a crystallization
-target — see "Why no `scripts/` tier" in SKILL.md. Sub-scenarios 3 and 4 below
+target — see "Why no `scripts/` tier" in `references/self-improvement.md`.
+Sub-scenarios 3 and 4 below
 assert that script-shaped proposals are correctly suppressed.
 
 ---
@@ -80,7 +82,7 @@ The 15-iteration nudge fires after the third re-explanation.
 
 ### Wiki-page integrity check
 
-The page's value to a future Claude session is that it can be read **before**
+The page's value to a future agent session is that it can be read **before**
 re-deriving the explanation. A wiki page that just paraphrases the user's
 question without explaining the actual mechanism fails the test even if it
 passes the on-disk assertions.
@@ -108,12 +110,18 @@ The 15-iteration nudge fires.
 
 1. Agent recognizes a multi-step flow with explicit triggers, reusable across
    projects → skill territory.
-2. **Crucial:** the wiki skill does NOT create `~/.claude/skills/{name}/SKILL.md`
-   itself. It delegates to `superpowers:writing-skills`.
-3. Agent emits a skill proposal that asks for permission to *delegate*, not to
-   *create*.
+2. Agent checks whether the active agent has a skill-authoring helper
+   (`superpowers:writing-skills` in Claude, or a native equivalent in
+   Codex/Gemini).
+3. Agent emits a skill proposal whose wording matches the path that will be
+   taken on `y`:
+   - **Helper available** (path A) — propose to *delegate* to the helper.
+   - **Helper unavailable** (path B, common in Codex/Gemini sessions) —
+     propose to *create directly* in the shared canonical topology
+     (`~/.claude/skills/{name}/SKILL.md` + `.agents` and `.gemini` symlink
+     exports pointing at it).
 
-### Expected output (proposal block)
+### Expected output (proposal block — path A, helper available)
 
 ```
 🔁 Цей flow підходить для повноцінного скіла: 5 кроків, чіткі тригери, реюзабельно між проєктами.
@@ -122,27 +130,57 @@ The 15-iteration nudge fires.
    [y] делегуй  /  [n] не зараз  /  [пізніше]
 ```
 
+### Expected output (proposal block — path B, helper unavailable)
+
+```
+🔁 Цей flow підходить для повноцінного скіла: 5 кроків, чіткі тригери, реюзабельно між проєктами.
+   skill: оформити як user-level skill (helper недоступний — створю напряму у ~/.claude/skills/{name} + symlink exports для Codex/Gemini)?
+
+   [y] створи  /  [n] не зараз  /  [пізніше]
+```
+
 ### Expected agent behavior on `y`
 
-- Hand off to `superpowers:writing-skills` with a one-paragraph brief
-  describing the flow, its triggers, and intended scope. The hand-off itself
-  is what creates the skill files; this skill does not write SKILL.md.
-- Reflection's `Автоматизував:` field records `skill — delegated to writing-skills (subject: {brief})`.
+- **Path A (delegate).** Hand off to `superpowers:writing-skills` with a
+  one-paragraph brief describing the flow, its triggers, and intended scope.
+  The hand-off itself is what creates the skill files; this skill does not
+  write SKILL.md. Reflection's `Автоматизував:` field records
+  `skill — delegated to writing-skills (subject: {brief})`.
+- **Path B (direct create).** Create the skill in the shared canonical
+  topology: `~/.claude/skills/{name}/SKILL.md` plus
+  `~/.agents/skills/{name}` and `~/.gemini/skills/{name}` symlinks pointing
+  at the canonical entrypoint. Mirror the safety behavior of `install.sh`
+  (`set_skill_link` / `export_skill_link`) when handling broken symlinks,
+  foreign targets, files, and directories. Keep SKILL.md minimal: frontmatter
+  with `name` and trigger-only `description`, concise instructions, no extra
+  README unless the target skill format explicitly requires it. Reflection's
+  `Автоматизував:` field records `skill — created at {path}`.
 
 ### Manual verification
 
-- After `y`, the next turn shows `superpowers:writing-skills` as the active
-  skill, not `wiki`.
-- No `Write` tool call from the wiki skill targets `~/.claude/skills/...`.
-- Reflection's `Автоматизував:` field clearly cites the delegation, not a
-  direct creation.
+- **Path A:** the next turn shows `superpowers:writing-skills` as the active
+  skill, not `wiki`. No `Write` tool call from the wiki skill targets
+  `~/.claude/skills/...`. Reflection's `Автоматизував:` field cites the
+  delegation, not a direct creation.
+- **Path B:** `~/.claude/skills/{name}/SKILL.md` exists, and both
+  `~/.agents/skills/{name}` and `~/.gemini/skills/{name}` resolve to the
+  canonical entrypoint. Reflection's `Автоматизував:` field cites the direct
+  creation path, never the delegation it did not perform.
+- **Path B conflict safety:** if `~/.claude/skills/{name}` is a symlink to a
+  different target, a plain file, or a non-empty real directory with an existing
+  `SKILL.md`, the agent stops and asks the user to resolve/rename it. It does
+  not overwrite. Broken export symlinks are replaced; foreign/plain-file
+  exports are skipped and reported with their real current target/state.
 
 ### Separation-of-concerns check
 
-If the wiki skill ever creates `~/.claude/skills/{name}/SKILL.md` directly,
-that's a bug — file an issue. Skill conventions (frontmatter, evals, naming,
-ecosystem placement) live in `superpowers:writing-skills`. The wiki skill knows
-wiki conventions only.
+The wiki skill knows wiki conventions only. Skill conventions (frontmatter,
+naming, ecosystem placement) live in `superpowers:writing-skills` — prefer that
+helper whenever it is available. Path B exists so the cross-agent topology is
+not stranded behind a single-agent helper dependency when the user runs Codex or
+Gemini; it is not a shortcut around skill conventions. A path-B SKILL.md that
+ships without frontmatter, without a trigger-only `description`, or with
+multi-paragraph noise is still a bug regardless of which path fired.
 
 ### wiki-vs-skill discrimination check
 
@@ -219,7 +257,7 @@ The skill **must NOT** emit any of:
 - `grep -E "tier (1|2|3|4)" turn-output` → zero matches in proposal blocks
   (numbered tiers are gone entirely).
 - If a wiki proposal fired and the user accepted, the resulting page is a
-  *concept page Claude reads back*, not a copy-paste of the cURL command with
+  *concept page the active agent reads back*, not a copy-paste of the cURL command with
   no surrounding context.
 
 ### Why this matters
@@ -242,7 +280,7 @@ bash», «create a script for this».
 2. Agent does **not** propose `scripts/{name}.sh` as a crystallization tier.
 3. Agent briefly explains that user-runnable scripts are no longer a
    crystallization target (Division of Labor) and offers the wiki-page
-   equivalent: capture the same content as a concept page Claude reads back.
+   equivalent: capture the same content as a concept page the active agent reads back.
 4. If the user insists on a script regardless, the agent can create it as a
    one-off file (the user's explicit request overrides skill conventions),
    but reflection's `Автоматизував:` field records `нічого — юзер попросив
@@ -254,7 +292,7 @@ bash», «create a script for this».
 Скіл більше не пропонує user-runnable скрипти як крихталізацію — вони перекидають mechanical work назад на тебе. Замість того ось рівноцінний варіант:
 
 🔁 Помічаю патерн: ...
-   wiki: docs/wiki/concepts/{name}.md (з готовим bash-блоком всередині, який Клод читає і виконує сам наступного разу)
+   wiki: docs/wiki/concepts/{name}.md (з готовим bash-блоком всередині, який активний агент читає і виконує сам наступного разу)
 
    Створити? [y] / [n] / [пізніше]
 ```
@@ -341,8 +379,8 @@ No `🔁 Помічаю патерн:` block. Any reflection that fires on hard 
 
 - No `concepts/git-status-helper.md` or similar gets proposed at any point.
 - The anti-noise rule explicitly listing `ls / cd / pwd / git status / git log /
-  cat / wc / grep` of well-known paths covers this case — see `SKILL.md` →
-  `### Anti-noise rules for crystallization`.
+  cat / wc / grep` of well-known paths covers this case — see
+  `references/self-improvement.md` → `### Anti-noise rules for crystallization`.
 
 ### Edge case: ambient command as part of a larger flow
 

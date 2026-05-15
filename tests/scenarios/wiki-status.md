@@ -1,7 +1,7 @@
 # Scenario: `wiki status` operation (manual pull-model)
 
 Single scenario that exercises the `## Operation: Wiki Status` section in
-`SKILL.md`. Sets up a v4-shaped mock wiki with mixed activity (hot/cold/protected
+`references/operation-wiki-status.md`. Sets up a v4-shaped mock wiki with mixed activity (hot/cold/protected
 pages, one cross-ref drift, one schema drift), triggers `wiki status`, and
 verifies the structured display + action menu behave per spec section 6.
 

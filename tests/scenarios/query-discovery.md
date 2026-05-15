@@ -1,8 +1,8 @@
 # Scenario: Query discovery — proactive trigger on natural phrasing
 
 Five sub-scenarios that exercise the proactive query model defined in `SKILL.md`
-→ frontmatter description (proactive trigger c) and `## Operation: Query` →
-`### When to Query` (master rule). Each runs against a v4-shaped test wiki and
+frontmatter description (proactive trigger c) and `references/operation-query.md`
+(master rule). Each runs against a v4-shaped test wiki and
 asserts whether the skill correctly invoked Query before generating
 project-specific content — without requiring the user to use the word "wiki".
 

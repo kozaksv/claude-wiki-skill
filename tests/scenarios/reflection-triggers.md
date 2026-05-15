@@ -1,7 +1,7 @@
 # Scenario: РЕФЛЕКСІЯ block triggers
 
 Four sub-scenarios that exercise the trigger table and anti-noise rule defined in
-`SKILL.md` → `## Self-Improvement Loop`. Each runs against a v4-shaped test wiki and
+`references/self-improvement.md`. Each runs against a v4-shaped test wiki and
 asserts whether a РЕФЛЕКСІЯ block was emitted (and what its `trigger:` line says).
 
 ## Common setup
@@ -13,9 +13,9 @@ Mock wiki state (shared by all sub-scenarios):
 - `docs/wiki/concepts/purchase-flow.md` and `docs/wiki/concepts/intake-stock.md` exist
 - `.gitignore` contains `docs/wiki/.usage.json`
 
-The "agent" in these scenarios is the wiki skill instructing Claude. The expected
-output is the РЕФЛЕКСІЯ block (or its absence) — verified by inspection of the turn's
-final assistant message.
+The "agent" in these scenarios is the active Claude/Codex/Gemini session running
+the wiki skill. The expected output is the РЕФЛЕКСІЯ block (or its absence) —
+verified by inspection of the turn's final assistant message.
 
 ---
 
@@ -157,10 +157,9 @@ header anywhere in the turn.
 
 If during Query the agent decides the synthesis is reusable and creates a new wiki
 page (Filing Back), that turns the operation into a synthesis-write. Reflection
-**should** fire, with `trigger:` matching whatever event ends the turn (typically
-`todo-completion` if the question was tracked as a todo, otherwise the agent waits
-for a hard event and only fires at that point — Filing Back alone does not fire
-reflection without a paired hard trigger).
+**should** fire as an explicit synthesis-write, with `trigger: explicit` unless
+the same turn is already covered by a stronger hard event such as
+`todo-completion` or `pre-commit`.
 
 ---
 

@@ -1,10 +1,10 @@
 # Integration Checklist (Phase I dogfood pass)
 
-End-to-end mental review of SKILL.md after Phase H. Goal: every operation that touches wiki state mentions the right cross-cutting concerns (telemetry mutator, reflection trigger, page protection, Karpathy staleness, anti-noise).
+End-to-end mental review of `SKILL.md` + `references/` after Phase H. Goal: every operation that touches wiki state mentions the right cross-cutting concerns (telemetry mutator, reflection trigger, page protection, Karpathy staleness, anti-noise).
 
 ## Method
 
-Read SKILL.md top to bottom. For each operation, verify five anchors are reachable from inside the operation's body (or its `### After completion`):
+Read `SKILL.md` as the routing contract, then read each operation reference it points to. For each operation, verify five anchors are reachable from inside the operation body (or its `### After completion`):
 
 1. **Telemetry mutator** — does the operation say *which* `bump_*` / `forget` calls fire and when?
 2. **Reflection trigger** — does the `### After completion` section spell out fire-vs-skip and reference the anti-noise rule?
@@ -17,8 +17,9 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 ### Eight operations cross-referenced from intro/frontmatter
 
 - ✅ Frontmatter `description` lists all 8 by name (init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki status).
-- ✅ `## Modularity` paragraph: "The eight operations are a palette, not a checklist."
-- ✅ All 8 `## Operation: <Name>` headers present — no orphan operations described elsewhere.
+- ✅ Frontmatter `description` includes the public README/installer init prompt family (`створи вікі`, `ініціалізуй wiki`, `init wiki`, `bootstrap wiki`), so fresh install CTA and model trigger contract match.
+- ✅ `SKILL.md` is a thin entrypoint and routes to every operation reference.
+- ✅ All 8 `## Operation: <Name>` headers are present under `references/` — no orphan operations described elsewhere.
 
 ### Ingest-Source
 
@@ -56,10 +57,10 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 ### Lint
 
 - ✅ Telemetry: check #1 says ".usage.json is read here for prioritization only" — anti-flagging stance is explicit.
-- ✅ Reflection: **`### After completion` was MISSING — added during this dogfood pass.** Now correctly says read-only default; per-page action verbs from cleanup-flow trigger reflection on their own terms.
-- ✅ Page protection: dedicated `### Page protection during Lint` subsection. `[a]` / `[b]` / `[c]` skip; `[d]` requires explicit unpin.
+- ✅ Reflection: `### After completion` explicitly says Lint/report/revert output is the visible reasoning layer; no extra РЕФЛЕКСІЯ block or cleanup-prompt after lint/status/cleanup-flow.
+- ✅ Page protection: dedicated `### Page protection during Lint` subsection. Full, `швидко`, path scope, and topic scope skip `protected: true`; explicit verification requires `wiki unprotect` first.
 - ✅ Karpathy staleness: check #1 IS the canonical Karpathy reformulation — long paragraph banning timestamp/heuristic flagging.
-- ✅ Anti-noise: report-only Lint = skip reflection; applied fixes = fire.
+- ✅ Anti-noise: lint/status/cleanup reports are terminal; applied fixes are explained in the report rather than followed by reflection.
 
 ### Split
 
@@ -80,7 +81,7 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 ### Cleanup
 
 - ✅ Telemetry: step 4 — `forget(path)` for deleted entity stubs.
-- ✅ Reflection: `### After completion` distinguishes proposal-only (skip) vs. applied-fixes (fire).
+- ✅ Reflection: cleanup-flow uses its own action/report output and does not emit a recursive reflection block.
 - ✅ Page protection: cleanup-flow's destructive verbs (`видали`, `merge`) honor page protection — refuses with `wiki unprotect` hint.
 - ✅ Karpathy staleness: cleanup is non-staleness oriented; staleness lives in Lint.
 - ✅ Anti-noise: explicitly applied for proposal-only mode.
@@ -99,7 +100,7 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 ### Page protection consistency
 
 - ✅ Cleanup-flow safety layer 3 (`### Safety layers`) enforces page protection on `видали` and `merge`.
-- ✅ Lint `### Page protection during Lint` blocks `[a]` / `[b]` / `[c]` / `[d]` flows correctly.
+- ✅ Lint `### Page protection during Lint` blocks full / `швидко` / path / topic flows correctly.
 - ✅ Wiki Status `[a]` / `[b]` filter protected pages out of proposals (line in Action menu routing table).
 - ✅ Protect auto-suggest fires at Ingest-Source step 8 and Ingest-Binary step 11 with identical wording.
 - ✅ `wiki protect` / `wiki unprotect` are the only ways to toggle.
@@ -114,14 +115,14 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 ### Anti-noise consistency
 
 - ✅ Master rule: `## Self-Improvement Loop > ### Anti-noise rule` (clear principle: only Read = no reflection).
-- ✅ Each `### After completion` correctly cites it.
+- ✅ Each `### After completion` correctly cites it or states the stronger lint/status/cleanup no-reflection rule.
 - ✅ Pin/unpin micro-ops apply it (metadata only = no reflection).
 - ✅ Common Mistakes row "Skipping reflection because 'small change'" closes the loophole — anti-noise is *only* for read-only blocks.
 
 ### Crystallization (proposal, not silent write)
 
 - ✅ `## Self-Improvement Loop > ### Crystallization` — two artifact types (wiki / skill) and proposal format.
-- ✅ Skill type explicitly delegates to `superpowers:writing-skills` — no SKILL.md created from this skill.
+- ✅ Skill type delegates to `superpowers:writing-skills` when available, and direct-create fallback uses the shared canonical + symlink export topology with installer-style conflict safety.
 - ✅ Script tier (`scripts/*.sh` / `*.py`) deliberately absent — Division of Labor reasoning in the table's "Why no `scripts/` tier" callout.
 - ✅ Common Mistakes rows "Creating crystallization artifact silently" + "Proposing `scripts/*.sh` or `scripts/*.py` as crystallization" reinforce.
 
@@ -139,15 +140,14 @@ Read SKILL.md top to bottom. For each operation, verify five anchors are reachab
 
 ## Gaps fixed inline during this pass
 
-1. **Lint had no `### After completion` section.** Added one that:
-   - Marks Lint as read-only by default (skip reflection).
-   - Notes that per-page action verbs from the cleanup-flow trigger reflection on their own terms.
-   - Warns against double-fire.
+1. **Lint/status/cleanup reflection contract tightened.** The report is now the visible reasoning layer; no extra РЕФЛЕКСІЯ or cleanup-prompt follows these operations, including after AUTO fixes or natural-language revert.
 
-No other gaps required SKILL.md edits — the v4 surface area is consistent.
+2. **Cross-agent direct skill creation clarified.** Codex/Gemini-only crystallization can create a new user skill directly, but must use the shared canonical topology and skip/report conflicting exports instead of duplicating files.
+
+No other gaps required instruction edits — the v4.2 surface area is consistent.
 
 ## Conclusion
 
-After this dogfood pass and the Lint fix, all eight operations consistently route through the five cross-cutting concerns. The skill is internally coherent; downstream entry points (РЕФЛЕКСІЯ embedded prompt, `wiki status`) converge on the same cleanup-flow mechanics.
+After this dogfood pass and the Lint fix, all eight operations consistently route through the five cross-cutting concerns. The split entrypoint/reference layout is internally coherent; downstream entry points (РЕФЛЕКСІЯ embedded prompt, `wiki status`) converge on the same cleanup-flow mechanics.
 
-Ready for v4.0.0 release.
+Ready for v4.2.0 tag once install-ref is cut.

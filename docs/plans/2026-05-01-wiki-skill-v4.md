@@ -1,5 +1,10 @@
 # Wiki Skill v4.0 Implementation Plan
 
+> Historical implementation plan. It was written for the original v4.0 work and
+> is superseded for current behavior by `SKILL.md`, `references/`, `README.md`,
+> and `tests/scenarios/`. Do not copy the old four-tier script crystallization or
+> Claude-only discovery details from this plan into current code.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Upgrade the universal wiki skill from v3.0 to v4.0 by adding versioning, telemetry sidecar, РЕФЛЕКСІЯ block, tiered crystallization, `wiki status` operation, and Karpathy-aligned content-verification staleness — adopting Hermes-Agent architectural patterns where they fit.

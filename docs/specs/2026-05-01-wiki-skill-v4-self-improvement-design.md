@@ -1,5 +1,11 @@
 # Wiki Skill v4.0 — Self-Improvement Loop (Hermes-aligned)
 
+> Historical design note. This document describes the original v4.0 design and
+> is superseded for current behavior by `SKILL.md`, `references/`, `README.md`,
+> and `tests/scenarios/`. In particular, v4.1 removed user-runnable script
+> crystallization tiers, and v4.2 added cross-agent canonical symlink exports
+> plus agent-neutral discovery.
+
 **Date:** 2026-05-01
 **Skill:** `~/.claude/skills/wiki/` (symlink → `~/Library/CloudStorage/Dropbox/AI/claude-wiki-skill/`)
 **Current version:** 3.0 (legacy, no `wiki_version` frontmatter)

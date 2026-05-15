@@ -1,7 +1,7 @@
 # Scenario: Cleanup-flow end-to-end
 
 Four sub-scenarios that exercise the unified cleanup-flow inside
-`## Self-Improvement Loop > ### Cleanup-flow` in `SKILL.md`. The flow
+`references/self-improvement.md`. The flow
 has two entry points (РЕФЛЕКСІЯ embedded `[y]` prompt and `wiki status`
 `[a/b/c]`) that funnel into the same downstream mechanics: subset
 selection → content-verification → per-page action menu.
@@ -103,10 +103,10 @@ User: `y`.
    - **Does NOT** snapshot before — `глянь і онови` is non-destructive
      (Edit, not delete/merge). Snapshot is reserved for `видали` /
      `merge` / `розбий`.
-8. Reflection block from this Edit fires per `## Self-Improvement Loop`
-   triggers (the cleanup itself is a follow-up edit, so reflection
-   already fired for the original work; the embedded prompt result is
-   normal flow continuation, not a new reflection).
+8. No extra РЕФЛЕКСІЯ block appears after this cleanup-flow edit. The
+   content-verification finding, chosen action, diff, and confirmation are the
+   visible reasoning for the cleanup pass; adding the embedded cleanup prompt
+   again would be recursive.
 
 ### Telemetry effect
 
@@ -181,8 +181,9 @@ User: `wiki status`.
    `forget(concepts/legacy-feature-flag.md)` in `.usage.json`.
 10. Skill confirms with rollback hint: «Якщо передумаєш — `git revert
     HEAD` поверне до знімка».
-11. The lint-driven flow (Edit + structural changes) → reflection fires
-    on its own from the underlying Lint operation.
+11. The lint-driven flow ends with its own confirmation and rollback hint. No
+    extra РЕФЛЕКСІЯ block or cleanup-prompt appears after `wiki status` /
+    cleanup-flow.
 
 ### Cancellation variant
 
@@ -324,11 +325,11 @@ After `git revert HEAD`:
 
 ## Notes on test execution
 
-These are mental-walkthrough scenarios for verifying SKILL.md
-instructions, not automated tests. Each sub-scenario should be readable
+These are mental-walkthrough scenarios for verifying `SKILL.md` routing plus
+`references/` instructions, not automated tests. Each sub-scenario should be readable
 end-to-end as a story: setup → trigger → expected skill behavior →
 telemetry effect.
 
 When integrating during Phase I (final integration), walk each
-sub-scenario against the latest SKILL.md and note any gaps under an
+sub-scenario against the latest `SKILL.md` + `references/` contract and note any gaps under an
 "Issues Found" header in this file.

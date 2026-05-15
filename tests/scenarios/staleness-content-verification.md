@@ -1,9 +1,11 @@
 # Scenario: Lint staleness as Karpathy content-verification
 
 Three sub-scenarios that exercise the reformulated `## Operation: Lint`
-staleness check (#1) in `SKILL.md`. The check is no longer timestamp-based;
-it proposes a subset for verification, reads selected pages in full, verifies
-claims, and reports findings without auto-flagging. Захищені pages are
+staleness check (#1) in `references/operation-lint.md`. The check is no longer timestamp-based;
+it chooses a verification subset from the current contract (full by default
+after the heads-up, `швидко` for top-10, or user-named path/topic scope), reads
+selected pages in full, verifies claims, and reports findings without
+auto-flagging. Захищені pages are
 **always** skipped by content-verification proposals. Cross-ref drift and
 other passive issues need NO LLM read — pure grep.
 
@@ -61,13 +63,13 @@ Mock wiki state:
 
 ### Trigger
 
-User: `wiki lint` → picks `[a] Top-5 most edited` from the verification menu.
+User: `wiki lint швидко`.
 
 ### Expected skill behavior
 
 1. Sort `report()` by `patch_count desc, last_patched_at asc`. Filter to
-   `state == "active"` and `protected == false`. Top entry: `purchase-flow.md`
-   (only candidate here).
+   `state == "active"` and `protected == false`, then take the top 10. Top
+   entry: `purchase-flow.md` (only candidate here).
 2. **Read** `concepts/purchase-flow.md` in full → bumps `view_count` to 4
    (this is a real consultation, not a meta-op).
 3. Verify each claim:
@@ -75,24 +77,33 @@ User: `wiki lint` → picks `[a] Top-5 most edited` from the verification menu.
      → file does NOT exist on disk. **Claim fails.**
    - `## Sources` line 2: `apps/api/src/routes/purchases.ts` → file exists.
      **Claim holds.**
-4. Report:
+4. The missing `## Sources` line is disk-grounded, reversible, and has no
+   defensible competing alternative, so it is an AUTO finding. The skill creates
+   the snapshot/auto-fix commits, deletes only the dead source line, and reports:
 
    ```
-   ### Verified (content-verification subset: [a])
-   - [[purchase-flow]] — `## Sources` references deleted file
-     `docs/superpowers/specs/2025-12-01-purchase-receive.md` → propose DELETE
-     this source line. Other claims hold.
+   ## Звіт лінта вікі — <date>
+
+   Перевірено: швидко — top-10 most-edited.
+
+   🟢 **Авто-застосовано** (знімок створено перед)
+
+     1. `concepts/purchase-flow.md` — deleted dead `## Sources` line
+        (`docs/superpowers/specs/2025-12-01-purchase-receive.md` missing on disk)
+
+     **↩️  Відкат:**
+     • Скажи `відкат` — поверну всі (знімок готовий)
+     • Скажи `відкат 1` — поверну лише №1
    ```
 
-5. **Do not silently rewrite the page.** Wait for user to choose
-   `глянь і онови`, `видали`, `залиш як є`, or `захисти`.
+5. No extra РЕФЛЕКСІЯ block or cleanup-prompt appears after the lint report.
 
 ### Manual verification
 
 - The skill did **not** flag the page based on `last_patched_at` value alone;
   it sorted by patch_count first, then read content.
 - `view_count` on `purchase-flow.md` is `4` after the lint run (was `3`).
-- Telemetry was used for **prioritization** (`[a]` sort), not **flagging**.
+- Telemetry was used for **prioritization** (`швидко` sort), not **flagging**.
 
 ---
 
@@ -156,25 +167,21 @@ Mock wiki state:
 
 Two equivalent triggers must both honor the protection:
 
-- (a) User: `wiki lint` → picks `[b] Top-5 longest unpatched among active`.
+- (a) User: `wiki lint`; after the full-lint heads-up, user says `далі`.
 - (b) User: `wiki status` → picks `[b]` from action menu (delegates to Lint).
 
 ### Expected skill behavior
 
 1. Sort `report()` by `last_patched_at asc`. Without protect filter, the result
-   would be: `secret-rotation-recipe` (Feb 10), `purchase-flow` (Apr 29).
+   would include: `secret-rotation-recipe` (Feb 10), `purchase-flow` (Apr 29).
 2. **Apply protect filter**: drop `secret-rotation-recipe` because
    `protected == true`. Result set: `purchase-flow` only.
 3. Lint report includes a separate `### Захищені` header listing the protected
    pages (so the user remembers they exist):
 
-   ```
-   ### Verified (content-verification subset: [b])
-   - [[purchase-flow]] — claims hold, no action needed.
-
-   ### Захищені (skipped by content-verification — `wiki unprotect <path>` to verify)
-   - [[secret-rotation-recipe]]
-   ```
+   The exact report bucket depends on the rest of the lint findings, but it must
+   list `[[secret-rotation-recipe]]` only as protected/skipped guidance, never as
+   a verification target or action item.
 
 4. **Do not** read `secret-rotation-recipe.md` content. **Do not** bump its
    `view_count`. **Do not** propose any action against it.
@@ -280,8 +287,8 @@ User: `wiki lint`.
   run, `view_count` is still `2`** — passive detection did not consult the
   page as content, only grepped it for wikilink patterns.
 - No `Read` tool call against `page-a.md` is required for passive cross-ref
-  drift. (If the user separately picks `[a]/[b]/[c]/[d]` content
-  verification on `page-a`, that **does** bump `view_count`.)
+  drift. (If the user separately names `page-a` in a path/topic content-check,
+  that **does** bump `view_count`.)
 - The reformulated Lint preserves checks #2-13 (cross-ref drift, schema
   drift, orphans, etc.) as passive — only check #1 (staleness) is the
   Karpathy content-verification flow.
@@ -301,8 +308,8 @@ Across all three sub-scenarios:
    prioritization. The skill never says "this page is stale because it has
    `last_patched_at` 2026-01-05" — that would be flagging.
 3. **Pin acts as a hard fence.** `protected == true` excludes the page from
-   `[a]/[b]/[c]/[d]` content-verification proposals. Even an explicit user
-   list (`[d]`) requires `wiki unprotect` first.
+  full / `швидко` / path / topic content-verification proposals. Even an
+  explicit user path requires `wiki unprotect` first.
 4. **Reflection fires only when edits happen.** Sub-scenario 1 (no edit yet,
    waiting on user choice) — no РЕФЛЕКСІЯ block. Sub-scenario 3, if the
    user later applies the passive fix and `Edit`s `page-a.md`, reflection

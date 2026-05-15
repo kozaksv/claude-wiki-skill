@@ -1,7 +1,7 @@
 # Scenario: Telemetry counters (.usage.json)
 
 Three sub-scenarios that exercise the `bump_view` / `bump_patch` / `bump_use` mutators
-described in `SKILL.md` → `## Telemetry Sidecar`. Each runs against a v4-shaped
+described in `references/telemetry.md`. Each runs against a v4-shaped
 test wiki and asserts the diff in `docs/wiki/.usage.json` after the trigger.
 
 ## Common setup

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 WIKI_VERSION="${1:-master}"
 
@@ -13,7 +13,7 @@ GEMINI_SKILLS_ROOT="$HOME/.gemini/skills"
 DOC_EXTRACT_REPO="https://github.com/kozaksv/claude-doc-extract-skill.git"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
 DOC_EXTRACT_LINK="$SKILLS_ROOT/doc-extract"
-DOC_EXTRACT_REF="main"
+DOC_EXTRACT_REF="${WIKI_DOC_EXTRACT_REF:-main}"
 
 set_skill_link() {
   local name="$1" target_dir="$2" link="$3"
@@ -21,7 +21,6 @@ set_skill_link() {
     local current
     current="$(readlink "$link")"
     if [ "$current" = "$target_dir" ]; then
-      ln -sfn "$target_dir" "$link"
       return 0
     fi
     if [ ! -e "$link" ]; then
@@ -57,7 +56,10 @@ install_skill_at_ref() {
     ensure_ref_exists "$name" "$dir" "$ref" || return 1
     git -C "$dir" checkout "$ref" || return 1
     if git -C "$dir" symbolic-ref -q HEAD >/dev/null; then
-      git -C "$dir" pull --ff-only || return 1
+      git -C "$dir" pull --ff-only || {
+        echo "Помилка: неможливо оновити $dir (можливо, є локальні зміни або git-конфлікт)."
+        return 1
+      }
     fi
   else
     if [ -e "$dir" ]; then
@@ -76,7 +78,21 @@ export_skill_link() {
   local name="$1" source_link="$2" export_link="$3"
   local export_root
   export_root="$(dirname "$export_link")"
-  mkdir -p "$export_root"
+  local probe="$export_root"
+  while [ ! -e "$probe" ]; do
+    local parent
+    parent="$(dirname "$probe")"
+    [ "$parent" = "$probe" ] && break
+    probe="$parent"
+  done
+  if [ -e "$probe" ] && [ ! -d "$probe" ]; then
+    echo "Увага: export root $probe існує і не є директорією — export пропущено."
+    return 2
+  fi
+  if ! mkdir -p "$export_root"; then
+    echo "Увага: Не вдалося створити export directory: $export_root — export пропущено."
+    return 2
+  fi
 
   if [ -L "$export_link" ]; then
     local current
@@ -87,20 +103,27 @@ export_skill_link() {
     fi
     if [ ! -e "$export_link" ]; then
       echo "[$name] замінюю битий export: $export_link"
-      ln -sfn "$source_link" "$export_link"
-      return 0
+      if ln -sfn "$source_link" "$export_link"; then
+        return 0
+      fi
+      echo "Увага: Не вдалося створити export: $export_link → $source_link"
+      return 2
     fi
     echo "Увага: $export_link вже вказує на $current — не перезаписую."
-    return 0
+    return 2
   fi
 
   if [ -e "$export_link" ]; then
     echo "Увага: $export_link вже існує і не є symlink — не перезаписую."
-    return 0
+    return 2
   fi
 
-  ln -s "$source_link" "$export_link"
-  echo "[$name] export: $export_link → $source_link"
+  if ln -s "$source_link" "$export_link"; then
+    echo "[$name] export: $export_link → $source_link"
+    return 0
+  fi
+  echo "Увага: Не вдалося створити export: $export_link → $source_link"
+  return 2
 }
 
 echo "=== Wiki Skill — встановлення (версія: $WIKI_VERSION) ==="
@@ -122,32 +145,82 @@ install_skill_at_ref "wiki" "$REPO" "$SKILL_DIR" "$SKILL_LINK" "$WIKI_VERSION"
 # https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
 # Лінкуємо на canonical entrypoint, не на realpath, щоб перемикання canonical версії
 # автоматично підхоплювали Codex і Gemini.
-export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"
-export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"
+WIKI_AGENTS_STATUS="ok"
+WIKI_GEMINI_STATUS="ok"
+DOC_AGENTS_STATUS="ok"
+DOC_GEMINI_STATUS="ok"
 
-# 3. doc-extract (optional dependency for ingest-binary). It tracks main because
-# its extractor CLI is treated as a stable integration contract for the wiki.
+if ! export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"; then
+  WIKI_AGENTS_STATUS="skipped"
+fi
+if ! export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"; then
+  WIKI_GEMINI_STATUS="skipped"
+fi
+
+# 3. doc-extract (optional dependency for ingest-binary). It tracks main by
+# default because its extractor CLI is treated as a stable integration contract
+# for the wiki; WIKI_DOC_EXTRACT_REF can pin it for reproducible installs.
 # Keep wiki available even if this dependency cannot be installed; text/source
 # wiki operations still work.
 DOC_EXTRACT_INSTALLED=0
 if install_skill_at_ref "doc-extract" "$DOC_EXTRACT_REPO" "$DOC_EXTRACT_DIR" "$DOC_EXTRACT_LINK" "$DOC_EXTRACT_REF"; then
   DOC_EXTRACT_INSTALLED=1
-  export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$AGENTS_SKILLS_ROOT/doc-extract"
-  export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$GEMINI_SKILLS_ROOT/doc-extract"
+  if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$AGENTS_SKILLS_ROOT/doc-extract"; then
+    DOC_AGENTS_STATUS="skipped"
+  fi
+  if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$GEMINI_SKILLS_ROOT/doc-extract"; then
+    DOC_GEMINI_STATUS="skipped"
+  fi
 else
   echo "Увага: doc-extract не встановлено. Wiki skill працюватиме, але ingest-binary буде недоступний до повторного встановлення."
 fi
+
+status_tag() {
+  case "$1" in
+    skipped) printf '  (пропущено)' ;;
+    *)       : ;;
+  esac
+}
+
+print_export_summary() {
+  local link="$1" expected="$2" status="$3"
+  if [ -L "$link" ]; then
+    local current
+    current="$(readlink "$link")"
+    if [ "$current" = "$expected" ]; then
+      echo "  $link → $current"
+    else
+      echo "  $link → $current$(status_tag "$status"; printf ' — expected %s' "$expected")"
+    fi
+    return 0
+  fi
+  if [ -e "$link" ]; then
+    echo "  $link$(status_tag "$status"; printf ' — існує і не є symlink; expected %s' "$expected")"
+    return 0
+  fi
+  echo "  $link$(status_tag "$status"; printf ' — не створено; expected %s' "$expected")"
+}
+
+ANY_SKIPPED=0
+for status in "$WIKI_AGENTS_STATUS" "$WIKI_GEMINI_STATUS" "$DOC_AGENTS_STATUS" "$DOC_GEMINI_STATUS"; do
+  [ "$status" = "skipped" ] && ANY_SKIPPED=1
+done
 
 echo ""
 echo "Готово! Встановлено:"
 echo "  $SKILL_LINK → $SKILL_DIR  (@ $WIKI_VERSION)"
 echo "Cross-agent exports (symlinks to shared canonical):"
-echo "  $AGENTS_SKILLS_ROOT/wiki → $SKILL_LINK"
-echo "  $GEMINI_SKILLS_ROOT/wiki → $SKILL_LINK"
+print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_AGENTS_STATUS"
+print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_GEMINI_STATUS"
 if [ "$DOC_EXTRACT_INSTALLED" -eq 1 ]; then
   echo "  $DOC_EXTRACT_LINK → $DOC_EXTRACT_DIR  (@ $DOC_EXTRACT_REF)"
-  echo "  $AGENTS_SKILLS_ROOT/doc-extract → $DOC_EXTRACT_LINK"
-  echo "  $GEMINI_SKILLS_ROOT/doc-extract → $DOC_EXTRACT_LINK"
+  print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_AGENTS_STATUS"
+  print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_GEMINI_STATUS"
+fi
+if [ "$ANY_SKIPPED" -eq 1 ]; then
+  echo ""
+  echo "Увага: частину exports пропущено. Summary вище показує фактичний стан кожного шляху —"
+  echo "Codex/Gemini бачитимуть лише ті exports, які реально існують і ведуть на canonical."
 fi
 if [ "$DOC_EXTRACT_INSTALLED" -eq 1 ]; then
   echo ""
