@@ -39,7 +39,7 @@ if [[ "${1:-}" == "-C" ]]; then
       expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-main}"
       ref="${@: -1}"
       case "$ref" in
-        master*|origin/master*|main*|origin/main*|"$expected_doc_ref"*|"origin/$expected_doc_ref"*)
+        master*|origin/master*|main*|origin/main*|v4.2.0*|origin/v4.2.0*|"$expected_doc_ref"*|"origin/$expected_doc_ref"*)
           exit 0
           ;;
         *)
@@ -48,6 +48,9 @@ if [[ "${1:-}" == "-C" ]]; then
       esac
       ;;
     symbolic-ref)
+      exit 0
+      ;;
+    status)
       exit 0
       ;;
   esac
@@ -243,14 +246,33 @@ grep -q 'не є symlink' "$TMP/install-canonical-file.log" || {
   exit 1
 }
 
+HOME_TAG_REF="$TMP/home-tag-ref"
+mkdir -p "$HOME_TAG_REF"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_TAG_REF" bash "$ROOT/install.sh" v4.2.0 >"$TMP/install-tag-ref.log" 2>&1
+grep -q "wiki.*(@ v4.2.0)" "$TMP/install-tag-ref.log" || {
+  echo "expected v4.2.0 to be an installable ref"
+  exit 1
+}
+
 HOME_BAD_REF="$TMP/home-bad-ref"
 mkdir -p "$HOME_BAD_REF"
-if PATH="$BIN_DIR:$PATH" HOME="$HOME_BAD_REF" bash "$ROOT/install.sh" v4.2.0 >"$TMP/install-bad-ref.log" 2>&1; then
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_BAD_REF" bash "$ROOT/install.sh" v9.9.9 >"$TMP/install-bad-ref.log" 2>&1; then
   echo "expected install to fail with a friendly message for missing ref"
   exit 1
 fi
-grep -q "ref 'v4.2.0' не знайдено" "$TMP/install-bad-ref.log" || {
+grep -q "ref 'v9.9.9' не знайдено" "$TMP/install-bad-ref.log" || {
   echo "expected clear missing ref message"
+  exit 1
+}
+
+HOME_INVALID_REF="$TMP/home-invalid-ref"
+mkdir -p "$HOME_INVALID_REF"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_INVALID_REF" bash "$ROOT/install.sh" 'bad;ref' >"$TMP/install-invalid-ref.log" 2>&1; then
+  echo "expected install to fail before git for invalid ref syntax"
+  exit 1
+fi
+grep -q "invalid install ref" "$TMP/install-invalid-ref.log" || {
+  echo "expected clear invalid ref syntax message"
   exit 1
 }
 
@@ -289,5 +311,25 @@ if grep -q "export: $HOME_BLOCKED_EXPORT/.agents/skills/wiki" "$TMP/install-bloc
   echo "blocked .agents wiki export was falsely reported as created"
   exit 1
 fi
+
+HOME_ROUNDTRIP="$TMP/home-roundtrip"
+mkdir -p "$HOME_ROUNDTRIP"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/install.sh" >"$TMP/install-roundtrip-1.log" 2>&1
+PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/uninstall.sh" >"$TMP/uninstall-roundtrip.log" 2>&1
+for link in \
+  "$HOME_ROUNDTRIP/.claude/skills/wiki" \
+  "$HOME_ROUNDTRIP/.claude/skills/doc-extract" \
+  "$HOME_ROUNDTRIP/.agents/skills/wiki" \
+  "$HOME_ROUNDTRIP/.gemini/skills/wiki" \
+  "$HOME_ROUNDTRIP/.agents/skills/doc-extract" \
+  "$HOME_ROUNDTRIP/.gemini/skills/doc-extract"; do
+  [ ! -e "$link" ] && [ ! -L "$link" ] || {
+    echo "expected uninstall to remove round-trip symlink: $link"
+    exit 1
+  }
+done
+PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/install.sh" >"$TMP/install-roundtrip-2.log" 2>&1
+expect_link_target "$HOME_ROUNDTRIP/.agents/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"
+expect_link_target "$HOME_ROUNDTRIP/.gemini/skills/doc-extract" "$HOME_ROUNDTRIP/.claude/skills/doc-extract"
 
 echo "install cross-agent links: ok"

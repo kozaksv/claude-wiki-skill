@@ -371,7 +371,7 @@ If all three 🔵 lines lack triggers, omit the 🔵 block entirely.
 
 When ALL buckets (🟢 / 🟡 / 🔵) are empty (clean wiki, nothing applied, nothing pending, nothing notable), print exactly one line: «✅ Лінт чистий. N сторінок перевірено, дрейфу не виявлено.»
 
-**Never close Lint with a multi-option "куди далі?" menu** that mixes paradigms — e.g. `[1] verify subset / [2] another subset / [3] specific list / [4] split page X / [5] stop without verification`. Per-finding actions in 🟡 are offered with the unified action menu (see `## Self-Improvement Loop > ### Cleanup-flow`). When the report is done, the operation is done — wait for user to act on findings or say `відкат`.
+**Never close Lint with a multi-option "куди далі?" menu** that mixes paradigms — e.g. `[1] verify subset / [2] another subset / [3] specific list / [4] split page X / [5] stop without verification`. Per-finding actions in 🟡 are offered with the unified action menu (see `references/cleanup-flow.md`). When the report is done, the operation is done — wait for user to act on findings or say `відкат`.
 
 ### After completion
 

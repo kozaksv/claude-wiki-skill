@@ -13,9 +13,20 @@ if [ "$skill_lines" -gt 450 ]; then
   fail "SKILL.md should be a thin entrypoint (<=450 lines), got $skill_lines"
 fi
 
+description_lines="$(sed -n '/^description: >/,+40p' "$ROOT/SKILL.md" | sed -n '1,/^---$/p' | wc -l | tr -d ' ')"
+if [ "$description_lines" -gt 14 ]; then
+  fail "SKILL.md frontmatter description should stay compact (<=14 lines including delimiters), got $description_lines"
+fi
+
+grep -q '^|---|---|---|---|$' "$ROOT/SKILL.md" ||
+  fail "Platform Compatibility table separator must have 4 columns"
+
 references=(
   references/discovery-versioning.md
   references/telemetry.md
+  references/reflection.md
+  references/crystallization.md
+  references/cleanup-flow.md
   references/self-improvement.md
   references/wiki-structure.md
   references/operation-ingest-source.md
@@ -59,14 +70,25 @@ grep -q 'nearest ancestor containing `.git/`' "$ROOT/references/discovery-versio
 grep -q 'resume the originally requested operation' "$ROOT/references/discovery-versioning.md" ||
   fail "migration flow must resume the original operation"
 
-grep -q 'set_skill_link' "$ROOT/references/self-improvement.md" ||
+grep -q 'Migration failure' "$ROOT/references/discovery-versioning.md" ||
+  fail "migration flow must document partial-failure handling"
+
+grep -q 'one canonical wiki per `.git` ancestor' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must define monorepo multi-wiki scope"
+
+self_improvement_lines="$(wc -l <"$ROOT/references/self-improvement.md" | tr -d ' ')"
+if [ "$self_improvement_lines" -gt 90 ]; then
+  fail "self-improvement routing reference should stay compact (<=90 lines), got $self_improvement_lines"
+fi
+
+grep -q 'set_skill_link' "$ROOT/references/crystallization.md" ||
   fail "direct skill creation must point at installer safety helpers"
 
-grep -q '### РЕФЛЕКСІЯ block format (strict template)' "$ROOT/references/self-improvement.md" ||
+grep -q '### РЕФЛЕКСІЯ block format (strict template)' "$ROOT/references/reflection.md" ||
   fail "reflection strict template missing"
 
 for field in 'Дізнався:' 'Чому це краще:' 'Зберіг у wiki:' 'Автоматизував:' 'Перевірив:'; do
-  grep -q "$field" "$ROOT/references/self-improvement.md" ||
+  grep -q "$field" "$ROOT/references/reflection.md" ||
     fail "reflection template missing field: $field"
 done
 

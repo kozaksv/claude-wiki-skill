@@ -1,7 +1,7 @@
 # Scenario: РЕФЛЕКСІЯ block triggers
 
 Four sub-scenarios that exercise the trigger table and anti-noise rule defined in
-`references/self-improvement.md`. Each runs against a v4-shaped test wiki and
+`references/reflection.md`. Each runs against a v4-shaped test wiki and
 asserts whether a РЕФЛЕКСІЯ block was emitted (and what its `trigger:` line says).
 
 ## Common setup

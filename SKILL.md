@@ -2,21 +2,14 @@
 name: wiki
 version: "4.2.0"
 description: >
-  Manage a project's LLM Wiki (Karpathy pattern) — three layers (concepts,
-  entities, transcripts) plus archive/ for binaries. Eight operations:
-  init, ingest-source, ingest-binary, query, lint, cleanup, split, wiki status.
-  Triggers: "створи/ініціалізуй wiki/вікі", "init wiki", "bootstrap wiki",
-  "ingest"/"додай до wiki/вікі", "wiki/вікі lint/query/cleanup/status",
-  "оновити/перевір wiki/вікі", "що каже wiki про...", "знайди у вікі",
-  any binary in tmp/. "вікі" = "wiki". Also use PROACTIVELY: (a) after feat/
-  refactor commits; (b) when binaries land in tmp/; (c) BEFORE generating
-  any project-specific how-to / config / setup / recipe / explanation —
-  run query first even when you think you know the answer, because the wiki
-  holds project-specific facts (paths, configs, decisions, gotchas) that
-  may differ from general training knowledge. Common shapes that should
-  trigger query: "як [налаштувати/встановити/підключити/зробити] X", "що
-  таке X", "як працює X", "де лежить X", "пам'ятаєш як ми Y", "потрібно
-  знову Z", "розкажи про W".
+  Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
+  ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
+  "створи/ініціалізуй wiki/вікі", "init wiki", "bootstrap wiki",
+  "додай/оновити/перевір wiki/вікі", "wiki/вікі lint/query/cleanup/status",
+  "що каже wiki про...", "знайди у вікі", binaries in tmp/. Proactively query
+  before project-specific how-to/config/setup/recipe/explanation answers,
+  including "як налаштувати X", "що таке X", "як працює X", "де лежить X",
+  "пам'ятаєш як ми Y", "потрібно знову Z".
 ---
 
 # LLM Wiki (Karpathy Pattern)
@@ -36,7 +29,7 @@ This file is intentionally a thin entrypoint. The operational contract lives in
 The workflow is written in Claude-era terms, but the contract is platform-neutral:
 
 | Generic action | Claude Code | Codex | Gemini CLI |
-|---|---|---|
+|---|---|---|---|
 | Read file(s) | Read | shell/read tools | shell/read tools |
 | Edit file(s) | Edit/Write | apply_patch | shell/edit tools |
 | Run commands | Bash | exec_command | shell tool |
@@ -62,15 +55,15 @@ Load the smallest set of references that covers the user's request:
 
 | User intent / operation | Required references |
 |---|---|
-| Create / initialize / migrate a wiki (`створи вікі`, `init wiki`, `bootstrap wiki`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/telemetry.md`, `references/self-improvement.md` |
-| Add source Markdown/spec/code knowledge (`ingest-source`, `додай до вікі`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-source.md`, `references/telemetry.md`, `references/self-improvement.md` |
-| Add binary artifact from `tmp/` (`ingest-binary`, PDF/DOCX/image) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-binary.md`, `references/telemetry.md`, `references/self-improvement.md` |
+| Create / initialize / migrate a wiki (`створи вікі`, `init wiki`, `bootstrap wiki`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/telemetry.md`, `references/reflection.md` |
+| Add source Markdown/spec/code knowledge (`ingest-source`, `додай до вікі`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-source.md`, `references/telemetry.md`, `references/reflection.md` |
+| Add binary artifact from `tmp/` (`ingest-binary`, PDF/DOCX/image) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-binary.md`, `references/telemetry.md`, `references/reflection.md` |
 | Ask project-specific questions / recipes / setup details | `references/discovery-versioning.md`, `references/operation-query.md`, `references/telemetry.md` |
 | Print wiki status | `references/discovery-versioning.md`, `references/operation-wiki-status.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
-| Run lint / verify wiki health | `references/discovery-versioning.md`, `references/operation-lint.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md`, `references/self-improvement.md` |
-| Split a large page | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-split.md`, `references/telemetry.md`, `references/self-improvement.md` |
-| Cleanup / resolve lint/status actions | `references/discovery-versioning.md`, `references/operation-cleanup.md`, `references/operation-lint.md`, `references/maintenance-and-mistakes.md`, `references/self-improvement.md` |
-| Reflection / crystallization / new skill creation | `references/self-improvement.md` |
+| Run lint / verify wiki health | `references/discovery-versioning.md`, `references/operation-lint.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
+| Split a large page | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-split.md`, `references/telemetry.md`, `references/reflection.md` |
+| Cleanup / resolve lint/status actions | `references/discovery-versioning.md`, `references/operation-cleanup.md`, `references/operation-lint.md`, `references/cleanup-flow.md`, `references/maintenance-and-mistakes.md` |
+| Reflection / crystallization / new skill creation | `references/reflection.md`, `references/crystallization.md`, `references/cleanup-flow.md`, `references/self-improvement.md` |
 | Telemetry sidecar details | `references/telemetry.md` |
 | Wiki layer and navigation conventions | `references/wiki-structure.md` |
 
@@ -128,5 +121,8 @@ The supporting contracts are:
 - `references/discovery-versioning.md`
 - `references/wiki-structure.md`
 - `references/telemetry.md`
+- `references/reflection.md`
+- `references/crystallization.md`
+- `references/cleanup-flow.md`
 - `references/self-improvement.md`
 - `references/maintenance-and-mistakes.md`

@@ -20,6 +20,6 @@ Post-migration / periodic housekeeping AND structural reorganization of existing
 
 ### After completion
 
-If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop`. Cleanup that only **proposed** fixes (no user consent yet, no edits applied) is a read-only survey — apply the **anti-noise rule** and skip reflection. Cleanup that actually applied fixes (deletions, schema migration, index/log updates) is a structural change — fire reflection and include the `Перевірив:` section.
+If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `references/reflection.md`. Cleanup that only **proposed** fixes (no user consent yet, no edits applied) is a read-only survey — apply the **anti-noise rule** and skip reflection. Cleanup that actually applied fixes (deletions, schema migration, index/log updates) is a structural change — fire reflection and include the `Перевірив:` section.
 
 ---

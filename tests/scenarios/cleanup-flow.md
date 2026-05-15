@@ -1,7 +1,7 @@
 # Scenario: Cleanup-flow end-to-end
 
 Four sub-scenarios that exercise the unified cleanup-flow inside
-`references/self-improvement.md`. The flow
+`references/cleanup-flow.md`. The flow
 has two entry points (РЕФЛЕКСІЯ embedded `[y]` prompt and `wiki status`
 `[a/b/c]`) that funnel into the same downstream mechanics: subset
 selection → content-verification → per-page action menu.
@@ -305,6 +305,10 @@ per-clone, not committed), `git revert` does NOT restore the
   This is usually fine — telemetry is for prioritization, not content.
 - (b) Manually re-create the `.usage.json` entry by reading the page
   once (which auto-creates a default record via the mutator API).
+- (c) If the agent notices that a snapshot revert restored a page whose
+  telemetry entry is missing, it may offer: «Відновити базовий запис у
+  `.usage.json` для поверненої сторінки через `bump_view`?» This is
+  optional and requires user consent; content rollback does not depend on it.
 
 The skill mentions this in the post-operation hint after `видали`:
 

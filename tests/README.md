@@ -9,6 +9,8 @@ This repo has two kinds of tests:
 
 The Markdown scenarios are intentional, not placeholders. The behavior they cover depends on an agent reading project files, resolving ambiguous user intent, and applying the skill instructions in context, so plain shell assertions would either miss the actual contract or overfit to a fake parser.
 
+In scenarios, fixed section headers, action verbs, telemetry field names, and safety prompts are contract. Concrete counts, timestamps, example page orderings, and sample entity names are examples unless the scenario explicitly says otherwise.
+
 If an automated eval harness is added later, start with the highest-risk scenarios:
 
 - Step 0 discovery across `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md`

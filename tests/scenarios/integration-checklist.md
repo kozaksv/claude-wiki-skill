@@ -88,7 +88,7 @@ Read `SKILL.md` as the routing contract, then read each operation reference it p
 
 ### Pin / Unpin micro-operations
 
-- ✅ Defined under `## Self-Improvement Loop > wiki protect / wiki unprotect`.
+- ✅ Defined under `references/cleanup-flow.md` → `wiki protect` / `wiki unprotect`.
 - ✅ Telemetry: pure metadata toggle — does not bump `patch_count`.
 - ✅ Reflection: explicitly skipped (anti-noise applied — they're not "edits to content").
 - ✅ Page protection: this IS the toggle for page protection.
@@ -107,21 +107,21 @@ Read `SKILL.md` as the routing contract, then read each operation reference it p
 
 ### Karpathy staleness consistency
 
-- ✅ `## Telemetry Sidecar > ### Role: prioritization, not flagging` — the source-of-truth paragraph.
-- ✅ `## Operation: Lint > Checklist > 1. Staleness (Karpathy content-verification)` — the operational embodiment.
+- ✅ `references/telemetry.md` → `### Role: prioritization, not flagging` — the source-of-truth paragraph.
+- ✅ `references/operation-lint.md` → `Checklist > 1. Staleness (Karpathy content-verification)` — the operational embodiment.
 - ✅ Wiki Status routes content-verification to Lint, never flags itself.
 - ✅ Common Mistakes row "Auto-flagging staleness by timestamp" reinforces.
 
 ### Anti-noise consistency
 
-- ✅ Master rule: `## Self-Improvement Loop > ### Anti-noise rule` (clear principle: only Read = no reflection).
+- ✅ Master rule: `references/reflection.md` → `### Anti-noise rule` (clear principle: only Read = no reflection).
 - ✅ Each `### After completion` correctly cites it or states the stronger lint/status/cleanup no-reflection rule.
 - ✅ Pin/unpin micro-ops apply it (metadata only = no reflection).
 - ✅ Common Mistakes row "Skipping reflection because 'small change'" closes the loophole — anti-noise is *only* for read-only blocks.
 
 ### Crystallization (proposal, not silent write)
 
-- ✅ `## Self-Improvement Loop > ### Crystallization` — two artifact types (wiki / skill) and proposal format.
+- ✅ `references/crystallization.md` — two artifact types (wiki / skill) and proposal format.
 - ✅ Skill type delegates to `superpowers:writing-skills` when available, and direct-create fallback uses the shared canonical + symlink export topology with installer-style conflict safety.
 - ✅ Script tier (`scripts/*.sh` / `*.py`) deliberately absent — Division of Labor reasoning in the table's "Why no `scripts/` tier" callout.
 - ✅ Common Mistakes rows "Creating crystallization artifact silently" + "Proposing `scripts/*.sh` or `scripts/*.py` as crystallization" reinforce.
@@ -150,4 +150,4 @@ No other gaps required instruction edits — the v4.2 surface area is consistent
 
 After this dogfood pass and the Lint fix, all eight operations consistently route through the five cross-cutting concerns. The split entrypoint/reference layout is internally coherent; downstream entry points (РЕФЛЕКСІЯ embedded prompt, `wiki status`) converge on the same cleanup-flow mechanics.
 
-Ready for v4.2.0 tag once install-ref is cut.
+Ready for v4.2.0 release tag after the final verification pass.

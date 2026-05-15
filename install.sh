@@ -128,6 +128,11 @@ export_skill_link() {
 
 echo "=== Wiki Skill — встановлення (версія: $WIKI_VERSION) ==="
 
+if [[ ! "$WIKI_VERSION" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+  echo "Помилка: invalid install ref '$WIKI_VERSION'. Дозволені символи: A-Z a-z 0-9 . _ / -"
+  exit 2
+fi
+
 if ! command -v git &>/dev/null; then
   echo "Помилка: git не встановлений. Встановіть git і спробуйте знову."
   exit 1

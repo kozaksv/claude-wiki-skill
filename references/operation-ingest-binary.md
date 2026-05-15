@@ -106,6 +106,6 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
 
 ### After completion
 
-If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop`. Ingest-Binary always creates structural artifacts (entity page, transcript, archive move, navigation updates), so reflection should fire and include the `Перевірив:` section listing structural files touched. Anti-noise does not apply.
+If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `references/reflection.md`. Ingest-Binary always creates structural artifacts (entity page, transcript, archive move, navigation updates), so reflection should fire and include the `Перевірив:` section listing structural files touched. Anti-noise does not apply.
 
 ---

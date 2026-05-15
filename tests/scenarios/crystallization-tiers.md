@@ -1,7 +1,7 @@
 # Scenario: Crystallization proposals
 
 Six sub-scenarios that exercise the proposal flow defined in
-`references/self-improvement.md` → `### Crystallization`. Each runs against a
+`references/crystallization.md`. Each runs against a
 v4-shaped test wiki and asserts whether the skill emitted a `🔁 Помічаю патерн:`
 proposal (or correctly suppressed one), at which artifact type (`wiki` or
 `skill`), and what landed in the reflection's `Автоматизував:` field.
@@ -25,7 +25,7 @@ The skill recognizes only **two artifact types**: `wiki` (a concept page the
 active agent reads back) and `skill` (delegated to a skill-authoring helper when
 available, otherwise direct-created in the shared canonical topology). User-runnable
 `scripts/*.sh` and `scripts/*.py` were intentionally removed as a crystallization
-target — see "Why no `scripts/` tier" in `references/self-improvement.md`.
+target — see "Why no `scripts/` tier" in `references/crystallization.md`.
 Sub-scenarios 3 and 4 below
 assert that script-shaped proposals are correctly suppressed.
 
@@ -380,7 +380,7 @@ No `🔁 Помічаю патерн:` block. Any reflection that fires on hard 
 - No `concepts/git-status-helper.md` or similar gets proposed at any point.
 - The anti-noise rule explicitly listing `ls / cd / pwd / git status / git log /
   cat / wc / grep` of well-known paths covers this case — see
-  `references/self-improvement.md` → `### Anti-noise rules for crystallization`.
+  `references/crystallization.md` → `### Anti-noise rules for crystallization`.
 
 ### Edge case: ambient command as part of a larger flow
 

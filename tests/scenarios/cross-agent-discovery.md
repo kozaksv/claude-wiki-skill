@@ -74,6 +74,27 @@ comes from `references/discovery-versioning.md` and
 - Init treats `project-a` as `absent` and asks/proposes bootstrap for this repo,
   instead of attaching the nested project to the parent workspace wiki.
 
+## Scenario 2d: Monorepo with explicit sub-project wiki pointer
+
+### Setup
+
+- Current working directory is `/work/mono/apps/web/src`.
+- `/work/mono/.git/` exists; there is no nested `.git/`.
+- `/work/mono/apps/web/AGENTS.md` points at `apps/web/docs/wiki/schema.md`.
+- `/work/mono/apps/api/AGENTS.md` points at `apps/api/docs/wiki/schema.md`.
+- Both wiki directories have `index.md`, but `apps/api/AGENTS.md` is in a
+  sibling directory, not on the cwd → parent path.
+
+### Expected behavior
+
+- Discovery walks `src/` → `apps/web/` → `apps/` → `/work/mono/`.
+- It reads the `apps/web/AGENTS.md` pointer because it is on the walk path.
+- It does not scan sibling `apps/api/` on its own.
+- Wiki location resolves to `apps/web/docs/wiki/`.
+- If multiple wikis are desired in one git repo, each sub-project must expose
+  its own instruction-file pointer; otherwise the default is one canonical wiki
+  per `.git` ancestor.
+
 ## Scenario 3: Gemini-only fresh project
 
 ### Setup

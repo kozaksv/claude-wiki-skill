@@ -313,4 +313,4 @@ Across all three sub-scenarios:
 4. **Reflection fires only when edits happen.** Sub-scenario 1 (no edit yet,
    waiting on user choice) — no РЕФЛЕКСІЯ block. Sub-scenario 3, if the
    user later applies the passive fix and `Edit`s `page-a.md`, reflection
-   fires from that edit per `## Self-Improvement Loop`.
+   fires from that edit per `references/reflection.md`.

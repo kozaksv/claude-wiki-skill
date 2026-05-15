@@ -25,7 +25,7 @@ Concretely, query when:
 
 **Don't query for ambient operations** — `ls`, `pwd`, `git status`, generic shell exploration. Those don't have project-specific knowledge to retrieve.
 
-**Pair with crystallization.** If you query and find nothing relevant, that's a discovery signal: this topic isn't yet captured. Hold it in mind — once you derive the answer, it becomes a candidate for crystallization (see `## Self-Improvement Loop > ### Crystallization`). Discovery and crystallization are two halves of the same loop: query reads what was saved, crystallization saves what was re-derived. The OpenSSH-on-Windows-DC scenario in the SKILL's reflection examples is the canonical case — a wiki entity existed but lacked the paste-able block, so the agent re-derived it from memory; query before generating would have surfaced the gap and prompted crystallization the first time, not the second.
+**Pair with crystallization.** If you query and find nothing relevant, that's a discovery signal: this topic isn't yet captured. Hold it in mind — once you derive the answer, it becomes a candidate for crystallization (see `references/crystallization.md`). Discovery and crystallization are two halves of the same loop: query reads what was saved, crystallization saves what was re-derived. The OpenSSH-on-Windows-DC scenario in the reflection examples is the canonical case — a wiki entity existed but lacked the paste-able block, so the agent re-derived it from memory; query before generating would have surfaced the gap and prompted crystallization the first time, not the second.
 
 ### Process
 
@@ -49,6 +49,6 @@ Ask yourself: "Would this answer be useful in a future session?" If yes → crea
 
 ### After completion
 
-Query is read-only by default — apply the **anti-noise rule** and skip the РЕФЛЕКСІЯ block (see `## Self-Improvement Loop`). The exception is when step 5 (Filing Back) fires and you actually create or edit a wiki page: that turns the operation into a synthesis-write, and reflection should fire as if it were an Ingest-Source.
+Query is read-only by default — apply the **anti-noise rule** and skip the РЕФЛЕКСІЯ block (see `references/reflection.md`). The exception is when step 5 (Filing Back) fires and you actually create or edit a wiki page: that turns the operation into a synthesis-write, and reflection should fire as if it were an Ingest-Source.
 
 ---

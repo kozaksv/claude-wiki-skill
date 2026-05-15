@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.2.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default (`v4.2.0-dev`, not tagged yet). Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
+**Skill behavior version: 4.2.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -20,6 +20,9 @@ Exports created by install.sh:
   ~/.gemini/skills/wiki  -> ~/.claude/skills/wiki
 ```
 
+The `claude-wiki-skill` directory name is historical; functionally this is the
+shared cross-agent canonical install used by Claude, Codex, and Gemini.
+
 `doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням ставиться з `main`; за потреби його ref можна pin'нути через `WIKI_DOC_EXTRACT_REF`.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
@@ -33,7 +36,7 @@ Exports created by install.sh:
 
 ## What changed in v4.1
 
-- **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до двох артефактних типів: `wiki` і `skill`. User-runnable скрипти (`scripts/*.sh` / `*.py`) видалено як target крихталізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/self-improvement.md`.
+- **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до двох артефактних типів: `wiki` і `skill`. User-runnable скрипти (`scripts/*.sh` / `*.py`) видалено як target крихталізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/crystallization.md`.
 - **Proactive query trigger.** Скіл активується на природних українських формах питання («як налаштувати X», «що таке X», «де лежить Y», «пам'ятаєш як ми Z», «потрібно знову W», «розкажи про…») — без вимоги вживати ключове слово "wiki" / "вікі". Master rule: query перед генерацією проєктно-специфічного контенту з пам'яті, навіть коли «знаю відповідь». Деталі: `references/operation-query.md`.
 - **Discovery ↔ crystallization pair.** Коли query не знаходить релевантної сторінки — це сигнал-кандидат для крихталізації після того, як агент відповість. Пара двох половин одного циклу: query читає збережене, crystallization зберігає re-derived.
 
@@ -73,7 +76,7 @@ Architectural patterns inspired by [Hermes-Agent](https://github.com/NousResearc
 
 ## Встановлення
 
-Остання версія (за замовчуванням — master):
+Остання rolling-версія (zero-config, за замовчуванням — master):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
@@ -81,31 +84,35 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 
 Інсталятор створює `~/.claude/skills/` як shared canonical registry навіть для Codex-only або Gemini-only користувачів. Це не вимагає встановленого Claude: Codex і Gemini отримують доступ через symlink exports.
 
-Конкретна версія (передається аргументом скрипту):
+Стабільний reproducible release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash -s v3.0.0
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash -s v4.2.0
 ```
 
 ### Доступні версії
 
 | Тег | Що це |
 |---|---|
-| `master` *(рекомендується, v4.2.0-dev)* | v4.1 + shared canonical cross-agent exports для Codex/Gemini + agent-neutral discovery |
+| **v4.2.0** *(рекомендується для pin)* | Shared canonical cross-agent exports для Codex/Gemini + agent-neutral discovery + thin `SKILL.md` entrypoint |
+| `master` *(rolling)* | Найновіший стан інсталятора й skill references; може рухатись після останнього тегу |
 | **v4.0.0** | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization (4 рівні зі скриптами), cleanup-flow, page protection, 8 операцій |
 | **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement |
 
-Поки не створено окремий git tag для v4.2.0, не запускайте `bash -s v4.2.0` або `bash -s v4.1.0` — таких install-ref'ів ще немає. Без аргумента інсталятор бере `master`.
-
 URL у курлі завжди вказує на `master/install.sh` — це сам інсталятор. **Версію скіла обираєш аргументом** (`bash -s v3.0.0`). Без аргумента — встановлюється `master`.
 
-Тег — це закладка на конкретний коміт; версія, яку ти отримаєш через `v3.0.0` або `v4.0.0`, не зміниться навіть коли вийдуть нові релізи. `master` навпаки рухається вперед.
+Тег — це закладка на конкретний коміт; версія, яку ти отримаєш через `v3.0.0`, `v4.0.0` або `v4.2.0`, не зміниться навіть коли вийдуть нові релізи. `master` навпаки рухається вперед.
 
 `doc-extract` є optional dependency для `ingest-binary` і за замовчуванням ставиться з `main`, бо його CLI вважається стабільним integration contract. Якщо треба pin для відтворюваної інсталяції, передайте env override:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | WIKI_DOC_EXTRACT_REF=v1.0.0 bash
 ```
+
+Для PDF/DOCX ingest є другий системний setup-крок: після install запустіть
+`bash ~/.claude/skills/doc-extract/bin/install-deps.sh` і
+`bash ~/.claude/skills/doc-extract/bin/doctor.sh`. Решта wiki operations працюють
+без цих системних залежностей.
 
 Не плутайте install-ref з `wiki_version`: `version: "4.2.0"` у `SKILL.md` описує behavior release, а `wiki_version: "4.0"` у `docs/wiki/schema.md` описує schema major. Вони можуть відрізнятися і лишатися сумісними, якщо major однаковий.
 
@@ -116,6 +123,10 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 - Gemini CLI читає `~/.agents/skills/wiki` або `~/.gemini/skills/wiki` → symlink на `~/.claude/skills/wiki`
 
 Усі ці entrypoints ведуть до одного canonical install. Оновлювати окремо Codex/Gemini не треба.
+
+Якщо `~/.claude/skills/wiki` уже існує як plain file або real directory,
+installer не буде його перезаписувати. Перейменуйте або видаліть цей шлях
+вручну після перевірки вмісту, потім запустіть install повторно.
 
 ## Ініціалізація wiki у проєкті
 

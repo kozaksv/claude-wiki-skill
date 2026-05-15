@@ -125,6 +125,6 @@ When updating documentation after implementing a feature:
 
 ### After completion
 
-If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop`. Ingest-Source almost always involves Edit/Write on at least one wiki page, so the anti-noise rule rarely applies — only skip reflection if you somehow read sources but ended up making no edits at all.
+If this operation was triggered by a TodoWrite-completion or is part of a pre-commit moment, emit a РЕФЛЕКСІЯ block per `references/reflection.md`. Ingest-Source almost always involves Edit/Write on at least one wiki page, so the anti-noise rule rarely applies — only skip reflection if you somehow read sources but ended up making no edits at all.
 
 ---

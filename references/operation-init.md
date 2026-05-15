@@ -115,6 +115,6 @@ For all migration-from-legacy paths, follow the explicit plan format described i
 
 ### After completion
 
-Init is the most structurally heavy operation in the skill — it creates `schema.md`, `index.md`, `log.md`, `.usage.json`, edits `.gitignore`, writes an agent-instruction pointer, and may move binaries into `archive/`. Always emit a РЕФЛЕКСІЯ block per `## Self-Improvement Loop` after Init completes (regardless of trigger), and always include the `Перевірив:` section listing every structural file created or modified. Anti-noise does not apply — Init by definition writes.
+Init is the most structurally heavy operation in the skill — it creates `schema.md`, `index.md`, `log.md`, `.usage.json`, edits `.gitignore`, writes an agent-instruction pointer, and may move binaries into `archive/`. Always emit a РЕФЛЕКСІЯ block per `references/reflection.md` after Init completes (regardless of trigger), and always include the `Перевірив:` section listing every structural file created or modified. Anti-noise does not apply — Init by definition writes.
 
 ---

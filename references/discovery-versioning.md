@@ -18,6 +18,8 @@ All paths below use `{wiki}` as placeholder for the discovered wiki directory (e
 
 **CRITICAL: Never create a second wiki.** If you find an existing valid wiki, use it. If an agent instruction file references a wiki path, trust it only after verifying that the directory contains `index.md`; stale pointers are cleanup findings, not permission to bootstrap a second wiki. Only create a new wiki when none exists anywhere in the project.
 
+**Monorepo scope:** the supported default is one canonical wiki per `.git` ancestor. If multiple sub-projects inside the same repo intentionally maintain separate wikis, treat that as an explicit user/project convention: require an instruction-file pointer in or below the sub-project directory and prefer the closest valid pointer found in the cwd → parent walk. Do not infer multiple wikis from sibling directories on your own.
+
 **Why schema.md is preferred over agent instruction file sections:** files like `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` can load into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
 
 _Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in resident instruction files such as CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the instruction-file fallback._
@@ -68,6 +70,25 @@ Wait for explicit `y`. On `n`, abort the operation. On `пропусти кро�
 
 Wiki migrations involve directory/file creation, gitignore changes, and frontmatter additions — user-visible changes that warrant explicit consent. Backfill of missing fields **inside** `.usage.json` records (forward-compat fields like `state`, `protected`, `archived_at`) IS silent. Only structural migrations require the plan-then-confirm flow.
 
+### Migration failure: partial-state handling
+
+Before executing a migration/init plan in a git repo, record the current HEAD and
+list the files/directories the plan expects to create, move, or edit. If any step
+fails, stop immediately and report:
+
+- steps completed
+- step that failed and stderr/error reason
+- files/directories already created or modified
+- safest recovery command(s)
+
+Do **not** continue with later migration steps after a failure. If the repo was
+clean before the migration and every changed path is migration-owned, offer to
+roll back those paths for the user. If the repo was dirty or touched files
+overlap user work, do not run destructive rollback commands; leave the partial
+state visible and ask how to proceed. On the next invocation, re-run Step 0 and
+treat the partial state according to what actually exists (`schema.md`,
+`wiki_version`, `index.md`), not according to the failed plan's intent.
+
 ### Migration Log
 
 `schema.md` carries a `## Migration Log` section that records what changed between versions. Each entry:
@@ -92,5 +113,4 @@ When proposing a migration plan, the skill reads its own SKILL.md frontmatter `v
 
 ### Optional config knobs in `schema.md` frontmatter
 
-Optional `nudge_interval: <N>` in `schema.md` frontmatter overrides the default crystallization periodic nudge frequency (default ~15 tool-calling iterations). Set to `0` to disable the periodic nudge while keeping hard triggers (pre-commit, TodoWrite-completion, explicit user) active. See `## Self-Improvement Loop` → `### Crystallization` for the trigger model.
-
+Optional `nudge_interval: <N>` in `schema.md` frontmatter overrides the default crystallization periodic nudge frequency (default ~15 tool-calling iterations). Set to `0` to disable the periodic nudge while keeping hard triggers (pre-commit, TodoWrite-completion, explicit user) active. See `references/crystallization.md` for the trigger model.

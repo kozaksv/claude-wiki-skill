@@ -137,7 +137,7 @@ only in commit history and shell aliases, not the wiki.
 
 - The find-nothing case is reported, not silently ignored.
 - After the answer, a `🔁 Помічаю патерн:` block proposes a wiki page (per
-  `## Self-Improvement Loop > ### Crystallization`).
+  `references/crystallization.md`).
 - If the user accepts (`y`), the new page is filed; if `n`, the refusal is
   recorded session-scoped.
 
