@@ -20,8 +20,9 @@ Exports created by install.sh:
   ~/.gemini/skills/wiki  -> ~/.claude/skills/wiki
 ```
 
-The `claude-wiki-skill` directory name is historical; functionally this is the
-shared cross-agent canonical install used by Claude, Codex, and Gemini.
+Назва директорії `claude-wiki-skill` — історичний артефакт першої публікації,
+а не вимога Claude Code. Функціонально це shared cross-agent canonical install,
+який однаково використовують Claude, Codex і Gemini.
 
 `doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `96d6bf9e1df309c4b76d924d3a1f774f7ee33d12`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
 
@@ -241,6 +242,7 @@ bash ~/claude-wiki-skill/uninstall.sh --remove-clones
 ```
 
 `uninstall.sh` ідемпотентний: missing symlink показує як already absent, plain file / real directory не перезаписує і не видаляє, а clone з локальними змінами пропускає.
+Foreign symlink'и у відомих слотах теж не видаляються: скрипт прибирає тільки ті entrypoints/exports, які вказують на expected canonical topology. Порожні `*/skills` підпапки може прибрати через `rmdir`, але parent-директорії `~/.claude`, `~/.agents`, `~/.gemini` лишаються на місці.
 
 ## Тести
 

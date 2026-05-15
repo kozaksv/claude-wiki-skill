@@ -122,7 +122,7 @@ run_install
 [[ -L "$GEMINI_WIKI" ]] || { echo "expected Gemini wiki symlink"; exit 1; }
 [[ -L "$AGENTS_DOC_EXTRACT" ]] || { echo "expected .agents doc-extract symlink"; exit 1; }
 [[ -L "$GEMINI_DOC_EXTRACT" ]] || { echo "expected Gemini doc-extract symlink"; exit 1; }
-grep -q '~/.claude/skills is the shared canonical registry' "$LOG" || {
+grep -q '~/.claude/skills — це shared canonical registry' "$LOG" || {
   echo "expected install summary to explain the shared canonical registry"
   exit 1
 }
@@ -288,6 +288,23 @@ for invalid_ref in '..' '-bad-ref' 'foo/../bar'; do
     echo "expected install to fail before git for invalid ref syntax: $invalid_ref"
     exit 1
   fi
+done
+
+for invalid_ref in '..' '-bad-ref' 'foo/../bar'; do
+  HOME_INVALID_DOC_REF="$TMP/home-invalid-doc-ref-${invalid_ref//\//_}"
+  mkdir -p "$HOME_INVALID_DOC_REF"
+  if WIKI_DOC_EXTRACT_REF="$invalid_ref" PATH="$BIN_DIR:$PATH" HOME="$HOME_INVALID_DOC_REF" bash "$ROOT/install.sh" >"$TMP/install-invalid-doc-ref.log" 2>&1; then
+    echo "expected install to fail before git for invalid doc-extract ref syntax: $invalid_ref"
+    exit 1
+  fi
+  grep -q "invalid doc-extract ref" "$TMP/install-invalid-doc-ref.log" || {
+    echo "expected clear invalid doc-extract ref syntax message"
+    exit 1
+  }
+  [ ! -e "$HOME_INVALID_DOC_REF/claude-doc-extract-skill" ] || {
+    echo "expected invalid doc-extract ref to fail before cloning doc-extract"
+    exit 1
+  }
 done
 
 HOME_PULL_FAIL="$TMP/home-pull-fail"

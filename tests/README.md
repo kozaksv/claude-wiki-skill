@@ -11,6 +11,15 @@ The Markdown scenarios are intentional, not placeholders. The behavior they cove
 
 In scenarios, fixed section headers, action verbs, telemetry field names, and safety prompts are contract. Concrete counts, timestamps, example page orderings, and sample entity names are examples unless the scenario explicitly says otherwise.
 
+Manual pre-release pass order for the current prose scenarios:
+
+1. `cross-agent-discovery.md` — run in Claude, Codex, and Gemini if available; at minimum run Codex-only and Gemini-only fresh-init paths.
+2. `v3-to-v4-migration.md` — include the partial-failure sub-scenario before any mass release.
+3. `cleanup-flow.md` — verify destructive double-confirmation and protected-page behavior.
+4. `reflection-triggers.md` — verify reflection fires after mutating operations and does not fire after read-only/report-only operations.
+5. `crystallization-tiers.md` — verify Codex/Gemini-only direct-create uses the shared canonical topology.
+6. `wiki-status.md` and `staleness-content-verification.md` — verify anti-recursion after status/lint-style reports.
+
 If an automated eval harness is added later, start with the highest-risk scenarios:
 
 - Step 0 discovery across `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md`

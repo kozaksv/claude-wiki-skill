@@ -15,6 +15,16 @@ DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
 DOC_EXTRACT_LINK="$SKILLS_ROOT/doc-extract"
 DOC_EXTRACT_REF="${WIKI_DOC_EXTRACT_REF:-96d6bf9e1df309c4b76d924d3a1f774f7ee33d12}"
 
+validate_ref() {
+  local label="$1" ref="$2"
+  if [[ ! "$ref" =~ ^[A-Za-z0-9._/-]+$ ]] ||
+     [[ "$ref" == -* ]] ||
+     [[ "$ref" == *..* ]]; then
+    echo "Помилка: invalid $label ref '$ref'. Дозволені символи: A-Z a-z 0-9 . _ / -; ref не може починатися з '-' або містити '..'."
+    return 1
+  fi
+}
+
 set_skill_link() {
   local name="$1" target_dir="$2" link="$3"
   if [ -L "$link" ]; then
@@ -131,12 +141,8 @@ export_skill_link() {
 
 echo "=== Wiki Skill — встановлення (версія: $WIKI_VERSION) ==="
 
-if [[ ! "$WIKI_VERSION" =~ ^[A-Za-z0-9._/-]+$ ]] ||
-   [[ "$WIKI_VERSION" == -* ]] ||
-   [[ "$WIKI_VERSION" == *..* ]]; then
-  echo "Помилка: invalid install ref '$WIKI_VERSION'. Дозволені символи: A-Z a-z 0-9 . _ / -; ref не може починатися з '-' або містити '..'."
-  exit 2
-fi
+validate_ref "install" "$WIKI_VERSION" || exit 2
+validate_ref "doc-extract" "$DOC_EXTRACT_REF" || exit 2
 
 if ! command -v git &>/dev/null; then
   echo "Помилка: git не встановлений. Встановіть git і спробуйте знову."
@@ -219,7 +225,7 @@ done
 echo ""
 echo "Готово! Встановлено:"
 echo "  $SKILL_LINK → $SKILL_DIR  (@ $WIKI_VERSION)"
-echo "  Note: ~/.claude/skills is the shared canonical registry; Claude Code is not required."
+echo "  Примітка: ~/.claude/skills — це shared canonical registry; Claude Code не потрібен."
 echo "Cross-agent exports (symlinks to shared canonical):"
 print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_AGENTS_STATUS"
 print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_GEMINI_STATUS"

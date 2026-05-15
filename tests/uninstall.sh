@@ -42,6 +42,19 @@ expect_exists() {
   }
 }
 
+expect_link_target() {
+  local link="$1"
+  local target="$2"
+  [ -L "$link" ] || {
+    echo "expected symlink: $link"
+    exit 1
+  }
+  [ "$(readlink "$link")" = "$target" ] || {
+    echo "expected $link to point at $target, got $(readlink "$link")"
+    exit 1
+  }
+}
+
 setup_installed_tree() {
   rm -rf "$HOME_DIR"
   mkdir -p "$HOME_DIR/.claude/skills" "$HOME_DIR/.agents/skills" "$HOME_DIR/.gemini/skills"
@@ -100,6 +113,23 @@ grep -q 'do not remove' "$HOME_DIR/.agents/skills/wiki" || {
   exit 1
 }
 expect_exists "$HOME_DIR/.claude/skills/doc-extract"
+
+setup_installed_tree
+mkdir -p "$TMP/foreign-wiki" "$TMP/foreign-doc-extract"
+rm "$HOME_DIR/.agents/skills/wiki" "$HOME_DIR/.claude/skills/doc-extract"
+ln -s "$TMP/foreign-wiki" "$HOME_DIR/.agents/skills/wiki"
+ln -s "$TMP/foreign-doc-extract" "$HOME_DIR/.claude/skills/doc-extract"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" >"$TMP/uninstall-foreign-symlink.log" 2>&1
+expect_link_target "$HOME_DIR/.agents/skills/wiki" "$TMP/foreign-wiki"
+expect_link_target "$HOME_DIR/.claude/skills/doc-extract" "$TMP/foreign-doc-extract"
+grep -q "$HOME_DIR/.agents/skills/wiki .*skipped.*points elsewhere" "$TMP/uninstall-foreign-symlink.log" || {
+  echo "expected foreign export symlink to be skipped"
+  exit 1
+}
+grep -q "$HOME_DIR/.claude/skills/doc-extract .*skipped.*points elsewhere" "$TMP/uninstall-foreign-symlink.log" || {
+  echo "expected foreign canonical symlink to be skipped"
+  exit 1
+}
 
 setup_installed_tree
 touch "$HOME_DIR/claude-doc-extract-skill/DIRTY"
