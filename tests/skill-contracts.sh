@@ -128,6 +128,19 @@ grep -q 'Do not run this sync during status, lint, or query' "$ROOT/references/d
 grep -q 'Cross-agent skill exports' "$ROOT/references/operation-init.md" ||
   fail "init bootstrap plan must disclose cross-agent skill export repair"
 
+grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" ||
+  fail "init reference must consent-gate repairs for current/legacy/older/newer states"
+
+grep -q 'outcome checklist, not an execution-order trace' "$ROOT/references/operation-init.md" ||
+  fail "init plan must clarify plan-vs-execute ordering"
+
+grep -q 'valid existing pointer resolves to the resolved wiki' "$ROOT/references/discovery-versioning.md" ||
+  fail "instruction-file sync must define behavior for valid but non-canonical pointer text"
+
+if grep -q 'create missing minimal instruction files with "Wiki schema → {schema_path_relative_to_instruction_file}"' "$ROOT/references/operation-init.md"; then
+  fail "init user-facing plan must not leak raw schema_path_relative_to_instruction_file placeholder"
+fi
+
 grep -q 'AGENTS.md' "$ROOT/references/operation-init.md" ||
   fail "init reference must ensure Codex project pointer files are covered"
 

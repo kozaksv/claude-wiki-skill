@@ -17,7 +17,7 @@ Set up wiki, OR detect existing structure and propose migration.
    |---|---|---|
    | `absent` | No `docs/wiki/` exists | Bootstrap from scratch (proceed to project-type detection + Plan below) |
    | `legacy` | Wiki exists but no `wiki_version` field in `schema.md` frontmatter | Identify version interactively, then propose migration |
-   | `current` | schema major from `wiki_version` matches skill major | Do not change wiki structure; still run `Cross-agent skill availability` below, then tell user wiki is up to date |
+   | `current` | schema major from `wiki_version` matches skill major | Do not change wiki structure. Inspect cross-agent readiness; if repairs are needed, use the Non-absent Init consent block below |
    | `older` | schema major from `wiki_version` < skill major | Generate migration plan, ask user once |
    | `newer` | schema major from `wiki_version` > skill major | Warn user, ask whether to continue |
 
@@ -67,6 +67,27 @@ This check is intentionally part of project Init, not only first-time global
 install: many users create a wiki in Claude first and then open Codex. The
 project wiki may be valid while the Codex skill alias is missing.
 
+### Non-absent Init consent block
+
+For `current`, `legacy`, `older`, and `newer` states, do not run cross-agent
+skill export repair silently. Inspect first. If all exports are valid, report
+`Cross-agent skill exports: OK (no-op)`. If any export needs repair, show a short
+approval block before running `install.sh --repair-exports`:
+
+```
+Wiki already exists: {state}, schema {wiki_version}.
+Cross-agent skill exports need repair:
+  - {missing-or-broken-export}
+
+Repair global skill exports now? [y/N]
+```
+
+Only run the repair after explicit `y`. For `legacy` / `older` migration plans,
+include this export-repair step in the migration plan so there is one consent
+flow. For `newer`, ask whether to continue with the newer schema first, then ask
+before repairing exports. Declining export repair must not block read-only
+discovery; just report that Codex/Gemini may need manual repair later.
+
 ### Project-type detection (only for `absent` state)
 
 When bootstrapping a fresh wiki, scan project root for type signals to propose
@@ -112,7 +133,9 @@ project-type detection finishes. Substitute `{detected_type}` with the matched
 signal (e.g., `package.json`) or `порожній проєкт`; substitute `{entities-step}`
 with either `пропонована структура для {detected_type}: {category-list}` or
 `порожня папка (проєкт без сигналів; категорії з'являться пізніше)`; substitute
-`{today}` with the current date in `YYYY-MM-DD` form.
+`{today}` with the current date in `YYYY-MM-DD` form. The plan is a user-facing
+outcome checklist, not an execution-order trace; the Execute section below may
+order steps differently for safe creation, migration, and failure reporting.
 
 ```
 📂 Створюю нову wiki у docs/wiki/
@@ -126,14 +149,14 @@ with either `пропонована структура для {detected_type}: {
   6. docs/wiki/transcripts/ — порожня папка
   7. docs/wiki/.usage.json — порожній dict {}
   8. archive/ — поза wiki (gitignored)
-  9. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with "Wiki schema → {schema_path_relative_to_instruction_file}"
+  9. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with a relative "Wiki schema → ..." path computed per file (usually `docs/wiki/schema.md`)
   10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
   11. Cross-agent skill exports — перевірити `~/.agents/skills/wiki` і `~/.gemini/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
 
 [y] так, створи все  /  [n] скасувати
 ```
 
-After confirmation (`y`), execute all 11 steps in order using the Execute checklist below. After execution, append `## [{today}] init | bootstrap fresh wiki schema v4` to `log.md`. On `n`, abort and leave the project untouched.
+After confirmation (`y`), implement the approved outcome checklist using the Execute checklist below. After execution, append `## [{today}] init | bootstrap fresh wiki schema v4` to `log.md`. On `n`, abort and leave the project untouched.
 
 ### Execute
 

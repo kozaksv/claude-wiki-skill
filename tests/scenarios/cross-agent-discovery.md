@@ -99,6 +99,8 @@ comes from `references/discovery-versioning.md` and
   `apps/web/` using the path relative to each instruction file:
   `docs/wiki/schema.md`, not `/work/mono/docs/wiki/schema.md` and not a
   hard-coded repo-root path.
+- The existing `apps/web/AGENTS.md` pointer is left untouched if it resolves to
+  the same wiki, even if its text uses a repo-root-style path.
 
 ## Scenario 3: Gemini-only fresh project
 
@@ -113,8 +115,9 @@ comes from `references/discovery-versioning.md` and
 - Init proposes fresh bootstrap.
 - After confirmation, wiki files are created under `docs/wiki/`.
 - `GEMINI.md` is created with the one-line `## Wiki` pointer.
-- `CLAUDE.md` and `AGENTS.md` are not created unless the user asks for
-  cross-file pointer sync.
+- `CLAUDE.md` and `AGENTS.md` are also created as minimal cross-agent pointer
+  files, so Claude and Codex receive the same resident wiki hint without extra
+  user setup.
 
 ## Scenario 3b: Codex-only fresh project
 
@@ -181,6 +184,7 @@ comes from `references/discovery-versioning.md` and
 - `CLAUDE.md` points at `docs/wiki/schema.md`.
 - `docs/wiki/index.md` and `docs/wiki/schema.md` exist and are current.
 - `AGENTS.md` does not exist.
+- User asks: `init wiki`.
 
 ### Expected behavior
 

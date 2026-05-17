@@ -235,7 +235,7 @@ repair_cross_agent_exports() {
     print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_agents_status"
     print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_gemini_status"
   else
-    echo "  $DOC_EXTRACT_LINK — optional doc-extract canonical не знайдено; exports пропущено"
+    echo "  $DOC_EXTRACT_LINK — optional doc-extract canonical не знайдено; exports не створювались"
   fi
   if [ "$any_skipped" -eq 1 ]; then
     echo ""

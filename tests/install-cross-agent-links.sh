@@ -263,6 +263,10 @@ grep -q 'Cross-agent export targets' "$TMP/install-repair-exports.log" || {
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports-2.log" 2>&1
 expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+if grep -q 'пропущено' "$TMP/install-repair-exports-2.log"; then
+  echo "idempotent repair should not report skipped exports"
+  exit 1
+fi
 
 HOME_REPAIR_DOC="$TMP/home-repair-doc"
 mkdir -p "$HOME_REPAIR_DOC/.claude/skills" "$HOME_REPAIR_DOC/claude-doc-extract-skill"
@@ -317,7 +321,9 @@ grep -q 'не є symlink' "$TMP/install-repair-file.log" || {
   exit 1
 }
 
-if PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports v4.2.0 >"$TMP/install-repair-extra-arg.log" 2>&1; then
+HOME_REPAIR_EXTRA_ARG="$TMP/home-repair-extra-arg"
+mkdir -p "$HOME_REPAIR_EXTRA_ARG"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXTRA_ARG" bash "$ROOT/install.sh" --repair-exports v4.2.0 >"$TMP/install-repair-extra-arg.log" 2>&1; then
   echo "expected repair-exports to reject extra arguments"
   exit 1
 fi

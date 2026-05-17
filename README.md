@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.2.3** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
+**Skill behavior version: 4.2.4** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -44,6 +44,9 @@ Exports created by install.sh:
   pointers use paths relative to each instruction file, `wiki status`/`lint` stay
   read-only, and `--repair-exports` reports conflicts/doc-extract state more
   precisely.
+- **v4.2.4 on master:** non-absent `init` repairs are consent-gated, bootstrap
+  plans no longer leak raw template placeholders, and Gemini/Codex fresh-init
+  scenarios are symmetric for cross-agent pointer creation.
 - **Shared canonical cross-agent installer.** `install.sh` ставить canonical skill у `~/.claude/skills/wiki`, а потім створює symlink exports для Codex/Gemini.
 - **Agent-neutral discovery.** Wiki discovery читає `CLAUDE.md`, `AGENTS.md`, і `GEMINI.md`, а не тільки історичний Claude entrypoint.
 - **Thin skill entrypoint.** `SKILL.md` лишився trigger/routing contract, а операційні інструкції винесено в `references/`, щоб не вантажити весь 1600+ рядковий body на кожну активацію.
@@ -162,6 +165,11 @@ bash ~/.claude/skills/wiki/install.sh --repair-exports
 wiki: він знайде `docs/wiki/`, перевірить версію, синхронізує `AGENTS.md` /
 `GEMINI.md` pointer-файли і покаже міграційний план лише якщо schema major
 застарів.
+
+Якщо `wiki` skill у Codex/Gemini вже активується, але в проєкті бракує
+`AGENTS.md` або `GEMINI.md`, просто скажіть у цьому проєкті `init wiki`. Для
+поточних wiki це працює як repair: скіл синхронізує project-local pointer-файли
+після підтвердження і не створить другу wiki.
 
 Якщо `~/.claude/skills/wiki` уже існує як plain file або real directory,
 installer не буде його перезаписувати. Перейменуйте або видаліть цей шлях

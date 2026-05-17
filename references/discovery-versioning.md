@@ -36,6 +36,10 @@ For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
   `Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`.`
 - If the file exists and has no `## Wiki` section, append that same section.
 - If the file already points at the resolved wiki, leave it unchanged.
+- If a valid existing pointer resolves to the resolved wiki but uses older
+  text, an absolute path, or a repo-root-style path, leave it unchanged. The
+  relative-path convention applies when writing new pointers or repairing stale
+  ones, not as a formatting migration for already-valid pointers.
 - If the file points at a different valid wiki, do not overwrite it silently;
   surface the conflict as a DECIDE finding during lint/cleanup.
 - If the file points at a stale path and the resolved wiki is valid, repair the
@@ -155,6 +159,11 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Tightened repair behavior: instruction pointers use paths
   relative to each instruction file, status/lint/query stay read-only, and
   repair-only installer mode reports partial conflicts precisely.
+
+### 4.2.4 (2026-05-17)
+- No schema migration. Tightened consent and planning behavior: non-absent Init
+  repair actions require explicit approval, user-facing plans hide raw template
+  placeholders, and already-valid pointer text is not reformatted.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.
