@@ -118,6 +118,10 @@ fails, stop immediately and report:
 - files/directories already created or modified
 - safest recovery command(s)
 
+Use Execute checklist numbering when reporting which step failed; if helpful,
+also name the related user-facing plan item (for example, "Execute step 6
+(`schema.md`, Plan item 1)").
+
 Do **not** continue with later migration steps after a failure. If the repo was
 clean before the migration and every changed path is migration-owned, offer to
 roll back those paths for the user. If the repo was dirty or touched files
@@ -164,6 +168,11 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Tightened consent and planning behavior: non-absent Init
   repair actions require explicit approval, user-facing plans hide raw template
   placeholders, and already-valid pointer text is not reformatted.
+
+### 4.2.5 (2026-05-17)
+- No schema migration. Tightened non-absent Init again: project-local pointer
+  writes and global export repairs share one explicit consent block, and
+  migration failure reports use Execute checklist numbering.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

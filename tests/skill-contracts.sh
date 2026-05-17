@@ -131,8 +131,20 @@ grep -q 'Cross-agent skill exports' "$ROOT/references/operation-init.md" ||
 grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" ||
   fail "init reference must consent-gate repairs for current/legacy/older/newer states"
 
+grep -q 'Project-local instruction files need repair' "$ROOT/references/operation-init.md" ||
+  fail "non-absent init consent block must include project-local pointer repairs"
+
+grep -q 'Without explicit y, do not write instruction files' "$ROOT/references/operation-init.md" ||
+  fail "non-absent init must not write pointer files without consent"
+
+grep -q 'Combined migration plan with export repair' "$ROOT/references/operation-init.md" ||
+  fail "legacy/older init must show how export repair is integrated into migration plans"
+
 grep -q 'outcome checklist, not an execution-order trace' "$ROOT/references/operation-init.md" ||
   fail "init plan must clarify plan-vs-execute ordering"
+
+grep -q 'Use Execute checklist numbering' "$ROOT/references/discovery-versioning.md" ||
+  fail "partial-failure reporting must clarify which step numbering to use"
 
 grep -q 'valid existing pointer resolves to the resolved wiki' "$ROOT/references/discovery-versioning.md" ||
   fail "instruction-file sync must define behavior for valid but non-canonical pointer text"

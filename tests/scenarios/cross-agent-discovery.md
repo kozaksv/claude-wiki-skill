@@ -214,6 +214,30 @@ comes from `references/discovery-versioning.md` and
   repaired by running wiki init or an explicit pointer-repair request.
 - No `AGENTS.md` file is created during status.
 
+## Scenario 3c4: Current wiki repair requires consent
+
+### Setup
+
+- Session is clearly running under Codex.
+- `CLAUDE.md` points at `docs/wiki/schema.md`.
+- `docs/wiki/index.md` and `docs/wiki/schema.md` exist and are current.
+- `AGENTS.md` does not exist.
+- `~/.agents/skills/wiki` is missing.
+- User asks: `init wiki`.
+
+### Expected behavior
+
+- Discovery resolves the existing wiki from `CLAUDE.md`; it does not create a
+  second wiki.
+- State is `current`.
+- The agent shows the Non-absent Init consent block listing both project-local
+  instruction-file repair (`AGENTS.md`) and global skill export repair
+  (`~/.agents/skills/wiki`).
+- Without explicit `y`, the agent does not create `AGENTS.md` and does not run
+  `install.sh --repair-exports`; it reports the needed repairs instead.
+- After explicit `y`, the agent creates/updates the approved pointer files, runs
+  `install.sh --repair-exports`, and reports both results.
+
 ## Scenario 3d: Truly empty project stays empty
 
 ### Setup
