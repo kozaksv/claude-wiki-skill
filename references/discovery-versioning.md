@@ -26,21 +26,28 @@ project root under the discovery boundary.
 
 For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
 
+- Compute `{schema_path_relative_to_instruction_file}` as the POSIX relative
+  path from that instruction file's directory to the resolved `{wiki}/schema.md`.
+  Do not hard-code `docs/wiki/schema.md` unless that is the actual relative path
+  from the file being written.
 - If the file is missing, create missing minimal instruction files containing
   only a short title and:
   `## Wiki`
-  `Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`.`
+  `Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`.`
 - If the file exists and has no `## Wiki` section, append that same section.
 - If the file already points at the resolved wiki, leave it unchanged.
 - If the file points at a different valid wiki, do not overwrite it silently;
   surface the conflict as a DECIDE finding during lint/cleanup.
 - If the file points at a stale path and the resolved wiki is valid, repair the
-  stale pointer to the resolved schema path and mention it in the response.
+  stale pointer to the resolved schema path and mention it in the response:
+  replace only the pointer line matching `Wiki schema and operations → ...`;
+  leave all other `## Wiki` section content untouched and surface extra legacy
+  schema/details as a DECIDE finding.
 
-Run this sync during Init and during explicit wiki discovery/status/lint/cleanup
-requests. For ordinary read-only project questions, do not interrupt the answer
-solely to create pointer files unless the active agent's file is missing and the
-user explicitly asked to find/use the wiki.
+Run this sync during Init and explicit pointer-repair requests. Do not run this sync during status, lint, or query; report missing/stale pointers as findings and
+tell the user to run `wiki init` or an explicit pointer repair if they want the
+files written. For ordinary read-only project questions, never interrupt the
+answer solely to create pointer files.
 
 **CRITICAL: Never create a second wiki.** If you find an existing valid wiki, use it. If an agent instruction file references a wiki path, trust it only after verifying that the directory contains `index.md`; stale pointers are cleanup findings, not permission to bootstrap a second wiki. Only create a new wiki when none exists anywhere in the project.
 
@@ -143,6 +150,11 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Discovery/init behavior changed: cross-agent
   instruction-file sync keeps `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` wiki
   pointers aligned for existing and newly bootstrapped wikis.
+
+### 4.2.3 (2026-05-17)
+- No schema migration. Tightened repair behavior: instruction pointers use paths
+  relative to each instruction file, status/lint/query stay read-only, and
+  repair-only installer mode reports partial conflicts precisely.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

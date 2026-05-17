@@ -33,7 +33,9 @@ Init always runs the `Cross-agent instruction-file sync` contract from
 `references/discovery-versioning.md` after resolving or creating the wiki. This
 means `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in the project pointer directory
 all get the same short `## Wiki` pointer, creating missing minimal instruction
-files when needed.
+files when needed. The pointer path must be computed as
+`{schema_path_relative_to_instruction_file}` for each file, not copied as a
+literal `docs/wiki/schema.md` unless that is the correct relative path.
 
 Do not treat a `CLAUDE.md`-only current wiki as fully initialized for cross-agent
 use. If Codex opens that project later, `AGENTS.md` needs its own resident hint;
@@ -42,18 +44,20 @@ wiki metadata, then report the repaired/created pointers in `Перевірив:
 
 ### Cross-agent skill availability
 
-Init must leave the wiki usable from the next agent the user opens. During every
-Init attempt (including `current`, `absent`, `older`, and `legacy` outcomes),
-verify the global `wiki` skill exports before the final response:
+Init must leave the wiki usable from the next agent the user opens. During Init
+(including `current`, `absent`, `older`, and `legacy` outcomes), inspect the
+global `wiki` skill exports before the final response:
 
 1. Check the shared canonical entrypoint: `~/.claude/skills/wiki`.
 2. Check the Codex export: `~/.agents/skills/wiki`.
 3. Check the Gemini export: `~/.gemini/skills/wiki`.
 4. If any export is missing, broken, or points somewhere other than the shared
-   canonical entrypoint, locate the installed skill repository from
-   `~/.claude/skills/wiki` and run `install.sh --repair-exports` once to repair
-   exports without cloning, fetching, or switching refs. The repair mode is
-   idempotent and preserves conflicting non-owned paths.
+   canonical entrypoint, disclose the repair in the Init plan. After consent,
+   locate the installed skill repository from `~/.claude/skills/wiki` and run
+   `install.sh --repair-exports` once to repair exports without cloning,
+   fetching, or switching refs. The repair mode is idempotent and preserves
+   conflicting non-owned paths. If every export is already valid, this step is a
+   no-op and should be reported as such.
 5. If `install.sh` is unavailable, report the exact missing/broken export and
    tell the user that Codex/Gemini may not discover `wiki` until that symlink is
    repaired. Do not claim cross-agent readiness unless `~/.agents/skills/wiki`
@@ -105,7 +109,7 @@ Ask per group: "Migrate these? [y/N/per-file]". User retains veto on each.
 
 For a fresh wiki (state = `absent`), present this single-block plan after
 project-type detection finishes. Substitute `{detected_type}` with the matched
-signal (e.g., `package.json`) or `empty project`; substitute `{entities-step}`
+signal (e.g., `package.json`) or `порожній проєкт`; substitute `{entities-step}`
 with either `пропонована структура для {detected_type}: {category-list}` or
 `порожня папка (проєкт без сигналів; категорії з'являться пізніше)`; substitute
 `{today}` with the current date in `YYYY-MM-DD` form.
@@ -122,13 +126,14 @@ with either `пропонована структура для {detected_type}: {
   6. docs/wiki/transcripts/ — порожня папка
   7. docs/wiki/.usage.json — порожній dict {}
   8. archive/ — поза wiki (gitignored)
-  9. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with "Wiki schema → docs/wiki/schema.md"
+  9. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with "Wiki schema → {schema_path_relative_to_instruction_file}"
   10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
+  11. Cross-agent skill exports — перевірити `~/.agents/skills/wiki` і `~/.gemini/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
 
 [y] так, створи все  /  [n] скасувати
 ```
 
-After confirmation (`y`), execute all 10 steps in order using the Execute checklist below. After execution, append `## [{today}] init | bootstrap fresh wiki schema v4` to `log.md`. On `n`, abort and leave the project untouched.
+After confirmation (`y`), execute all 11 steps in order using the Execute checklist below. After execution, append `## [{today}] init | bootstrap fresh wiki schema v4` to `log.md`. On `n`, abort and leave the project untouched.
 
 ### Execute
 
@@ -152,7 +157,7 @@ After consent:
    ---
    ```
 
-   Add a single `## Wiki` pointer through Cross-agent instruction-file sync: ensure `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` each point to _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ Create missing minimal instruction files as needed. For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace them with the pointer.
+   Add a single `## Wiki` pointer through Cross-agent instruction-file sync: ensure `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` each point to _"Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`."_ Create missing minimal instruction files as needed. For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace only the pointer with the relative schema path.
 6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates

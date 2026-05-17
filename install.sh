@@ -5,6 +5,10 @@ REPAIR_EXPORTS=0
 if [ "${1:-}" = "--repair-exports" ]; then
   REPAIR_EXPORTS=1
   shift
+  if [ -n "${1:-}" ]; then
+    echo "Помилка: --repair-exports не приймає аргументів. Для переключення версії запустіть install.sh <ref> без --repair-exports."
+    exit 2
+  fi
 fi
 
 WIKI_VERSION="${1:-master}"
@@ -145,11 +149,53 @@ export_skill_link() {
   return 2
 }
 
+status_tag() {
+  case "$1" in
+    skipped) printf '  (пропущено)' ;;
+    *)       : ;;
+  esac
+}
+
+print_export_summary() {
+  local link="$1" expected="$2" status="$3"
+  if [ -L "$link" ]; then
+    local current
+    current="$(readlink "$link")"
+    if [ "$current" = "$expected" ]; then
+      echo "  $link → $current"
+    else
+      echo "  $link → $current$(status_tag "$status"; printf ' — expected %s' "$expected")"
+    fi
+    return 0
+  fi
+  if [ -e "$link" ]; then
+    echo "  $link$(status_tag "$status"; printf ' — існує і не є symlink; expected %s' "$expected")"
+    return 0
+  fi
+  echo "  $link$(status_tag "$status"; printf ' — не створено; expected %s' "$expected")"
+}
+
 repair_cross_agent_exports() {
   echo "=== Wiki Skill — repair cross-agent exports ==="
 
-  if [ ! -e "$SKILL_LINK/SKILL.md" ]; then
-    echo "Помилка: canonical wiki entrypoint не знайдено або він не містить SKILL.md: $SKILL_LINK"
+  if [ ! -e "$SKILL_LINK" ] && [ ! -L "$SKILL_LINK" ]; then
+    echo "Помилка: canonical wiki entrypoint не знайдено: $SKILL_LINK"
+    echo "Запустіть повну інсталяцію: bash install.sh"
+    return 1
+  fi
+  if [ ! -L "$SKILL_LINK" ]; then
+    echo "Помилка: canonical wiki entrypoint не є symlink: $SKILL_LINK"
+    echo "Перевірте цей шлях вручну або запустіть повну інсталяцію після перейменування конфлікту."
+    return 1
+  fi
+  if [ ! -e "$SKILL_LINK" ]; then
+    echo "Помилка: битий canonical wiki symlink: $SKILL_LINK → $(readlink "$SKILL_LINK")"
+    echo "Запустіть повну інсталяцію: bash install.sh"
+    return 1
+  fi
+  if [ ! -f "$SKILL_LINK/SKILL.md" ]; then
+    echo "Помилка: canonical wiki entrypoint не містить SKILL.md: $SKILL_LINK"
+    echo "Запустіть повну інсталяцію: bash install.sh"
     return 1
   fi
 
@@ -157,6 +203,7 @@ repair_cross_agent_exports() {
   local wiki_gemini_status="ok"
   local doc_agents_status="ok"
   local doc_gemini_status="ok"
+  local doc_extract_present=0
 
   if ! export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"; then
     wiki_agents_status="skipped"
@@ -166,6 +213,7 @@ repair_cross_agent_exports() {
   fi
 
   if [ -e "$DOC_EXTRACT_LINK/SKILL.md" ]; then
+    doc_extract_present=1
     if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$AGENTS_SKILLS_ROOT/doc-extract"; then
       doc_agents_status="skipped"
     fi
@@ -180,10 +228,15 @@ repair_cross_agent_exports() {
   done
 
   echo ""
-  echo "Cross-agent exports repaired from canonical:"
-  echo "  $SKILL_LINK"
-  echo "  $AGENTS_SKILLS_ROOT/wiki"
-  echo "  $GEMINI_SKILLS_ROOT/wiki"
+  echo "Cross-agent export targets:"
+  print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_agents_status"
+  print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_gemini_status"
+  if [ "$doc_extract_present" -eq 1 ]; then
+    print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_agents_status"
+    print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_gemini_status"
+  else
+    echo "  $DOC_EXTRACT_LINK — optional doc-extract canonical не знайдено; exports пропущено"
+  fi
   if [ "$any_skipped" -eq 1 ]; then
     echo ""
     echo "Увага: частину exports пропущено через конфлікти. Повідомлення вище показують фактичні шляхи."
@@ -248,32 +301,6 @@ if install_skill_at_ref "doc-extract" "$DOC_EXTRACT_REPO" "$DOC_EXTRACT_DIR" "$D
 else
   echo "Увага: doc-extract не встановлено. Wiki skill працюватиме, але ingest-binary буде недоступний до повторного встановлення."
 fi
-
-status_tag() {
-  case "$1" in
-    skipped) printf '  (пропущено)' ;;
-    *)       : ;;
-  esac
-}
-
-print_export_summary() {
-  local link="$1" expected="$2" status="$3"
-  if [ -L "$link" ]; then
-    local current
-    current="$(readlink "$link")"
-    if [ "$current" = "$expected" ]; then
-      echo "  $link → $current"
-    else
-      echo "  $link → $current$(status_tag "$status"; printf ' — expected %s' "$expected")"
-    fi
-    return 0
-  fi
-  if [ -e "$link" ]; then
-    echo "  $link$(status_tag "$status"; printf ' — існує і не є symlink; expected %s' "$expected")"
-    return 0
-  fi
-  echo "  $link$(status_tag "$status"; printf ' — не створено; expected %s' "$expected")"
-}
 
 ANY_SKIPPED=0
 for status in "$WIKI_AGENTS_STATUS" "$WIKI_GEMINI_STATUS" "$DOC_AGENTS_STATUS" "$DOC_GEMINI_STATUS"; do

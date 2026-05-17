@@ -94,6 +94,11 @@ comes from `references/discovery-versioning.md` and
 - If multiple wikis are desired in one git repo, each sub-project must expose
   its own instruction-file pointer; otherwise the default is one canonical wiki
   per `.git` ancestor.
+- If cross-agent instruction-file sync is explicitly requested for this
+  sub-project, the generated `CLAUDE.md` and `GEMINI.md` pointers are written in
+  `apps/web/` using the path relative to each instruction file:
+  `docs/wiki/schema.md`, not `/work/mono/docs/wiki/schema.md` and not a
+  hard-coded repo-root path.
 
 ## Scenario 3: Gemini-only fresh project
 
@@ -142,15 +147,31 @@ comes from `references/discovery-versioning.md` and
 
 - Init bootstraps the project wiki normally.
 - During completion checks, the agent verifies the cross-agent skill exports.
-- If the local skill repo exposes `install.sh`, the agent runs
-  `install.sh --repair-exports` to repair `~/.agents/skills/wiki` and other
-  shared exports without switching the installed skill ref.
+- The agent runs `install.sh --repair-exports` from the canonical wiki skill
+  entrypoint to repair `~/.agents/skills/wiki` and other shared exports without
+  switching the installed skill ref.
 - Init creates or updates the project-local `AGENTS.md` and `GEMINI.md` wiki
   pointers alongside `CLAUDE.md`.
 - If the installer is unavailable, init reports the missing export explicitly
   instead of claiming Codex will see the skill.
 - After a successful repair, Codex can discover the same `wiki` skill through
   `~/.agents/skills/wiki`.
+
+## Scenario 3c1: Codex cannot activate wiki skill yet
+
+### Setup
+
+- A project has a valid wiki and a `CLAUDE.md` pointer.
+- `AGENTS.md` is missing.
+- `~/.agents/skills/wiki` is also missing, so Codex cannot activate the wiki
+  skill from a natural-language request.
+
+### Expected behavior
+
+- Recovery documentation tells the user to run
+  `bash ~/.claude/skills/wiki/install.sh --repair-exports` first.
+- After Codex can see the skill, `init wiki` discovers the existing wiki from
+  `CLAUDE.md`, syncs `AGENTS.md`, and does not create a second wiki.
 
 ## Scenario 3c2: CLAUDE-only current wiki repairs active-agent pointer
 
@@ -165,12 +186,29 @@ comes from `references/discovery-versioning.md` and
 
 - Discovery resolves the existing wiki from `CLAUDE.md`; it does not create a
   second wiki.
-- Because the user explicitly asked to find/use the wiki, the agent runs
-  cross-agent instruction-file sync.
+- Because the user explicitly asked to initialize or repair wiki pointers, the
+  agent runs cross-agent instruction-file sync.
 - `AGENTS.md` is created as a minimal project-local pointer file with the same
   `## Wiki` pointer.
 - The response reports the found wiki and mentions the pointer repair, so the
   user is not left to diagnose why Codex had no resident context.
+
+## Scenario 3c3: Read-only status does not write pointers
+
+### Setup
+
+- Session is clearly running under Codex.
+- `CLAUDE.md` points at `docs/wiki/schema.md`.
+- `docs/wiki/index.md` and `docs/wiki/schema.md` exist and are current.
+- `AGENTS.md` does not exist.
+- User asks: `wiki status`.
+
+### Expected behavior
+
+- Discovery resolves the existing wiki from `CLAUDE.md`.
+- The status report includes a finding that `AGENTS.md` is missing and can be
+  repaired by running wiki init or an explicit pointer-repair request.
+- No `AGENTS.md` file is created during status.
 
 ## Scenario 3d: Truly empty project stays empty
 
@@ -178,7 +216,7 @@ comes from `references/discovery-versioning.md` and
 
 - Project has no wiki.
 - Project has no code or docs signals such as `package.json`, `pyproject.toml`,
-  `README.md`, or source files.
+  `README.md`, docs files, source files, or binaries to ingest.
 - Session is clearly running under Codex.
 
 ### Expected behavior

@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.2.2** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
+**Skill behavior version: 4.2.3** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -40,6 +40,10 @@ Exports created by install.sh:
   files too: `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` get the same short
   `## Wiki` pointer, so another agent does not need manual setup after Claude
   creates the wiki.
+- **v4.2.3 on master:** repair behavior tightened after review: instruction
+  pointers use paths relative to each instruction file, `wiki status`/`lint` stay
+  read-only, and `--repair-exports` reports conflicts/doc-extract state more
+  precisely.
 - **Shared canonical cross-agent installer.** `install.sh` ставить canonical skill у `~/.claude/skills/wiki`, а потім створює symlink exports для Codex/Gemini.
 - **Agent-neutral discovery.** Wiki discovery читає `CLAUDE.md`, `AGENTS.md`, і `GEMINI.md`, а не тільки історичний Claude entrypoint.
 - **Thin skill entrypoint.** `SKILL.md` лишився trigger/routing contract, а операційні інструкції винесено в `references/`, щоб не вантажити весь 1600+ рядковий body на кожну активацію.
@@ -144,6 +148,20 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 ```bash
 bash ~/.claude/skills/wiki/install.sh --repair-exports
 ```
+
+### Recovery cookbook
+
+Якщо ви відкрили проєкт у Codex/Gemini, але `wiki` skill не активується взагалі,
+спершу полагодьте global skill exports:
+
+```bash
+bash ~/.claude/skills/wiki/install.sh --repair-exports
+```
+
+Потім у проєкті скажіть `init wiki`. Якщо wiki вже існує, скіл не створить другу
+wiki: він знайде `docs/wiki/`, перевірить версію, синхронізує `AGENTS.md` /
+`GEMINI.md` pointer-файли і покаже міграційний план лише якщо schema major
+застарів.
 
 Якщо `~/.claude/skills/wiki` уже існує як plain file або real directory,
 installer не буде його перезаписувати. Перейменуйте або видаліть цей шлях

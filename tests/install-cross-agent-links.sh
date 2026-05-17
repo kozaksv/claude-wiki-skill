@@ -248,12 +248,96 @@ ln -s "$ROOT" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports.log" 2>&1
 expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+[ ! -e "$HOME_REPAIR_EXPORTS/.agents/skills/doc-extract" ] || {
+  echo "repair-exports should not create doc-extract export when canonical doc-extract is absent"
+  exit 1
+}
 [ ! -e "$HOME_REPAIR_EXPORTS/claude-wiki-skill" ] || {
   echo "repair-exports should not clone or switch the canonical wiki repo"
   exit 1
 }
-grep -q 'repair cross-agent exports' "$TMP/install-repair-exports.log" || {
+grep -q 'Cross-agent export targets' "$TMP/install-repair-exports.log" || {
   echo "expected repair-exports summary"
+  exit 1
+}
+PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports-2.log" 2>&1
+expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+
+HOME_REPAIR_DOC="$TMP/home-repair-doc"
+mkdir -p "$HOME_REPAIR_DOC/.claude/skills" "$HOME_REPAIR_DOC/claude-doc-extract-skill"
+ln -s "$ROOT" "$HOME_REPAIR_DOC/.claude/skills/wiki"
+cat >"$HOME_REPAIR_DOC/claude-doc-extract-skill/SKILL.md" <<'DOC'
+---
+name: doc-extract
+description: Test fixture.
+---
+DOC
+ln -s "$HOME_REPAIR_DOC/claude-doc-extract-skill" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_DOC" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-doc.log" 2>&1
+expect_link_target "$HOME_REPAIR_DOC/.agents/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
+expect_link_target "$HOME_REPAIR_DOC/.gemini/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
+grep -q "$HOME_REPAIR_DOC/.agents/skills/doc-extract" "$TMP/install-repair-doc.log" || {
+  echo "expected repair summary to include doc-extract exports"
+  exit 1
+}
+
+HOME_REPAIR_MISSING="$TMP/home-repair-missing"
+mkdir -p "$HOME_REPAIR_MISSING"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_MISSING" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-missing.log" 2>&1; then
+  echo "expected repair-exports to fail when canonical wiki entrypoint is missing"
+  exit 1
+fi
+grep -q 'Запустіть повну інсталяцію' "$TMP/install-repair-missing.log" || {
+  echo "expected repair-exports missing-canonical error to include recovery hint"
+  exit 1
+}
+
+HOME_REPAIR_BROKEN="$TMP/home-repair-broken"
+mkdir -p "$HOME_REPAIR_BROKEN/.claude/skills"
+ln -s "$HOME_REPAIR_BROKEN/missing-wiki" "$HOME_REPAIR_BROKEN/.claude/skills/wiki"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_BROKEN" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-broken.log" 2>&1; then
+  echo "expected repair-exports to fail when canonical wiki symlink is broken"
+  exit 1
+fi
+grep -q 'битий canonical wiki symlink' "$TMP/install-repair-broken.log" || {
+  echo "expected clear broken canonical symlink message"
+  exit 1
+}
+
+HOME_REPAIR_FILE="$TMP/home-repair-file"
+mkdir -p "$HOME_REPAIR_FILE/.claude/skills"
+printf 'not a skill\n' >"$HOME_REPAIR_FILE/.claude/skills/wiki"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_FILE" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-file.log" 2>&1; then
+  echo "expected repair-exports to fail when canonical wiki is not a symlink"
+  exit 1
+fi
+grep -q 'не є symlink' "$TMP/install-repair-file.log" || {
+  echo "expected repair-exports to reject non-symlink canonical wiki"
+  exit 1
+}
+
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports v4.2.0 >"$TMP/install-repair-extra-arg.log" 2>&1; then
+  echo "expected repair-exports to reject extra arguments"
+  exit 1
+fi
+grep -q 'не приймає аргументів' "$TMP/install-repair-extra-arg.log" || {
+  echo "expected repair-exports extra-argument error"
+  exit 1
+}
+
+HOME_REPAIR_CONFLICT="$TMP/home-repair-conflict"
+mkdir -p "$HOME_REPAIR_CONFLICT/.claude/skills" "$TMP/foreign-export"
+ln -s "$ROOT" "$HOME_REPAIR_CONFLICT/.claude/skills/wiki"
+mkdir -p "$HOME_REPAIR_CONFLICT/.agents/skills"
+ln -s "$TMP/foreign-export" "$HOME_REPAIR_CONFLICT/.agents/skills/wiki"
+if PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_CONFLICT" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-conflict.log" 2>&1; then
+  echo "expected repair-exports to return non-zero when an export is skipped"
+  exit 1
+fi
+expect_link_target "$HOME_REPAIR_CONFLICT/.agents/skills/wiki" "$TMP/foreign-export"
+grep -q 'пропущено' "$TMP/install-repair-conflict.log" || {
+  echo "expected repair-exports conflict summary to mark skipped export"
   exit 1
 }
 

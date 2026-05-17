@@ -116,6 +116,18 @@ grep -q 'Cross-agent instruction-file sync' "$ROOT/references/discovery-versioni
 grep -q 'Cross-agent instruction-file sync' "$ROOT/references/operation-init.md" ||
   fail "init reference must include cross-agent instruction-file sync"
 
+grep -q '{schema_path_relative_to_instruction_file}' "$ROOT/references/discovery-versioning.md" ||
+  fail "instruction-file sync must compute schema pointer relative to each instruction file"
+
+grep -q 'replace only the pointer line' "$ROOT/references/discovery-versioning.md" ||
+  fail "instruction-file sync must preserve custom Wiki section content when repairing stale pointers"
+
+grep -q 'Do not run this sync during status, lint, or query' "$ROOT/references/discovery-versioning.md" ||
+  fail "status/lint/query must remain read-only unless the user explicitly asks for pointer repair"
+
+grep -q 'Cross-agent skill exports' "$ROOT/references/operation-init.md" ||
+  fail "init bootstrap plan must disclose cross-agent skill export repair"
+
 grep -q 'AGENTS.md' "$ROOT/references/operation-init.md" ||
   fail "init reference must ensure Codex project pointer files are covered"
 
