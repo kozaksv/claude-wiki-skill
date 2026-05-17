@@ -2,7 +2,7 @@
 
 This repo has two kinds of tests:
 
-- `install-cross-agent-links.sh` is an automated shell regression test for installer behavior: canonical link shape, symlink exports, conflict preservation, bad refs, optional `doc-extract` failure, and truthful summaries.
+- `install-cross-agent-links.sh` is an automated shell regression test for installer behavior: canonical link shape, symlink exports, repair-only exports, conflict preservation, bad refs, optional `doc-extract` failure, and truthful summaries.
 - `uninstall.sh` is an automated shell regression test for safe uninstall behavior: idempotent symlink removal, conflict preservation, and optional clean-clone removal.
 - `skill-contracts.sh` is a static contract test for the split skill layout: `SKILL.md` must stay a thin entrypoint, required `references/` files must exist, and critical LLM-behavior invariants must remain textually present.
 - `scenarios/*.md` are executable review scenarios for LLM-driven behavior. They define the expected model contract for discovery, migration, cleanup, crystallization, reflection, and wiki operations across Claude, Codex, and Gemini.

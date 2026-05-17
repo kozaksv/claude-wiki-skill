@@ -127,6 +127,46 @@ comes from `references/discovery-versioning.md` and
 - `CLAUDE.md` and `GEMINI.md` are not created unless the user asks for
   cross-file pointer sync.
 
+## Scenario 3c: Claude init prepares Codex discovery
+
+### Setup
+
+- Session is clearly running under Claude.
+- Project has no wiki.
+- The installed `wiki` skill is available through the shared canonical
+  `~/.claude/skills/wiki` entrypoint.
+- `~/.agents/skills/wiki` is missing or broken.
+
+### Expected behavior
+
+- Init bootstraps the project wiki normally.
+- During completion checks, the agent verifies the cross-agent skill exports.
+- If the local skill repo exposes `install.sh`, the agent runs
+  `install.sh --repair-exports` to repair `~/.agents/skills/wiki` and other
+  shared exports without switching the installed skill ref.
+- If the installer is unavailable, init reports the missing export explicitly
+  instead of claiming Codex will see the skill.
+- After a successful repair, Codex can discover the same `wiki` skill through
+  `~/.agents/skills/wiki`.
+
+## Scenario 3d: Truly empty project stays empty
+
+### Setup
+
+- Project has no wiki.
+- Project has no code or docs signals such as `package.json`, `pyproject.toml`,
+  `README.md`, or source files.
+- Session is clearly running under Codex.
+
+### Expected behavior
+
+- Init does not ask the user for more project information.
+- Init does not invent starter entity categories such as `people/` or
+  `documents/`.
+- The bootstrap creates the minimal wiki skeleton with empty `concepts/`,
+  empty `entities/`, empty `transcripts/`, empty `.usage.json`, and the
+  active-agent pointer.
+
 ## Scenario 4: Unclear active agent in a fresh project
 
 ### Setup

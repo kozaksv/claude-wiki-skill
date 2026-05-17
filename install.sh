@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+REPAIR_EXPORTS=0
+if [ "${1:-}" = "--repair-exports" ]; then
+  REPAIR_EXPORTS=1
+  shift
+fi
+
 WIKI_VERSION="${1:-master}"
 
 REPO="https://github.com/kozaksv/claude-wiki-skill.git"
@@ -138,6 +144,58 @@ export_skill_link() {
   echo "Увага: Не вдалося створити export: $export_link → $source_link"
   return 2
 }
+
+repair_cross_agent_exports() {
+  echo "=== Wiki Skill — repair cross-agent exports ==="
+
+  if [ ! -e "$SKILL_LINK/SKILL.md" ]; then
+    echo "Помилка: canonical wiki entrypoint не знайдено або він не містить SKILL.md: $SKILL_LINK"
+    return 1
+  fi
+
+  local wiki_agents_status="ok"
+  local wiki_gemini_status="ok"
+  local doc_agents_status="ok"
+  local doc_gemini_status="ok"
+
+  if ! export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"; then
+    wiki_agents_status="skipped"
+  fi
+  if ! export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"; then
+    wiki_gemini_status="skipped"
+  fi
+
+  if [ -e "$DOC_EXTRACT_LINK/SKILL.md" ]; then
+    if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$AGENTS_SKILLS_ROOT/doc-extract"; then
+      doc_agents_status="skipped"
+    fi
+    if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$GEMINI_SKILLS_ROOT/doc-extract"; then
+      doc_gemini_status="skipped"
+    fi
+  fi
+
+  local any_skipped=0
+  for status in "$wiki_agents_status" "$wiki_gemini_status" "$doc_agents_status" "$doc_gemini_status"; do
+    [ "$status" = "skipped" ] && any_skipped=1
+  done
+
+  echo ""
+  echo "Cross-agent exports repaired from canonical:"
+  echo "  $SKILL_LINK"
+  echo "  $AGENTS_SKILLS_ROOT/wiki"
+  echo "  $GEMINI_SKILLS_ROOT/wiki"
+  if [ "$any_skipped" -eq 1 ]; then
+    echo ""
+    echo "Увага: частину exports пропущено через конфлікти. Повідомлення вище показують фактичні шляхи."
+    return 2
+  fi
+  return 0
+}
+
+if [ "$REPAIR_EXPORTS" -eq 1 ]; then
+  repair_cross_agent_exports
+  exit $?
+fi
 
 echo "=== Wiki Skill — встановлення (версія: $WIKI_VERSION) ==="
 

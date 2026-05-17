@@ -17,7 +17,7 @@ Set up wiki, OR detect existing structure and propose migration.
    |---|---|---|
    | `absent` | No `docs/wiki/` exists | Bootstrap from scratch (proceed to project-type detection + Plan below) |
    | `legacy` | Wiki exists but no `wiki_version` field in `schema.md` frontmatter | Identify version interactively, then propose migration |
-   | `current` | schema major from `wiki_version` matches skill major | Nothing to do — abort Init, tell user wiki is up to date |
+   | `current` | schema major from `wiki_version` matches skill major | Do not change wiki structure; still run `Cross-agent skill availability` below, then tell user wiki is up to date |
    | `older` | schema major from `wiki_version` < skill major | Generate migration plan, ask user once |
    | `newer` | schema major from `wiki_version` > skill major | Warn user, ask whether to continue |
 
@@ -27,9 +27,34 @@ Set up wiki, OR detect existing structure and propose migration.
    - Existing concept-like MDs that should move to `concepts/`
    - Duplicate MDs (raw README that overlap wiki content)
 
+### Cross-agent skill availability
+
+Init must leave the wiki usable from the next agent the user opens. During every
+Init attempt (including `current`, `absent`, `older`, and `legacy` outcomes),
+verify the global `wiki` skill exports before the final response:
+
+1. Check the shared canonical entrypoint: `~/.claude/skills/wiki`.
+2. Check the Codex export: `~/.agents/skills/wiki`.
+3. Check the Gemini export: `~/.gemini/skills/wiki`.
+4. If any export is missing, broken, or points somewhere other than the shared
+   canonical entrypoint, locate the installed skill repository from
+   `~/.claude/skills/wiki` and run `install.sh --repair-exports` once to repair
+   exports without cloning, fetching, or switching refs. The repair mode is
+   idempotent and preserves conflicting non-owned paths.
+5. If `install.sh` is unavailable, report the exact missing/broken export and
+   tell the user that Codex/Gemini may not discover `wiki` until that symlink is
+   repaired. Do not claim cross-agent readiness unless `~/.agents/skills/wiki`
+   reaches the same `SKILL.md` as `~/.claude/skills/wiki`.
+
+This check is intentionally part of project Init, not only first-time global
+install: many users create a wiki in Claude first and then open Codex. The
+project wiki may be valid while the Codex skill alias is missing.
+
 ### Project-type detection (only for `absent` state)
 
-When bootstrapping a fresh wiki, scan project root for type signals to propose initial `entities/` categories. This is a SUGGESTION — user can override or pick custom categories.
+When bootstrapping a fresh wiki, scan project root for type signals to propose
+initial `entities/` categories. This is a SUGGESTION — user can override or pick
+custom categories.
 
 | Signal (file present in project root) | Suggested `entities/` categories |
 |---|---|
@@ -39,9 +64,16 @@ When bootstrapping a fresh wiki, scan project root for type signals to propose i
 | `go.mod` | `packages/`, `interfaces/` |
 | `*.csproj` | `classes/`, `services/` |
 | `pom.xml` / `build.gradle` | `packages/`, `services/` |
-| no code signals (research / personal / docs project) | `people/`, `documents/` |
+| no project signals | no categories; keep `entities/` empty |
 
-If multiple signals match (polyglot repo), union the suggested categories and let the user prune. After detection, surface the proposed list inside the Bootstrap plan template (step 5: `entities/`) so the user sees what they're approving.
+If multiple signals match (polyglot repo), union the suggested categories and let
+the user prune. After detection, surface the proposed list inside the Bootstrap
+plan template (step 5: `entities/`) so the user sees what they're approving.
+
+For an empty project, do not ask the user for more project information and do
+not invent starter pages or categories. Create `entities/` as an empty directory;
+the wiki will grow through later `ingest-source`, `ingest-binary`, and query
+reflection.
 
 **Scope warning.** Project-type detection ONLY influences proposed initial categories at bootstrap time. It does NOT affect any other behavior — in particular, it does NOT feed into staleness scoring or content-verification (see `## Operation: Lint`), and it does NOT lock future categories (any category can be added later via `ingest-binary` lazy-creation).
 
@@ -58,7 +90,12 @@ Ask per group: "Migrate these? [y/N/per-file]". User retains veto on each.
 
 ### Bootstrap plan template (for `absent` state)
 
-For a fresh wiki (state = `absent`), present this single-block plan after project-type detection finishes. Substitute `{detected_type}` with the matched signal (e.g., `package.json`) and `{category-list}` with the suggested categories from the table above; substitute `{today}` with the current date in `YYYY-MM-DD` form.
+For a fresh wiki (state = `absent`), present this single-block plan after
+project-type detection finishes. Substitute `{detected_type}` with the matched
+signal (e.g., `package.json`) or `empty project`; substitute `{entities-step}`
+with either `пропонована структура для {detected_type}: {category-list}` or
+`порожня папка (проєкт без сигналів; категорії з'являться пізніше)`; substitute
+`{today}` with the current date in `YYYY-MM-DD` form.
 
 ```
 📂 Створюю нову wiki у docs/wiki/
@@ -68,7 +105,7 @@ For a fresh wiki (state = `absent`), present this single-block plan after projec
   2. docs/wiki/index.md — порожній з трьома секціями (Concepts | Entities | Transcripts)
   3. docs/wiki/log.md — порожній з заголовком
   4. docs/wiki/concepts/ — порожня папка
-  5. docs/wiki/entities/ — пропонована структура для {detected_type}: {category-list}
+  5. docs/wiki/entities/ — {entities-step}
   6. docs/wiki/transcripts/ — порожня папка
   7. docs/wiki/.usage.json — порожній dict {}
   8. archive/ — поза wiki (gitignored)
@@ -84,7 +121,7 @@ After confirmation (`y`), execute all 10 steps in order using the Execute checkl
 
 After consent:
 
-1. Create missing dirs: `concepts/`, `entities/{categories}/`, `transcripts/`, `archive/{categories}/`
+1. Create missing dirs: `concepts/`, `entities/`, `transcripts/`, `archive/`; create `entities/{categories}/` and `archive/{categories}/` only when the approved category list is non-empty
 2. Add `archive/` to `.gitignore`
 3. Move concept MDs → `concepts/`
 4. For each binary:
@@ -108,6 +145,7 @@ After consent:
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
 9. Append `log.md` with migration record
+10. Run `Cross-agent skill availability` and include its result in the final `Перевірив:` list
 
 ### Versioning during Init
 

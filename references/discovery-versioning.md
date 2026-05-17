@@ -107,6 +107,11 @@ treat the partial state according to what actually exists (`schema.md`,
 
 ### 4.2 (2026-05-14)
 - No schema migration. Installer/discovery behavior changed: shared canonical cross-agent exports and agent-neutral instruction-file discovery.
+
+### 4.2.1 (2026-05-17)
+- No schema migration. Init behavior changed: cross-agent skill export self-heal
+  during project init and minimal empty-project bootstrap with no invented entity
+  categories.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

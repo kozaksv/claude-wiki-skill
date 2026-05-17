@@ -98,6 +98,31 @@ grep -q 'never emit a separate РЕФЛЕКСІЯ block' "$ROOT/references/opera
 grep -q '~/.gemini/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" ||
   fail "doc-extract fallback must include Gemini direct export"
 
+grep -q 'Cross-agent skill availability' "$ROOT/references/operation-init.md" ||
+  fail "init reference must include cross-agent skill availability self-heal"
+
+grep -q '~/.agents/skills/wiki' "$ROOT/references/operation-init.md" ||
+  fail "init reference must ensure Codex can discover the wiki skill"
+
+grep -q 'install.sh' "$ROOT/references/operation-init.md" ||
+  fail "init reference must point agents at the installer for skill exports"
+
+grep -q -- '--repair-exports' "$ROOT/references/operation-init.md" ||
+  fail "init reference must use repair-only installer mode for skill exports"
+
+grep -q 'empty project' "$ROOT/references/operation-init.md" ||
+  fail "init reference must define empty-project bootstrap behavior"
+
+grep -q 'do not ask the user for more project information' "$ROOT/references/operation-init.md" ||
+  fail "empty-project init must not ask for extra project information"
+
+grep -q 'entities/.*empty directory' "$ROOT/references/operation-init.md" ||
+  fail "empty-project init must keep entities/ empty"
+
+if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
+  fail "no-code project detection must not invent people/documents categories"
+fi
+
 skill_version="$(sed -n 's/^version: "\([0-9][0-9]*\)\..*/\1/p' "$ROOT/SKILL.md" | head -1)"
 init_schema_major="$(grep -E 'wiki_version: "[0-9]+\.' "$ROOT/references/operation-init.md" | sed -n 's/.*wiki_version: "\([0-9][0-9]*\)\..*/\1/p' | head -1)"
 [ -n "$skill_version" ] || fail "could not parse SKILL.md major version"

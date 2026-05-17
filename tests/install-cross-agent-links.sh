@@ -242,6 +242,21 @@ grep -q 'замінюю битий canonical link' "$TMP/install-canonical-broke
   exit 1
 }
 
+HOME_REPAIR_EXPORTS="$TMP/home-repair-exports"
+mkdir -p "$HOME_REPAIR_EXPORTS/.claude/skills"
+ln -s "$ROOT" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports.log" 2>&1
+expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+[ ! -e "$HOME_REPAIR_EXPORTS/claude-wiki-skill" ] || {
+  echo "repair-exports should not clone or switch the canonical wiki repo"
+  exit 1
+}
+grep -q 'repair cross-agent exports' "$TMP/install-repair-exports.log" || {
+  echo "expected repair-exports summary"
+  exit 1
+}
+
 HOME_CANONICAL_FILE="$TMP/home-canonical-file"
 mkdir -p "$HOME_CANONICAL_FILE/.claude/skills"
 printf 'do not replace\n' >"$HOME_CANONICAL_FILE/.claude/skills/wiki"
