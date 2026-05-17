@@ -24,6 +24,7 @@ Beyond explicit commands, maintain wiki awareness during normal work. Tie trigge
 
 | Mistake | Fix |
 |---------|-----|
+| Running wiki in a non-git directory | Stop. Git is the foundation of the wiki; Init may ask to run `git init`, every other operation must refuse until git metadata (`.git/` directory or `.git` file) exists. |
 | Creating a second wiki when one exists | ALWAYS run discovery (Step 0) first. Check agent instruction files, search for existing index.md. |
 | Adding implementation details to agent instruction files | Instruction files = rules and conventions only. Details → wiki pages. |
 | Duplicating code in wiki | Wiki describes WHAT and WHY. Code shows HOW. |

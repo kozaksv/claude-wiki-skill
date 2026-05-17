@@ -67,13 +67,87 @@ done
 grep -q 'nearest ancestor containing `.git/`' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery reference must define the walk-up boundary"
 
+grep -q '`.git` file' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must define worktree/submodule .git file behavior"
+
+grep -q 'Git is the foundation of the wiki' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must state that git is required for wiki operation"
+
+grep -q 'absolute_current_working_directory' "$ROOT/references/discovery-versioning.md" ||
+  fail "git-init gate must show the absolute cwd before asking for consent"
+
+grep -q 'run `git init` in that' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must require confirmed git init in the displayed directory"
+
+if grep -q 'Wiki requires git' "$ROOT/references/discovery-versioning.md"; then
+  fail "git-init gate should be user-facing Ukrainian, not mixed English/Ukrainian"
+fi
+
+if grep -q 'continue to filesystem root' "$ROOT/SKILL.md" "$ROOT/references/discovery-versioning.md" "$ROOT/references/operation-init.md"; then
+  fail "wiki discovery must not continue without a git root"
+fi
+
+grep -q '1\. Git repository' "$ROOT/references/operation-init.md" ||
+  fail "bootstrap plan must list git verification as step 1"
+
+grep -q 'Bootstrap plan template (step 12)' "$ROOT/references/operation-init.md" ||
+  fail "operation-init must cross-reference bootstrap step 12 for skill exports"
+
+grep -q 'step 6: `entities/`' "$ROOT/references/operation-init.md" ||
+  fail "operation-init must cross-reference bootstrap step 6 for entities"
+
+bootstrap_plan_numbers="$(awk '
+  /^### Bootstrap plan template/ { in_section=1 }
+  in_section && /^```$/ { fence++; next }
+  in_section && fence == 1 && /^  [0-9]+\. / {
+    line=$0
+    sub(/^  /, "", line)
+    sub(/\..*/, "", line)
+    printf "%s ", line
+  }
+  in_section && fence == 2 { exit }
+' "$ROOT/references/operation-init.md")"
+[ "$bootstrap_plan_numbers" = "1 2 3 4 5 6 7 8 9 10 11 12 " ] ||
+  fail "bootstrap plan must contain numbered steps 1..12, got: $bootstrap_plan_numbers"
+
+bootstrap_plan_substeps="$(awk '
+  /^### Bootstrap plan template/ { in_section=1 }
+  in_section && /^```$/ { fence++; next }
+  in_section && fence == 1 && /^  [0-9]+[a-z]\. / { print }
+  in_section && fence == 2 { exit }
+' "$ROOT/references/operation-init.md")"
+[ -z "$bootstrap_plan_substeps" ] ||
+  fail "bootstrap plan must not contain lettered sub-steps: $bootstrap_plan_substeps"
+
+grep -q 'Scenario 3d: Fresh non-git project' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
+  fail "scenarios must cover fresh non-git project flow"
+
+grep -q 'Scenario 2e: Git worktree or submodule .git file' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
+  fail "scenarios must cover .git file worktree/submodule flow"
+
+grep -q 'Scenario 2f: Worktree/submodule with no wiki yet' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
+  fail "scenarios must cover .git file worktree/submodule absent-state init flow"
+
+grep -q 'git worktree repair' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must address stale .git file (worktree removed) recovery"
+
+grep -q 'Running wiki in a non-git directory' "$ROOT/references/maintenance-and-mistakes.md" ||
+  fail "maintenance-and-mistakes must list the non-git anti-pattern"
+
+grep -q 'Do not suggest `git reset --hard HEAD`' "$ROOT/references/discovery-versioning.md" ||
+  fail "unborn HEAD recovery must not recommend git reset --hard HEAD"
+
+if grep -q 'demote obvious AUTO' "$ROOT/references/operation-lint.md"; then
+  fail "lint non-git gate should not mention impossible AUTO demotion paths"
+fi
+
 grep -q 'resume the originally requested operation' "$ROOT/references/discovery-versioning.md" ||
   fail "migration flow must resume the original operation"
 
 grep -q 'Migration failure' "$ROOT/references/discovery-versioning.md" ||
   fail "migration flow must document partial-failure handling"
 
-grep -q 'one canonical wiki per `.git` ancestor' "$ROOT/references/discovery-versioning.md" ||
+grep -q 'one canonical wiki per git root marker' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery reference must define monorepo multi-wiki scope"
 
 self_improvement_lines="$(wc -l <"$ROOT/references/self-improvement.md" | tr -d ' ')"

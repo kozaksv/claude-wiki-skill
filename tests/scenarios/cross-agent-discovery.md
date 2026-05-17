@@ -5,6 +5,10 @@ Codex, and Gemini. They are manual/integration scenarios: the expected behavior
 comes from `references/discovery-versioning.md` and
 `references/operation-init.md`.
 
+Unless a scenario explicitly says otherwise, the project root contains `.git/`
+or a `.git` file. Git is a hard prerequisite: non-git directories cannot
+create, query, lint, or cleanup a wiki.
+
 ## Scenario 1: AGENTS.md-only project
 
 ### Setup
@@ -93,7 +97,7 @@ comes from `references/discovery-versioning.md` and
 - Wiki location resolves to `apps/web/docs/wiki/`.
 - If multiple wikis are desired in one git repo, each sub-project must expose
   its own instruction-file pointer; otherwise the default is one canonical wiki
-  per `.git` ancestor.
+  per git root marker.
 - If cross-agent instruction-file sync is explicitly requested for this
   sub-project, the generated `CLAUDE.md` and `GEMINI.md` pointers are written in
   `apps/web/` using the path relative to each instruction file:
@@ -101,6 +105,52 @@ comes from `references/discovery-versioning.md` and
   hard-coded repo-root path.
 - The existing `apps/web/AGENTS.md` pointer is left untouched if it resolves to
   the same wiki, even if its text uses a repo-root-style path.
+
+## Scenario 2e: Git worktree or submodule .git file
+
+### Setup
+
+- Current working directory is `/work/mono-submodule/src`.
+- `/work/mono-submodule/.git` exists as a file, not a directory, and points to
+  real git metadata elsewhere (the usual git worktree/submodule layout).
+- `/work/mono-submodule/AGENTS.md` points at `docs/wiki/schema.md`.
+- `/work/mono-submodule/docs/wiki/index.md` and
+  `/work/mono-submodule/docs/wiki/schema.md` exist.
+- `/work/.git/` also exists in a parent workspace.
+
+### Expected behavior
+
+- Discovery treats `/work/mono-submodule/.git` as the git root marker and stops
+  the bounded walk at `/work/mono-submodule/`.
+- `/work/.git/` and parent workspace instruction files are ignored.
+- Wiki location resolves to `/work/mono-submodule/docs/wiki/`.
+- The agent does not ask to run `git init`, because normal git commands,
+  snapshots, and rollback work from the worktree/submodule directory.
+
+## Scenario 2f: Worktree/submodule with no wiki yet
+
+### Setup
+
+- Current working directory is `/work/mono-submodule/src`.
+- `/work/mono-submodule/.git` exists as a file, not a directory, and points to
+  real git metadata elsewhere.
+- No `docs/wiki/` exists under `/work/mono-submodule/`.
+- No `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists under
+  `/work/mono-submodule/`.
+- User says `wiki init`.
+
+### Expected behavior
+
+- Discovery treats `/work/mono-submodule/.git` as the git root marker; the
+  bounded walk stops at `/work/mono-submodule/`.
+- The agent does not ask to run `git init`, because the worktree/submodule
+  already has a valid git marker.
+- State resolves to `absent`.
+- The Bootstrap plan template is shown; step 1 reads as `Git repository —
+  підтверджено git-маркер` (no fresh-init clause fires, because git was not
+  just created by the Init gate).
+- After explicit `y`, the wiki is created inside `/work/mono-submodule/` — not
+  in any parent directory and not by attaching to a wiki outside the worktree.
 
 ## Scenario 3: Gemini-only fresh project
 
@@ -159,6 +209,29 @@ comes from `references/discovery-versioning.md` and
   instead of claiming Codex will see the skill.
 - After a successful repair, Codex can discover the same `wiki` skill through
   `~/.agents/skills/wiki`.
+
+## Scenario 3d: Fresh non-git project
+
+### Setup
+
+- Current working directory is `/work/money`.
+- `/work/money/` has no `.git/` directory or `.git` file ancestor.
+- No `docs/wiki/` exists.
+- User says `wiki init`.
+
+### Expected behavior
+
+- Discovery stops before looking for wiki files or parent instruction files.
+- The agent explains that git is required for snapshots, rollback, cleanup, and
+  migration safety.
+- The agent asks: ``Створити `.git/` у `/work/money` і продовжити wiki init? [y/N]``.
+- On explicit `y`, the agent runs `git init` in `/work/money`, restarts Step 0,
+  and then presents the normal fresh-bootstrap plan.
+- On any other answer, the agent creates nothing and says the wiki will not work
+  without git.
+- For non-init operations in the same setup, the agent does not offer a wiki
+  action menu; it refuses and points the user to initialize git first or run
+  `wiki init`.
 
 ## Scenario 3c1: Codex cannot activate wiki skill yet
 

@@ -8,6 +8,10 @@ Periodic health-check of the wiki.
 - Periodically (every ~10 sessions or after major changes)
 - When something feels off or inconsistent during other operations
 
+Discovery must already have found a git root. If git metadata (`.git/`
+directory or `.git` file) is missing, do not run Lint; tell the user to
+initialize git first or run `wiki init` and confirm the git-init gate.
+
 ### Checklist
 
 Run through each check and report findings:

@@ -2,17 +2,52 @@
 
 **Before any operation**, locate both the wiki directory and its schema. Follow this sequence:
 
-1. **Find agent instruction files** — set the discovery boundary first: start in the current working directory and walk up parent directories until the nearest ancestor containing `.git/` (include that directory). If no `.git/` ancestor exists, stop at `$HOME` when the current path is inside `$HOME`; otherwise stop at the filesystem root. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
-2. **Read the Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
-3. **Verify wiki exists** — check that the discovered directory contains `index.md`
-4. **If no Wiki section exists** — search for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory
-5. **Locate schema** — wiki schema (layers, operations, conventions, `Entity Categories`, `Document Types`, `File Naming`) lives in exactly one of:
+1. **Require a git root first** — start in the current working directory and walk up parent directories until the nearest ancestor containing `.git/` or a `.git` file (include that directory).
+
+   Git is the foundation of the wiki: snapshots, rollback, lint auto-fixes,
+   cleanup, and migration safety rely on commits.
+
+   A `.git` file (used by git worktree and submodules) counts as the git root
+   marker for this purpose: it points at real git metadata elsewhere, while
+   normal git commands, snapshots, and rollback still work from that working
+   tree.
+
+   If a `.git` file points at missing or unreachable metadata (for example, the
+   parent worktree was removed), wiki operations may fail at runtime when git
+   commands run. Treat that as a user-recoverable state: tell the user to run
+   `git worktree repair` or re-create the repo before resuming wiki work; do
+   not silently fall back to `git init` in that directory.
+
+   If no `.git/` directory or `.git` file ancestor exists, stop immediately. Do
+   not search higher and do not create or use a wiki yet.
+
+   - If the user's requested operation is Init/bootstrap, ask:
+
+     ```
+     Wiki потребує git для snapshots, rollback і cleanup safety.
+     Git-метадані (`.git/` або файл `.git`) не знайдено для цього проєкту.
+
+     Створити `.git/` у `{absolute_current_working_directory}` і продовжити wiki init? [y/N]
+     ```
+
+     Substitute `{absolute_current_working_directory}` with the real absolute
+     cwd before showing the prompt. On explicit `y`, run `git init` in that
+     displayed current working directory, then restart Step 0 from that
+     directory. On anything else, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Нічого не створено.`
+
+   - If the requested operation is not Init/bootstrap, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Спершу ініціалізуй git або запусти wiki init і підтвердь git init.`
+
+2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
+3. **Read the Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
+4. **Verify wiki exists** — check that the discovered directory contains `index.md`
+5. **If no Wiki section exists** — search for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory
+6. **Locate schema** — wiki schema (layers, operations, conventions, `Entity Categories`, `Document Types`, `File Naming`) lives in exactly one of:
    - **Preferred (v3+):** `{wiki}/schema.md` — canonical location, keeps wiki metadata out of resident agent-instruction context
    - **Legacy (v1–v2):** sections inside an agent instruction file, usually `CLAUDE.md` (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
 
    Try `{wiki}/schema.md` first. Fall back to agent instruction file sections. When both exist, prefer `schema.md` and surface the duplication as a DECIDE finding during next lint.
-6. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (5-state model: `absent` / `legacy` / `current` / `older` / `newer`), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
-7. **Compare versions** — read `wiki_version` from `{wiki}/schema.md` frontmatter (if absent → state = `legacy`). Read your own `version` from this SKILL.md frontmatter. Determine state per the Versioning & Migration table. If state ≠ `current`, halt the requested operation and follow the migration flow. After the migration completes (or the user declines but keeps the conversation going), resume the originally requested operation. Do not require the user to retype it. The only exception is an explicit user request to stop.
+7. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (5-state model: `absent` / `legacy` / `current` / `older` / `newer`), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
+8. **Compare versions** — read `wiki_version` from `{wiki}/schema.md` frontmatter (if absent → state = `legacy`). Read your own `version` from this SKILL.md frontmatter. Determine state per the Versioning & Migration table. If state ≠ `current`, halt the requested operation and follow the migration flow. After the migration completes (or the user declines but keeps the conversation going), resume the originally requested operation. Do not require the user to retype it. The only exception is an explicit user request to stop.
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
@@ -60,7 +95,7 @@ questions, never interrupt the answer solely to create pointer files.
 
 **CRITICAL: Never create a second wiki.** If you find an existing valid wiki, use it. If an agent instruction file references a wiki path, trust it only after verifying that the directory contains `index.md`; stale pointers are cleanup findings, not permission to bootstrap a second wiki. Only create a new wiki when none exists anywhere in the project.
 
-**Monorepo scope:** the supported default is one canonical wiki per `.git` ancestor. If multiple sub-projects inside the same repo intentionally maintain separate wikis, treat that as an explicit user/project convention: require an instruction-file pointer in or below the sub-project directory and prefer the closest valid pointer found in the cwd → parent walk. Do not infer multiple wikis from sibling directories on your own.
+**Monorepo scope:** the supported default is one canonical wiki per git root marker (`.git/` directory or `.git` file). If multiple sub-projects inside the same repo intentionally maintain separate wikis, treat that as an explicit user/project convention: require an instruction-file pointer in or below the sub-project directory and prefer the closest valid pointer found in the cwd → parent walk. Do not infer multiple wikis from sibling directories on your own.
 
 **Why schema.md is preferred over agent instruction file sections:** files like `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` can load into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
 
@@ -114,9 +149,11 @@ Wiki migrations involve directory/file creation, gitignore changes, and frontmat
 
 ### Migration failure: partial-state handling
 
-Before executing a migration/init plan in a git repo, record the current HEAD and
-list the files/directories the plan expects to create, move, or edit. If any step
-fails, stop immediately and report:
+Before executing a migration/init plan, verify that the project is inside a git
+repo. If the repo has no commits yet (fresh `git init`), note the unborn HEAD;
+otherwise record the current HEAD and list the files/directories the plan
+expects to create, move, or edit. If any step fails, stop immediately and
+report:
 
 - steps completed
 - step that failed and stderr/error reason
@@ -129,7 +166,13 @@ also name the related user-facing plan item (for example, "Execute step 6
 
 Do **not** continue with later migration steps after a failure. If the repo was
 clean before the migration and every changed path is migration-owned, offer to
-roll back those paths for the user. If the repo was dirty or touched files
+roll back those paths for the user. For fresh `git init` repos with unborn HEAD,
+there is no commit to reset to; the safest recovery is to remove only the
+migration-owned paths listed in the failure report. For example, if the failure
+report says `docs/wiki/` and `archive/` were the only created paths, then
+`rm -rf docs/wiki/ archive/` would be safe; always derive the path list from the
+report, not from this example. Do not suggest `git reset --hard HEAD` on an
+unborn branch. If the repo was dirty or touched files
 overlap user work, do not run destructive rollback commands; leave the partial
 state visible and ask how to proceed. On the next invocation, re-run Step 0 and
 treat the partial state according to what actually exists (`schema.md`,
@@ -188,6 +231,11 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Polished non-absent Init wording: consistent
   user-facing repair labels, explicit single-repair migration-plan handling,
   and a stronger recovery diagnostic for exported skills.
+
+### 4.2.8 (2026-05-17)
+- No schema migration. Git is now a hard prerequisite for every wiki operation:
+  non-git Init must ask before running `git init`, and all other non-git wiki
+  operations stop with an explanation instead of creating or using a wiki.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

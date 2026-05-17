@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.2.7"
+version: "4.2.8"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
@@ -80,9 +80,13 @@ instead of improvising the behavior from memory.
 - **Agent-neutral discovery:** `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` are
   equal sources of a `## Wiki` pointer. Validate every pointer by checking for
   `{wiki}/index.md`.
-- **Boundary-aware discovery:** walk from cwd upward only to the nearest `.git/`
-  ancestor, inclusive. If no `.git/` ancestor exists, continue to filesystem
-  root.
+- **Git-backed wiki:** Git is the foundation of the wiki: snapshots, rollback,
+  lint auto-fixes, cleanup, and migration safety all rely on commits. A project
+  without git metadata (`.git/` directory or `.git` file) is not wiki-ready.
+- **Boundary-aware discovery:** walk from cwd upward only to the nearest git
+  marker ancestor (`.git/` directory or `.git` file), inclusive. If no git
+  marker ancestor exists, stop and require explicit git initialization before
+  any wiki operation can proceed.
 - **No split-brain wiki:** a stale active-agent pointer is a cleanup/lint finding,
   not permission to create a second wiki.
 - **Optional `doc-extract`:** required only for `ingest-binary`. The rest of the

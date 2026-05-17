@@ -10,7 +10,7 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Discovery
 
-1. **Find agent instruction files** by running `## Step 0: Discover Wiki Location and Schema` first. Use the same bounded walk (`cwd` → nearest `.git/` ancestor, inclusive; filesystem root only when no `.git/` ancestor exists), the same pointer validation (`{wiki}/index.md` must exist), and the same conflict rule (never let a stale active-agent pointer override another file's valid wiki). Use existing files when present and keep their wiki pointers in sync. Infer the active agent from the runtime context when it is explicit (Claude → `CLAUDE.md`, Codex → `AGENTS.md`, Gemini → `GEMINI.md`). If none exists during fresh bootstrap, create the pointer file that matches the active agent. If the active agent is unclear, ask which agent file to create; only default to `CLAUDE.md` when the user wants the legacy convention or does not care.
+1. **Find agent instruction files** by running `## Step 0: Discover Wiki Location and Schema` first. Use the same bounded walk (`cwd` → nearest git marker ancestor, inclusive; `.git/` directory or `.git` file), the same git prerequisite gate, the same pointer validation (`{wiki}/index.md` must exist), and the same conflict rule (never let a stale active-agent pointer override another file's valid wiki). Use existing files when present and keep their wiki pointers in sync. Infer the active agent from the runtime context when it is explicit (Claude → `CLAUDE.md`, Codex → `AGENTS.md`, Gemini → `GEMINI.md`). If none exists during fresh bootstrap, create the pointer file that matches the active agent. If the active agent is unclear, ask which agent file to create; only default to `CLAUDE.md` when the user wants the legacy convention or does not care.
 2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
 
    | State | Condition | Action |
@@ -26,6 +26,23 @@ Set up wiki, OR detect existing structure and propose migration.
    - Analytical MDs (README, analysis, notes) outside `docs/wiki/`
    - Existing concept-like MDs that should move to `concepts/`
    - Duplicate MDs (raw README that overlap wiki content)
+
+### Git prerequisite
+
+Init is the only operation that may run `git init` after user confirmation. All
+other operations must refuse if git metadata (`.git/` directory or `.git` file)
+is missing, without offering to run `git init` themselves. If Step 0 finds no
+git marker ancestor, ask once using the exact gate from
+`references/discovery-versioning.md`. On explicit `y`, run `git init` in the
+displayed current working directory, then restart discovery and continue with
+the normal Init flow. On any other answer, do not create `docs/wiki/`,
+instruction files, `.gitignore`, `archive/`, or telemetry; report that the wiki
+cannot work because git is the foundation for snapshots, rollback, cleanup, and
+migration safety.
+
+After git exists, the git root is the project boundary for this Init run. Do not
+attach a non-git directory to a parent/sibling wiki, and do not bootstrap a wiki
+outside the git root.
 
 ### Cross-agent instruction-file sync
 
@@ -64,7 +81,7 @@ global `wiki` skill exports before the final response:
    repaired. Do not claim cross-agent readiness unless `~/.agents/skills/wiki`
    reaches the same `SKILL.md` as `~/.claude/skills/wiki`.
 
-For `absent`, this repair appears in the Bootstrap plan template (step 11). For
+For `absent`, this repair appears in the Bootstrap plan template (step 12). For
 non-absent states, it appears in the Non-absent Init consent block or, for
 `legacy` / `older`, in the Combined migration plan.
 
@@ -151,7 +168,7 @@ custom categories.
 
 If multiple signals match (polyglot repo), union the suggested categories and let
 the user prune. After detection, surface the proposed list inside the Bootstrap
-plan template (step 5: `entities/`) so the user sees what they're approving.
+plan template (step 6: `entities/`) so the user sees what they're approving.
 
 For an empty project, do not ask the user for more project information and do
 not invent starter pages or categories. Create `entities/` as an empty directory;
@@ -186,17 +203,18 @@ order steps differently for safe creation, migration, and failure reporting.
 📂 Створюю нову wiki у docs/wiki/
 
 План:
-  1. docs/wiki/schema.md — frontmatter (wiki_version: "4.0", last_migration: "{today}", nudge_interval: 15) + три розділи (Layers / Operations / Conventions) + Migration Log
-  2. docs/wiki/index.md — порожній з трьома секціями (Concepts | Entities | Transcripts)
-  3. docs/wiki/log.md — порожній з заголовком
-  4. docs/wiki/concepts/ — порожня папка
-  5. docs/wiki/entities/ — {entities-step}
-  6. docs/wiki/transcripts/ — порожня папка
-  7. docs/wiki/.usage.json — порожній dict {}
-  8. archive/ — поза wiki (gitignored)
-  9. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with a relative "Wiki schema → ..." path computed per file (usually `docs/wiki/schema.md`)
-  10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
-  11. Cross-agent skill exports — перевірити `~/.agents/skills/wiki` і `~/.gemini/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
+  1. Git repository — підтверджено git-маркер (`.git/` директорія або файл `.git`) у project root; якщо `.git/` щойно створено через Init gate, продовжуємо в цьому root
+  2. docs/wiki/schema.md — frontmatter (wiki_version: "4.0", last_migration: "{today}", nudge_interval: 15) + три розділи (Layers / Operations / Conventions) + Migration Log
+  3. docs/wiki/index.md — порожній з трьома секціями (Concepts | Entities | Transcripts)
+  4. docs/wiki/log.md — порожній з заголовком
+  5. docs/wiki/concepts/ — порожня папка
+  6. docs/wiki/entities/ — {entities-step}
+  7. docs/wiki/transcripts/ — порожня папка
+  8. docs/wiki/.usage.json — порожній dict {}
+  9. archive/ — поза wiki (gitignored)
+  10. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with a relative "Wiki schema → ..." path computed per file (usually `docs/wiki/schema.md`)
+  11. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
+  12. Cross-agent skill exports — перевірити `~/.agents/skills/wiki` і `~/.gemini/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
 
 [y] так, створи все  /  [n] скасувати
 ```
@@ -207,6 +225,10 @@ After confirmation (`y`), implement the approved outcome checklist using the Exe
 
 After consent:
 
+0. Verify the git root. If git metadata (`.git/` directory or `.git` file) is
+   missing at this point, stop immediately; do not create wiki files. If the
+   repo has a HEAD commit, record it for partial-failure reporting; if it is a
+   fresh repo with unborn HEAD, record that explicitly.
 1. Create missing dirs: `concepts/`, `entities/`, `transcripts/`, `archive/`; create `entities/{categories}/` and `archive/{categories}/` only when the approved category list is non-empty
 2. Add `archive/` to `.gitignore`
 3. Move concept MDs → `concepts/`
