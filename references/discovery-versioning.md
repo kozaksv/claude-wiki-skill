@@ -20,25 +20,61 @@
 
    If no `.git/` directory or `.git` file ancestor exists, stop the boundary
    walk. Before refusing, scan for wiki artifacts in the current working
-   directory and its ancestors (without a git boundary, because there is none):
-   a `docs/wiki/index.md` file, or a `## Wiki` pointer in `CLAUDE.md`,
-   `AGENTS.md`, or `GEMINI.md` that resolves to an `index.md` on disk. Pick the
-   nearest such artifact to cwd. This produces two cases:
+   directory and its ancestors (without a git boundary, because there is none).
+   Wiki artifacts include both fully-formed and partial wikis:
 
-   - **Orphan wiki detected** (wiki artifacts exist but no git marker): regardless
-     of which operation the user asked for, show this active gate:
+   - A `docs/wiki/index.md` file (canonical, fully formed).
+   - A `## Wiki` pointer in `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` that
+     resolves to an on-disk `index.md` (pointer-based, fully formed).
+   - A `docs/wiki/` directory (or pointer-resolved directory) containing
+     any wiki-owned files even when `index.md` is missing: `schema.md`,
+     `log.md`, `.usage.json`, `concepts/`, `entities/`, `transcripts/`,
+     `archive/`. This catches damaged/partial wikis whose `index.md` was
+     removed.
+
+   Pick the nearest such artifact to cwd. This produces two cases:
+
+   - **Orphan wiki detected** (wiki artifacts exist but no git marker):
+     the skill **never runs `git init` for an orphan-wiki state**, no
+     matter what the user types. The skill cannot reliably know where
+     the user's project root is, and any auto-`git init` carries blast
+     radius (a wrong location creates a repo that boxes unrelated files
+     or sibling projects). The honest, safe behavior is: explain what's
+     wrong, tell the user how to fix it, and close the operation
+     without writing anything.
+
+     **The gate** is shown regardless of which operation the user asked
+     for. It is informational — no consent reply is expected, because
+     there's nothing for the user to consent to:
 
      ```
      У `{absolute_wiki_artifact_directory}` знайдено wiki, але `.git/` немає.
      Wiki не працює без git: snapshots, rollback і cleanup потребують commits.
 
-     Виконати `git init` у `{absolute_current_working_directory}`, щоб полагодити? [y/N]
+     Я не запускаю `git init` для orphan-wiki сам, бо тільки ви знаєте,
+     де project root вашого проєкту, і помилка в цьому виборі
+     створила б `.git/` у неправильному місці (наприклад, охопивши
+     несумісні sibling-проєкти або весь `$HOME`).
+
+     Що зробити вручну:
+       1. `cd` у директорію вашого project root. Project root — це
+          директорія, яка містить wiki (`{absolute_wiki_artifact_directory}`)
+          як sub-tree і яку ви вважаєте коренем проєкту (зазвичай
+          там лежать `package.json` / `pyproject.toml` / `Cargo.toml` /
+          `README.md` / `.gitignore`, etc.).
+       2. Виконайте `git init` у цій директорії.
+       3. Повторіть оригінальну операцію — Step 0 знайде новий
+          `.git/` і продовжить як зазвичай.
+
+     Скіл закриває операцію без змін. Wiki не чіпається.
      ```
 
-     Substitute both placeholders with real absolute paths before showing the
-     prompt. On explicit `y`, run `git init` in the displayed cwd, then restart
-     Step 0; the wiki should resolve normally and the original operation
-     resumes. On anything else, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Нічого не змінено.` Do not create a second wiki and do not delete the existing artifacts.
+     Substitute the wiki-artifact-directory placeholder with the real
+     absolute path before showing the prompt. After showing the gate,
+     end the operation. Do not parse a reply, do not loop, do not write
+     anything (no `git init`, no wiki files, no instruction-file edits,
+     no `.gitignore`, no telemetry, no second wiki, no deletion of the
+     existing wiki).
 
    - **No wiki artifacts found** (truly empty for wiki purposes):
 
@@ -58,20 +94,72 @@
 
      - If the requested operation is not Init/bootstrap, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Спершу ініціалізуй git або запусти wiki init і підтвердь git init.`
 
-   Both gates (orphan-wiki repair and absent-state Init) are the only places
-   `git init` may run, and each requires explicit `[y]` from the user.
+   The skill runs `git init` from exactly one place — the **absent-state
+   Init gate** — and only after explicit `y` from the user. The
+   **orphan-wiki repair gate** never runs `git init` itself; it only
+   explains the situation and asks the user to handle it manually.
+   This split is deliberate: absent-state means cwd is unambiguous (no
+   wiki exists yet, the user clearly chose where they're running from),
+   while orphan-wiki means a wiki already exists in the user's
+   directory structure and the skill has no reliable way to identify
+   the matching project root from path strings alone.
 
 2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
 3. **Read the Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
 4. **Verify wiki exists** — check that the discovered directory contains `index.md`
-5. **If no Wiki section exists** — search for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory
+5. **If no `## Wiki` pointer resolved to a valid `index.md`** — this covers two cases: (a) no `## Wiki` section exists in any discovered instruction file, or (b) a `## Wiki` section exists but its pointer is stale/broken (target file does not exist). In either case, fall through to canonical-path search: look for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory, then relative to the git root. The git-root fallback catches the case where cwd is nested below the project root and no instruction files exist (e.g. `/repo/.git/` + `/repo/docs/wiki/index.md` + cwd `/repo/src/`). A valid on-disk wiki always beats a stale resident pointer — if Step 5 finds `docs/wiki/index.md`, use it and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass.
 6. **Locate schema** — wiki schema (layers, operations, conventions, `Entity Categories`, `Document Types`, `File Naming`) lives in exactly one of:
    - **Preferred (v3+):** `{wiki}/schema.md` — canonical location, keeps wiki metadata out of resident agent-instruction context
    - **Legacy (v1–v2):** sections inside an agent instruction file, usually `CLAUDE.md` (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
 
    Try `{wiki}/schema.md` first. Fall back to agent instruction file sections. When both exist, prefer `schema.md` and surface the duplication as a DECIDE finding during next lint.
-7. **If wiki not found at all** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (5-state model: `absent` / `legacy` / `current` / `older` / `newer`), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
-8. **Compare versions** — read `wiki_version` from `{wiki}/schema.md` frontmatter (if absent → state = `legacy`). Read your own `version` from this SKILL.md frontmatter. Determine state per the Versioning & Migration table. If state ≠ `current`, halt the requested operation and follow the migration flow. After the migration completes (or the user declines but keeps the conversation going), resume the originally requested operation. Do not require the user to retype it. The only exception is an explicit user request to stop.
+7. **If `index.md` is missing but other wiki-owned files exist (partial wiki)** — before declaring "no wiki found", check whether a wiki directory exists with wiki-owned files but lacks a valid `index.md`. The candidate directories to check (in this exact order, all of them, before falling through):
+
+   - any directory referenced by a `## Wiki` pointer (even if its `index.md` is missing or invalid),
+   - `docs/wiki/` relative to each instruction file's directory,
+   - `docs/wiki/` relative to cwd,
+   - `docs/wiki/` relative to the git root (so a partial wiki at the project root is caught even when cwd is nested and no instruction files exist).
+
+   The wiki-owned files that count as evidence: `schema.md`, `log.md`, `.usage.json`, `concepts/`, `entities/`, `transcripts/`, `archive/`. If any such file exists in a candidate wiki directory but `index.md` does not, this is **partial wiki state** — a prior Init/migration may have stopped mid-flow, or `index.md` was accidentally removed. Show this informational gate and end the operation:
+
+   ```
+   У `{absolute_wiki_directory}` знайдено артефакти wiki, але `index.md` відсутній.
+   Це partial/damaged state — попередня операція Init/migration могла не завершитися,
+   або файл випадково видалено.
+
+   Знайдено wiki-owned files:
+     - {list_of_found_files}
+
+   Що зробити вручну:
+     1. Відновити `index.md` з git history. Git tree paths мають бути
+        repo-relative, тому використовуйте `git -C {absolute_git_root}`
+        або запустіть з project root:
+          `git -C {absolute_git_root} log -- {wiki_path_relative_to_git_root}/index.md`
+          `git -C {absolute_git_root} show <hash>:{wiki_path_relative_to_git_root}/index.md > {absolute_wiki_directory}/index.md`
+     2. Або move/rename wiki-директорію повністю (наприклад
+        `mv {absolute_wiki_directory} {absolute_wiki_directory}.bak`),
+        щоб скіл міг створити fresh wiki через `wiki init`.
+     3. Повторити оригінальну операцію.
+
+   Скіл закриває операцію без змін. Існуючі файли не чіпаються.
+   ```
+
+   Substitute placeholders with real values:
+   `{absolute_wiki_directory}` is the absolute path of the wiki dir
+   (e.g. `/work/app/docs/wiki/`); `{absolute_git_root}` is the
+   absolute path of the git root (e.g. `/work/app/`);
+   `{wiki_path_relative_to_git_root}` is the wiki path relative to the
+   git root (e.g. `docs/wiki`). Also substitute the actual list of
+   found files. After showing the gate, end the operation. Do not
+   create wiki files, do not write instruction-file pointers, do not
+   touch `.gitignore`/`archive/`/telemetry, do not delete or rewrite
+   the existing wiki-owned files. Partial-state recovery is purely
+   user-driven, for the same reason orphan-wiki repair is: the skill
+   cannot reliably tell which files are the user's real wiki vs.
+   stale leftovers.
+
+8. **If wiki not found at all (no `index.md` AND no other wiki-owned files anywhere)** — tell the user: "No wiki found. Would you like me to initialize one?" Then delegate to the **Init (bootstrap-aware)** operation below — it detects project state (5-state model: `absent` / `legacy` / `current` / `older` / `newer`), creates the three-layer structure (`concepts/`, `entities/`, `transcripts/`) with `archive/` outside git, proposes migration for existing artifacts, and writes schema to `{wiki}/schema.md`.
+9. **Compare versions** — read `wiki_version` from `{wiki}/schema.md` frontmatter (if absent → state = `legacy`). Read your own `version` from this SKILL.md frontmatter. Determine state per the Versioning & Migration table. If state ≠ `current`, halt the requested operation and follow the migration flow. After the migration completes (or the user declines but keeps the conversation going), resume the originally requested operation. Do not require the user to retype it. The only exception is an explicit user request to stop.
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
@@ -272,6 +360,46 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.2.20 (2026-05-17)
+- No schema migration. Three contract clarifications close iterations
+  4.2.11–4.2.19, which tried successively to derive a safe
+  project-root guess from the wiki path (walk-up to instruction files,
+  canonical-suffix strip, ambiguity tie-breakers, single/two-candidate
+  menus, absolute-path override with validation, pre-bootstrap stray
+  scan). Each closed one edge case (nested cwd, pointer escaping
+  upward, canonical-vs-legacy ambiguity, non-standard layouts, broad
+  `/` or `$HOME` overrides, false positives on ordinary `docs/index.md`,
+  partial-wiki misclassification as absent) and surfaced another:
+
+  - **Orphan-wiki repair is fully manual.** When a wiki exists on
+    disk but no git marker does, the gate is informational only —
+    explains the situation, lists the manual fix (`cd` to project
+    root → `git init` → retry), and ends the operation. The skill
+    never runs `git init` for an orphan-wiki state under any
+    condition. `[y]` is reserved exclusively for the absent-state
+    Init gate.
+
+  - **Wiki location is contract-bound.** A project's wiki lives at
+    `docs/wiki/` or wherever a `## Wiki` pointer in `CLAUDE.md` /
+    `AGENTS.md` / `GEMINI.md` resolves to. If Step 0 finds neither,
+    the project is considered to have no wiki — period. Init does
+    not scan for stray `index.md` or wiki-like content in
+    non-canonical locations. Users who want a wiki outside
+    `docs/wiki/` must declare it via a `## Wiki` pointer before
+    running any wiki operation; otherwise Init bootstraps a fresh
+    wiki at the canonical path.
+
+  - **Partial wiki state is detected and protected.** A wiki
+    directory with wiki-owned files (`schema.md`, `log.md`,
+    `.usage.json`, `concepts/`, `entities/`, `transcripts/`,
+    `archive/`) but missing `index.md` is partial state, not
+    absent. Step 0 halts with an informational gate listing the
+    found files and the manual recovery options (restore
+    `index.md` from git history, or move the directory aside and
+    re-init). Init's absent-state bootstrap does not run on
+    partial wikis, so existing `schema.md`, `log.md`, telemetry,
+    and concept pages are never overwritten.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

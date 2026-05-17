@@ -233,38 +233,181 @@ create, query, lint, or cleanup a wiki.
   action menu; it refuses and points the user to initialize git first or run
   `wiki init`.
 
-## Scenario 3e: Orphan wiki (wiki exists, no git)
+## Scenario 3e: Orphan wiki — skill explains and refuses; user fixes manually
 
 ### Setup
 
-- Current working directory is `/work/money`.
-- `/work/money/` has no `.git/` directory and no `.git` file ancestor.
-- `/work/money/docs/wiki/index.md` and `/work/money/docs/wiki/schema.md`
-  already exist.
-- `/work/money/CLAUDE.md` contains a `## Wiki` pointer to
-  `docs/wiki/schema.md`.
-- User says `wiki lint` (or any non-init wiki operation; the gate behavior is
-  the same for `query`, `status`, `cleanup`, `split`, `ingest`, and `init`).
+- Current working directory is anywhere inside (or at) a project that
+  contains a wiki on disk but no git marker. Examples that all
+  exercise the same gate:
+  - `/work/money` with wiki at `/work/money/docs/wiki/`.
+  - `/work/money/src` with wiki at `/work/money/docs/wiki/`.
+  - `/work/docs` with wiki at `/work/docs/wiki/` (project root itself
+    named `docs/`).
+- None of those directories or their ancestors contains `.git/` or a
+  `.git` file.
+- (Step 0 detects orphan-wiki only when discovery actually resolves a
+  wiki — i.e., `docs/wiki/index.md` exists or a `## Wiki` pointer in
+  `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` resolves to one. By contract,
+  these are the only places a wiki can live. Files at non-canonical
+  paths without a pointer are not considered wikis at all — Init in
+  such a project will bootstrap a fresh wiki at `docs/wiki/`, and
+  users who want their wiki somewhere else must add a `## Wiki`
+  pointer first.)
+- User says `wiki lint` (or any wiki operation; the gate is the same
+  for `query`, `status`, `cleanup`, `split`, `ingest`, and `init`).
 
 ### Expected behavior
 
-- Step 0 scans for wiki artifacts after failing to find a git marker, locates
-  `/work/money/docs/wiki/index.md`, and resolves the orphan-wiki state.
-- The agent does not say "запусти `wiki init`"; instead it shows the
-  orphan-wiki repair gate:
+- Step 0 detects the orphan-wiki state and resolves the wiki.
+- The agent shows the informational gate. There is no consent reply to
+  parse — the gate explains, the operation ends:
 
   ```
   У `/work/money/docs/wiki/` знайдено wiki, але `.git/` немає.
   Wiki не працює без git: snapshots, rollback і cleanup потребують commits.
 
-  Виконати `git init` у `/work/money`, щоб полагодити? [y/N]
+  Я не запускаю `git init` для orphan-wiki сам, бо тільки ви знаєте,
+  де project root вашого проєкту, і помилка в цьому виборі
+  створила б `.git/` у неправильному місці (наприклад, охопивши
+  несумісні sibling-проєкти або весь `$HOME`).
+
+  Що зробити вручну:
+    1. `cd` у директорію вашого project root. Project root — це
+       директорія, яка містить wiki (`/work/money/docs/wiki/`) як
+       sub-tree і яку ви вважаєте коренем проєкту (зазвичай там
+       лежать `package.json` / `pyproject.toml` / `Cargo.toml` /
+       `README.md` / `.gitignore`, etc.).
+    2. Виконайте `git init` у цій директорії.
+    3. Повторіть оригінальну операцію — Step 0 знайде новий
+       `.git/` і продовжить як зазвичай.
+
+  Скіл закриває операцію без змін. Wiki не чіпається.
   ```
 
-- Without explicit `y`, the agent neither runs `git init` nor edits the
-  existing wiki; it ends with a refusal message and the wiki untouched.
-- On explicit `y`, the agent runs `git init` in `/work/money`, restarts
-  Step 0, and the original operation (`wiki lint` in this scenario) resumes
-  against the existing wiki. No second wiki is created.
+- The agent does not call `git init`, does not edit instruction files,
+  does not modify `.gitignore`, does not touch wiki contents, and does
+  not create a second wiki. The original operation ends.
+- After the user manually runs `git init` in their project root and
+  re-runs the operation, Step 0 finds the new git marker and the
+  operation completes normally against the existing wiki.
+
+## Scenario 3f: Non-canonical wiki resolved via `## Wiki` pointer is not treated as absent
+
+### Setup
+
+- Project root is `/work/app/` with `/work/app/.git/` present (git is
+  fine).
+- `/work/app/` has no `docs/wiki/` directory.
+- `/work/app/knowledge/index.md` and `/work/app/knowledge/schema.md`
+  exist (wiki lives at a non-canonical path).
+- `/work/app/AGENTS.md` contains a `## Wiki` pointer:
+  `Wiki schema and operations → knowledge/schema.md. Skill: \`wiki\`.`
+- `schema.md` declares `wiki_version: "4.0"`, matching the skill major.
+- User says `wiki init`.
+
+### Expected behavior
+
+- Step 0 reads `AGENTS.md`, follows the pointer, and resolves the wiki
+  at `/work/app/knowledge/`. The wiki is considered to exist.
+- Init's state table classifies this as `current` (schema major matches
+  skill major), **not** `absent`. The "absent" state requires no wiki
+  found at all — not merely the absence of `docs/wiki/`.
+- Init does not bootstrap a fresh wiki at `/work/app/docs/wiki/`. It
+  proceeds with the normal `current`-state Init flow (cross-agent
+  instruction-file sync, export checks, etc.) against the existing
+  wiki at `/work/app/knowledge/`.
+- No second wiki is created, and the existing `AGENTS.md` pointer
+  continues to resolve correctly after Init completes.
+
+## Scenario 3g: Partial wiki (wiki-owned files exist, `index.md` missing)
+
+### Setup
+
+- Project root is `/work/app/` with `/work/app/.git/` present.
+- `/work/app/docs/wiki/` exists and contains `schema.md` (with
+  `wiki_version: "4.0"`), `log.md`, `.usage.json`, and a `concepts/`
+  subdirectory with two pages.
+- `/work/app/docs/wiki/index.md` is missing (deleted by mistake, or
+  a previous Init/migration stopped mid-flow).
+- No `## Wiki` pointer in `CLAUDE.md`/`AGENTS.md`/`GEMINI.md` (or the
+  pointer resolves to the same partially populated directory).
+- User says `wiki lint` (or any wiki operation — the gate is the
+  same).
+
+### Expected behavior
+
+- Step 0 walks instruction files, then verifies `docs/wiki/index.md`
+  exists. It does not. Step 0 then checks for partial-wiki signals
+  in the candidate wiki directory (`docs/wiki/`): `schema.md` ✓,
+  `log.md` ✓, `concepts/` ✓ — wiki-owned files are present.
+- Step 0 classifies this as **partial wiki state**, not `absent`.
+  Init's absent-state bootstrap is not invoked, so the existing
+  `schema.md`, `log.md`, `.usage.json`, and `concepts/` files are
+  **not overwritten**.
+- The agent shows the partial-wiki gate:
+
+  ```
+  У `/work/app/docs/wiki/` знайдено артефакти wiki, але `index.md` відсутній.
+  Це partial/damaged state — попередня операція Init/migration могла не
+  завершитися, або файл випадково видалено.
+
+  Знайдено wiki-owned files:
+    - schema.md
+    - log.md
+    - .usage.json
+    - concepts/
+
+  Що зробити вручну:
+    1. Відновити `index.md` з git history (`git log -- docs/wiki/index.md`,
+       потім `git show <hash>:docs/wiki/index.md > docs/wiki/index.md`).
+    2. Або move/rename wiki-директорію повністю (наприклад
+       `mv docs/wiki docs/wiki.bak`), щоб скіл міг створити fresh wiki
+       через `wiki init`.
+    3. Повторити оригінальну операцію.
+
+  Скіл закриває операцію без змін. Існуючі файли не чіпаються.
+  ```
+
+- No `index.md`, `archive/`, telemetry, or instruction-file pointers
+  are written. The operation ends.
+- After the user restores `index.md` (or moves the partial wiki
+  aside), the next operation completes normally — partial-state
+  detection no longer triggers because either `index.md` is back
+  (resolves as `current`) or the directory is empty (state is
+  truly `absent` and bootstrap proceeds).
+
+## Scenario 3h: Partial wiki without git (orphan + partial combined)
+
+### Setup
+
+- Current working directory is `/work/app/` (or `/work/app/src/`;
+  cwd doesn't change the gate).
+- `/work/app/` has no `.git/` directory and no `.git` file ancestor.
+- `/work/app/docs/wiki/schema.md`, `log.md`, `.usage.json`, and a
+  `concepts/` subdirectory exist.
+- `/work/app/docs/wiki/index.md` is missing.
+- User says any wiki operation (`wiki lint`, `wiki init`, etc.).
+
+### Expected behavior
+
+- Step 0's no-git artifact scan includes partial signals (`schema.md`,
+  `log.md`, `.usage.json`, `concepts/`, etc.), not just `index.md`.
+  The scan finds wiki-owned files at `/work/app/docs/wiki/`, so the
+  state is **orphan-wiki**, not absent.
+- The agent shows the orphan-wiki informational gate (same as
+  Scenario 3e) — explains that wiki exists but `.git/` is missing,
+  lists the manual fix (`cd` to project root → `git init` → retry),
+  and ends the operation without writing anything.
+- The absent-state Init gate does **not** fire. No `git init` is
+  proposed and no fresh wiki is bootstrapped — the existing
+  `schema.md`, `log.md`, `.usage.json`, and `concepts/` are never
+  overwritten.
+- After the user runs `git init` manually in the project root, the
+  next operation detects partial-wiki state (Scenario 3g flow) and
+  asks the user to restore `index.md` or move the wiki directory
+  aside. Recovery is two manual steps because the project sat in a
+  doubly-damaged state.
 
 ## Scenario 3c1: Codex cannot activate wiki skill yet
 

@@ -15,7 +15,7 @@ Set up wiki, OR detect existing structure and propose migration.
 
    | State | Condition | Action |
    |---|---|---|
-   | `absent` | No `docs/wiki/` exists | Bootstrap from scratch (proceed to project-type detection + Plan below) |
+   | `absent` | Step 0 found no wiki at all — no `docs/wiki/index.md`, no `## Wiki` pointer resolving to a valid `index.md`, AND no wiki-owned files (`schema.md`, `log.md`, `.usage.json`, `concepts/`, `entities/`, `transcripts/`, `archive/`) at any candidate wiki path. If wiki-owned files exist but `index.md` is missing, Step 0's partial-wiki gate handles it and Init does not run | Bootstrap from scratch (proceed to project-type detection + Plan below) |
    | `legacy` | Wiki exists but no `wiki_version` field in `schema.md` frontmatter | Identify version interactively, then propose migration |
    | `current` | schema major from `wiki_version` matches skill major | Do not change wiki structure. Inspect cross-agent readiness; if repairs are needed, use the Non-absent Init consent block below |
    | `older` | schema major from `wiki_version` < skill major | Generate migration plan, ask user once |
@@ -29,31 +29,60 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Git prerequisite
 
-`git init` may run from exactly two gates, both defined in
-`references/discovery-versioning.md` Step 0 and both requiring explicit `[y]`
-from the user:
+`git init` runs from exactly one gate — the **absent-state Init gate** —
+and only after explicit `y` from the user. Both gates are defined in
+`references/discovery-versioning.md` Step 0:
 
-- The **absent-state Init gate** (this operation), used when no git marker and
-  no wiki artifacts exist.
-- The **orphan-wiki repair gate**, used when wiki artifacts exist but no git
-  marker does. That gate can be triggered by any operation (lint, status,
-  query, cleanup, ingest, split, init) because the missing-git problem is the
-  same regardless of which operation surfaced it.
+- The **absent-state Init gate** (this operation), used when no git
+  marker and no wiki artifacts exist. Accepts only `y`; any other answer
+  cancels.
+- The **orphan-wiki repair gate** (referenced from any operation,
+  including Init), used when wiki artifacts exist but no git marker
+  does. **The skill never runs `git init` for orphan-wiki.** The gate is
+  informational: it explains the situation and tells the user to `cd`
+  into their project root and run `git init` manually, then re-run the
+  original operation. There is no consent reply to parse — the gate
+  shows, the operation ends, the wiki is untouched.
 
-For the absent-state Init gate: if Step 0 finds no git marker and no wiki
-artifacts, ask using the exact prompt from
-`references/discovery-versioning.md`. On explicit `y`, run `git init` in the
-displayed current working directory, then restart discovery and continue with
-the normal Init flow. On any other answer, do not create `docs/wiki/`,
-instruction files, `.gitignore`, `archive/`, or telemetry; report that the wiki
-cannot work because git is the foundation for snapshots, rollback, cleanup, and
-migration safety.
+For the absent-state Init gate: if Step 0 finds no git marker and no
+wiki artifacts, ask using the exact prompt from
+`references/discovery-versioning.md`. On explicit `y`, run `git init` in
+the displayed current working directory, then restart discovery and
+continue with the normal Init flow. On any other answer, do not create
+`docs/wiki/`, instruction files, `.gitignore`, `archive/`, or telemetry.
 
-If Step 0 detected orphan-wiki (existing wiki, no git), Init does not bootstrap
-from scratch. It either rides the orphan-wiki repair gate (if the user has not
-yet answered it) or, once git exists, resumes as `current` / `legacy` / `older`
-/ `newer` against the existing wiki. Init must never create a second wiki for
-an orphan-wiki project.
+**Wiki location is part of the contract, not a heuristic.** A project's
+wiki lives at `docs/wiki/` (or wherever a `## Wiki` pointer in
+`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` explicitly resolves to). If
+Step 0 finds neither, the project is considered to have no wiki —
+period. Init does not scan for stray `index.md`, `wiki/`, or
+wiki-like content in non-canonical locations; users who want a wiki
+outside `docs/wiki/` must declare it via a `## Wiki` pointer before
+running any wiki operation. This trade-off is intentional: it makes
+discovery and Init behavior fully deterministic, with no heuristic
+edge cases.
+
+**Consequence for non-canonical layouts without a pointer.** If a
+project already has wiki-like content (e.g. `knowledge/index.md`,
+`schema.md`, concept pages) at a non-canonical path AND no
+`## Wiki` pointer references it, the skill cannot see that content
+by design. Absent-state Init will treat the project as wiki-less,
+present the absent gate to the user, and on explicit `y` bootstrap a
+fresh wiki at `docs/wiki/`. The existing non-canonical content stays
+on disk untouched but is not adopted as the project wiki. This is a
+documented limitation, not a silent split-brain: the user actively
+consented to the absent-state gate. Users in this situation should
+add a `## Wiki` pointer to the non-canonical wiki **before** the
+first wiki operation — at that point Step 0 resolves the wiki
+normally and Init runs against it rather than bootstrapping a
+second one.
+
+If Step 0 detected orphan-wiki (existing wiki, no git), Init does not
+bootstrap from scratch and does not run `git init` — it shows the
+orphan-wiki repair gate (defined in Step 0) and ends. After the user
+manually runs `git init` and re-runs Init, the state resolves as
+`current` / `legacy` / `older` / `newer` against the existing wiki.
+Init must never create a second wiki for an orphan-wiki project.
 
 After git exists, the git root is the project boundary for this Init run. Do not
 attach a non-git directory to a parent/sibling wiki, and do not bootstrap a wiki
