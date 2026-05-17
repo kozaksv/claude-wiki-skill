@@ -134,11 +134,31 @@ grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" ||
 grep -q 'Project-local instruction files need repair' "$ROOT/references/operation-init.md" ||
   fail "non-absent init consent block must include project-local pointer repairs"
 
-grep -q 'Without explicit y, do not write instruction files' "$ROOT/references/operation-init.md" ||
+if ! tr '\n' ' ' <"$ROOT/references/operation-init.md" |
+  grep -q 'Without explicit y, do not write instruction files'; then
   fail "non-absent init must not write pointer files without consent"
+fi
+
+if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" |
+  grep -q 'For non-absent Init states'; then
+  fail "instruction-file sync reference must point non-absent init writes at the consent block"
+fi
+
+grep -q 'listing only the project-local repair' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
+  fail "Scenario 3c2 must document consent-gated project-local pointer repair"
+
+grep -q 'Без \[y\] жодних файлів не пишеться' "$ROOT/README.md" ||
+  fail "README recovery docs must say non-absent init repairs require explicit consent"
 
 grep -q 'Combined migration plan with export repair' "$ROOT/references/operation-init.md" ||
   fail "legacy/older init must show how export repair is integrated into migration plans"
+
+grep -q 'Зроблю всі N кроків одразу' "$ROOT/references/operation-init.md" ||
+  fail "combined migration plan must use computed N, not a literal step count"
+
+if grep -q 'Зроблю всі 3 кроки одразу' "$ROOT/references/operation-init.md"; then
+  fail "combined migration plan must not hard-code a literal step count"
+fi
 
 grep -q 'outcome checklist, not an execution-order trace' "$ROOT/references/operation-init.md" ||
   fail "init plan must clarify plan-vs-execute ordering"

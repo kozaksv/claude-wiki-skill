@@ -174,7 +174,8 @@ comes from `references/discovery-versioning.md` and
 - Recovery documentation tells the user to run
   `bash ~/.claude/skills/wiki/install.sh --repair-exports` first.
 - After Codex can see the skill, `init wiki` discovers the existing wiki from
-  `CLAUDE.md`, syncs `AGENTS.md`, and does not create a second wiki.
+  `CLAUDE.md`, follows the Non-absent Init consent block before writing
+  `AGENTS.md`, and does not create a second wiki.
 
 ## Scenario 3c2: CLAUDE-only current wiki repairs active-agent pointer
 
@@ -184,18 +185,22 @@ comes from `references/discovery-versioning.md` and
 - `CLAUDE.md` points at `docs/wiki/schema.md`.
 - `docs/wiki/index.md` and `docs/wiki/schema.md` exist and are current.
 - `AGENTS.md` does not exist.
+- Global skill exports are already valid.
 - User asks: `init wiki`.
 
 ### Expected behavior
 
 - Discovery resolves the existing wiki from `CLAUDE.md`; it does not create a
   second wiki.
-- Because the user explicitly asked to initialize or repair wiki pointers, the
-  agent runs cross-agent instruction-file sync.
-- `AGENTS.md` is created as a minimal project-local pointer file with the same
-  `## Wiki` pointer.
-- The response reports the found wiki and mentions the pointer repair, so the
-  user is not left to diagnose why Codex had no resident context.
+- State is `current`.
+- Because the user explicitly asked to initialize, the agent inspects both
+  project-local instruction files and global skill exports.
+- Since `AGENTS.md` is missing but global exports are OK, the agent shows the
+  Non-absent Init consent block listing only the project-local repair.
+- Without explicit `y`, no `AGENTS.md` is written.
+- After explicit `y`, `AGENTS.md` is created as a minimal project-local pointer
+  file with the same `## Wiki` pointer, and the response mentions the pointer
+  repair.
 
 ## Scenario 3c3: Read-only status does not write pointers
 

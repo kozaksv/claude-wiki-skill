@@ -48,10 +48,14 @@ For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
   leave all other `## Wiki` section content untouched and surface extra legacy
   schema/details as a DECIDE finding.
 
-Run this sync during Init and explicit pointer-repair requests. Do not run this sync during status, lint, or query; report missing/stale pointers as findings and
-tell the user to run `wiki init` or an explicit pointer repair if they want the
-files written. For ordinary read-only project questions, never interrupt the
-answer solely to create pointer files.
+Run this sync during Init and explicit pointer-repair requests. For non-absent
+Init states (`current`, `legacy`, `older`, `newer`), gate writes through the
+Non-absent Init consent block in `references/operation-init.md`; inspect and
+report first, then write only after explicit approval.
+Do not run this sync during status, lint, or query; report missing/stale
+pointers as findings and tell the user to run `wiki init` or an explicit
+pointer repair if they want the files written. For ordinary read-only project
+questions, never interrupt the answer solely to create pointer files.
 
 **CRITICAL: Never create a second wiki.** If you find an existing valid wiki, use it. If an agent instruction file references a wiki path, trust it only after verifying that the directory contains `index.md`; stale pointers are cleanup findings, not permission to bootstrap a second wiki. Only create a new wiki when none exists anywhere in the project.
 
@@ -173,6 +177,11 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Tightened non-absent Init again: project-local pointer
   writes and global export repairs share one explicit consent block, and
   migration failure reports use Execute checklist numbering.
+
+### 4.2.6 (2026-05-17)
+- No schema migration. Clarified the consent contract across recovery docs,
+  scenarios, and migration-plan templates: non-absent Init repairs inspect
+  first and write nothing without explicit approval.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

@@ -64,6 +64,10 @@ global `wiki` skill exports before the final response:
    repaired. Do not claim cross-agent readiness unless `~/.agents/skills/wiki`
    reaches the same `SKILL.md` as `~/.claude/skills/wiki`.
 
+For `absent`, this repair appears in the Bootstrap plan template (step 11). For
+non-absent states, it appears in the Non-absent Init consent block or, for
+`legacy` / `older`, in the Combined migration plan.
+
 This check is intentionally part of project Init, not only first-time global
 install: many users create a wiki in Claude first and then open Codex. The
 project wiki may be valid while the Codex skill alias is missing.
@@ -74,7 +78,7 @@ For `current`, `legacy`, `older`, and `newer` states, do not run cross-agent
 repairs silently. Inspect project-local instruction files and global skill
 exports first. If no writes are needed, report:
 
-- `Project-local instruction files: OK (no-op)`
+- `Проєктні instruction-файли: OK (no-op)`
 - `Cross-agent skill exports: OK (no-op)`
 
 If any item needs repair (Project-local instruction files need repair and/or
@@ -91,7 +95,10 @@ Cross-agent skill exports потребують ремонту:
 Полагодити ці cross-agent налаштування зараз? [y/N]
 ```
 
-Only run the listed repairs after explicit `y`. Without explicit y, do not write instruction files and do not run `install.sh --repair-exports`; complete the Init report with version/status findings and note that Codex/Gemini may need manual repair later.
+Only run the listed repairs after explicit `y`. Without explicit y, do not
+write instruction files and do not run `install.sh --repair-exports`; complete
+the Init report with version/status findings and note that Codex/Gemini may
+need manual repair later.
 
 For `newer`, ask whether to continue with the newer schema first. If the user
 declines, stop after the read-only report; do not sync instruction files or
@@ -108,11 +115,18 @@ migration plan so there is one consent flow.
 
 План:
   1. {schema/content migration step}
-  2. Проєктні instruction-файли — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, якщо відсутні або stale
-  3. Cross-agent skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/skills/wiki`, якщо відсутні або broken
+  2. {additional schema/content migration step, if any}
+  ...
+  N-1. Проєктні instruction-файли — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, якщо відсутні або stale
+  N. Cross-agent skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/skills/wiki`, якщо відсутні або broken
 
-Зроблю всі 3 кроки одразу? [y] / [n] / [пропусти крок N]
+Зроблю всі N кроків одразу? [y] / [n] / [пропусти крок N]
 ```
+
+Substitute the schema/content migration entries with the actual ordered steps
+needed for that wiki, then append project-local pointer repair and export repair
+as the last two skippable steps when they are needed. `N` is the total visible
+step count.
 
 If the user skips the export step, continue with approved wiki migration steps
 and report that global exports still need manual repair. If the user skips the
