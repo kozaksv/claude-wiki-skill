@@ -124,8 +124,9 @@ comes from `references/discovery-versioning.md` and
 - Init proposes fresh bootstrap.
 - After confirmation, wiki files are created under `docs/wiki/`.
 - `AGENTS.md` is created with the one-line `## Wiki` pointer.
-- `CLAUDE.md` and `GEMINI.md` are not created unless the user asks for
-  cross-file pointer sync.
+- `CLAUDE.md` and `GEMINI.md` are also created as minimal cross-agent pointer
+  files, so Claude and Gemini receive the same resident wiki hint without extra
+  user setup.
 
 ## Scenario 3c: Claude init prepares Codex discovery
 
@@ -144,10 +145,32 @@ comes from `references/discovery-versioning.md` and
 - If the local skill repo exposes `install.sh`, the agent runs
   `install.sh --repair-exports` to repair `~/.agents/skills/wiki` and other
   shared exports without switching the installed skill ref.
+- Init creates or updates the project-local `AGENTS.md` and `GEMINI.md` wiki
+  pointers alongside `CLAUDE.md`.
 - If the installer is unavailable, init reports the missing export explicitly
   instead of claiming Codex will see the skill.
 - After a successful repair, Codex can discover the same `wiki` skill through
   `~/.agents/skills/wiki`.
+
+## Scenario 3c2: CLAUDE-only current wiki repairs active-agent pointer
+
+### Setup
+
+- Session is clearly running under Codex.
+- `CLAUDE.md` points at `docs/wiki/schema.md`.
+- `docs/wiki/index.md` and `docs/wiki/schema.md` exist and are current.
+- `AGENTS.md` does not exist.
+
+### Expected behavior
+
+- Discovery resolves the existing wiki from `CLAUDE.md`; it does not create a
+  second wiki.
+- Because the user explicitly asked to find/use the wiki, the agent runs
+  cross-agent instruction-file sync.
+- `AGENTS.md` is created as a minimal project-local pointer file with the same
+  `## Wiki` pointer.
+- The response reports the found wiki and mentions the pointer repair, so the
+  user is not left to diagnose why Codex had no resident context.
 
 ## Scenario 3d: Truly empty project stays empty
 
@@ -165,7 +188,7 @@ comes from `references/discovery-versioning.md` and
   `documents/`.
 - The bootstrap creates the minimal wiki skeleton with empty `concepts/`,
   empty `entities/`, empty `transcripts/`, empty `.usage.json`, and the
-  active-agent pointer.
+  cross-agent pointer files.
 
 ## Scenario 4: Unclear active agent in a fresh project
 

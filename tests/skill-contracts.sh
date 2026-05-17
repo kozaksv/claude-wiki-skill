@@ -110,6 +110,21 @@ grep -q 'install.sh' "$ROOT/references/operation-init.md" ||
 grep -q -- '--repair-exports' "$ROOT/references/operation-init.md" ||
   fail "init reference must use repair-only installer mode for skill exports"
 
+grep -q 'Cross-agent instruction-file sync' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must define cross-agent instruction-file sync"
+
+grep -q 'Cross-agent instruction-file sync' "$ROOT/references/operation-init.md" ||
+  fail "init reference must include cross-agent instruction-file sync"
+
+grep -q 'AGENTS.md' "$ROOT/references/operation-init.md" ||
+  fail "init reference must ensure Codex project pointer files are covered"
+
+grep -q 'GEMINI.md' "$ROOT/references/operation-init.md" ||
+  fail "init reference must ensure Gemini project pointer files are covered"
+
+grep -q 'create missing minimal instruction files' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must allow safe creation of missing agent pointer files"
+
 grep -q 'empty project' "$ROOT/references/operation-init.md" ||
   fail "init reference must define empty-project bootstrap behavior"
 

@@ -16,6 +16,32 @@
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
+### Cross-agent instruction-file sync
+
+After Step 0 resolves a valid wiki, keep the project-local resident hints in
+sync so every supported agent can rediscover it without user setup. The sync
+target is the directory containing the valid instruction-file pointer. If the
+wiki was found by fallback (`docs/wiki/index.md`) rather than a pointer, use the
+project root under the discovery boundary.
+
+For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
+
+- If the file is missing, create missing minimal instruction files containing
+  only a short title and:
+  `## Wiki`
+  `Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`.`
+- If the file exists and has no `## Wiki` section, append that same section.
+- If the file already points at the resolved wiki, leave it unchanged.
+- If the file points at a different valid wiki, do not overwrite it silently;
+  surface the conflict as a DECIDE finding during lint/cleanup.
+- If the file points at a stale path and the resolved wiki is valid, repair the
+  stale pointer to the resolved schema path and mention it in the response.
+
+Run this sync during Init and during explicit wiki discovery/status/lint/cleanup
+requests. For ordinary read-only project questions, do not interrupt the answer
+solely to create pointer files unless the active agent's file is missing and the
+user explicitly asked to find/use the wiki.
+
 **CRITICAL: Never create a second wiki.** If you find an existing valid wiki, use it. If an agent instruction file references a wiki path, trust it only after verifying that the directory contains `index.md`; stale pointers are cleanup findings, not permission to bootstrap a second wiki. Only create a new wiki when none exists anywhere in the project.
 
 **Monorepo scope:** the supported default is one canonical wiki per `.git` ancestor. If multiple sub-projects inside the same repo intentionally maintain separate wikis, treat that as an explicit user/project convention: require an instruction-file pointer in or below the sub-project directory and prefer the closest valid pointer found in the cwd → parent walk. Do not infer multiple wikis from sibling directories on your own.
@@ -112,6 +138,11 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Init behavior changed: cross-agent skill export self-heal
   during project init and minimal empty-project bootstrap with no invented entity
   categories.
+
+### 4.2.2 (2026-05-17)
+- No schema migration. Discovery/init behavior changed: cross-agent
+  instruction-file sync keeps `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` wiki
+  pointers aligned for existing and newly bootstrapped wikis.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

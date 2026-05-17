@@ -27,6 +27,19 @@ Set up wiki, OR detect existing structure and propose migration.
    - Existing concept-like MDs that should move to `concepts/`
    - Duplicate MDs (raw README that overlap wiki content)
 
+### Cross-agent instruction-file sync
+
+Init always runs the `Cross-agent instruction-file sync` contract from
+`references/discovery-versioning.md` after resolving or creating the wiki. This
+means `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in the project pointer directory
+all get the same short `## Wiki` pointer, creating missing minimal instruction
+files when needed.
+
+Do not treat a `CLAUDE.md`-only current wiki as fully initialized for cross-agent
+use. If Codex opens that project later, `AGENTS.md` needs its own resident hint;
+if Gemini opens it, `GEMINI.md` needs one too. Sync these files as structural
+wiki metadata, then report the repaired/created pointers in `Перевірив:`.
+
 ### Cross-agent skill availability
 
 Init must leave the wiki usable from the next agent the user opens. During every
@@ -109,7 +122,7 @@ with either `пропонована структура для {detected_type}: {
   6. docs/wiki/transcripts/ — порожня папка
   7. docs/wiki/.usage.json — порожній dict {}
   8. archive/ — поза wiki (gitignored)
-  9. Agent instruction file(s) — додати 1-line pointer "Wiki schema → docs/wiki/schema.md" to every existing instruction file; if none exists, create the active-agent default (or ask when unclear)
+  9. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with "Wiki schema → docs/wiki/schema.md"
   10. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
 
 [y] так, створи все  /  [n] скасувати
@@ -139,13 +152,13 @@ After consent:
    ---
    ```
 
-   Add a single `## Wiki` pointer in every discovered agent instruction file (`CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`): _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ If no instruction file exists, create the active-agent default first (ask the user when unclear). For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace them with the pointer.
+   Add a single `## Wiki` pointer through Cross-agent instruction-file sync: ensure `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` each point to _"Wiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`."_ Create missing minimal instruction files as needed. For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace them with the pointer.
 6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
 9. Append `log.md` with migration record
-10. Run `Cross-agent skill availability` and include its result in the final `Перевірив:` list
+10. Run `Cross-agent instruction-file sync` and `Cross-agent skill availability`; include both results in the final `Перевірив:` list
 
 ### Versioning during Init
 
