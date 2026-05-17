@@ -233,6 +233,39 @@ create, query, lint, or cleanup a wiki.
   action menu; it refuses and points the user to initialize git first or run
   `wiki init`.
 
+## Scenario 3e: Orphan wiki (wiki exists, no git)
+
+### Setup
+
+- Current working directory is `/work/money`.
+- `/work/money/` has no `.git/` directory and no `.git` file ancestor.
+- `/work/money/docs/wiki/index.md` and `/work/money/docs/wiki/schema.md`
+  already exist.
+- `/work/money/CLAUDE.md` contains a `## Wiki` pointer to
+  `docs/wiki/schema.md`.
+- User says `wiki lint` (or any non-init wiki operation; the gate behavior is
+  the same for `query`, `status`, `cleanup`, `split`, `ingest`, and `init`).
+
+### Expected behavior
+
+- Step 0 scans for wiki artifacts after failing to find a git marker, locates
+  `/work/money/docs/wiki/index.md`, and resolves the orphan-wiki state.
+- The agent does not say "запусти `wiki init`"; instead it shows the
+  orphan-wiki repair gate:
+
+  ```
+  У `/work/money/docs/wiki/` знайдено wiki, але `.git/` немає.
+  Wiki не працює без git: snapshots, rollback і cleanup потребують commits.
+
+  Виконати `git init` у `/work/money`, щоб полагодити? [y/N]
+  ```
+
+- Without explicit `y`, the agent neither runs `git init` nor edits the
+  existing wiki; it ends with a refusal message and the wiki untouched.
+- On explicit `y`, the agent runs `git init` in `/work/money`, restarts
+  Step 0, and the original operation (`wiki lint` in this scenario) resumes
+  against the existing wiki. No second wiki is created.
+
 ## Scenario 3c1: Codex cannot activate wiki skill yet
 
 ### Setup

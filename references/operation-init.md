@@ -29,16 +29,31 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Git prerequisite
 
-Init is the only operation that may run `git init` after user confirmation. All
-other operations must refuse if git metadata (`.git/` directory or `.git` file)
-is missing, without offering to run `git init` themselves. If Step 0 finds no
-git marker ancestor, ask once using the exact gate from
+`git init` may run from exactly two gates, both defined in
+`references/discovery-versioning.md` Step 0 and both requiring explicit `[y]`
+from the user:
+
+- The **absent-state Init gate** (this operation), used when no git marker and
+  no wiki artifacts exist.
+- The **orphan-wiki repair gate**, used when wiki artifacts exist but no git
+  marker does. That gate can be triggered by any operation (lint, status,
+  query, cleanup, ingest, split, init) because the missing-git problem is the
+  same regardless of which operation surfaced it.
+
+For the absent-state Init gate: if Step 0 finds no git marker and no wiki
+artifacts, ask using the exact prompt from
 `references/discovery-versioning.md`. On explicit `y`, run `git init` in the
 displayed current working directory, then restart discovery and continue with
 the normal Init flow. On any other answer, do not create `docs/wiki/`,
 instruction files, `.gitignore`, `archive/`, or telemetry; report that the wiki
 cannot work because git is the foundation for snapshots, rollback, cleanup, and
 migration safety.
+
+If Step 0 detected orphan-wiki (existing wiki, no git), Init does not bootstrap
+from scratch. It either rides the orphan-wiki repair gate (if the user has not
+yet answered it) or, once git exists, resumes as `current` / `legacy` / `older`
+/ `newer` against the existing wiki. Init must never create a second wiki for
+an orphan-wiki project.
 
 After git exists, the git root is the project boundary for this Init run. Do not
 attach a non-git directory to a parent/sibling wiki, and do not bootstrap a wiki

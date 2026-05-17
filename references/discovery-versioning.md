@@ -18,24 +18,48 @@
    `git worktree repair` or re-create the repo before resuming wiki work; do
    not silently fall back to `git init` in that directory.
 
-   If no `.git/` directory or `.git` file ancestor exists, stop immediately. Do
-   not search higher and do not create or use a wiki yet.
+   If no `.git/` directory or `.git` file ancestor exists, stop the boundary
+   walk. Before refusing, scan for wiki artifacts in the current working
+   directory and its ancestors (without a git boundary, because there is none):
+   a `docs/wiki/index.md` file, or a `## Wiki` pointer in `CLAUDE.md`,
+   `AGENTS.md`, or `GEMINI.md` that resolves to an `index.md` on disk. Pick the
+   nearest such artifact to cwd. This produces two cases:
 
-   - If the user's requested operation is Init/bootstrap, ask:
+   - **Orphan wiki detected** (wiki artifacts exist but no git marker): regardless
+     of which operation the user asked for, show this active gate:
 
      ```
-     Wiki потребує git для snapshots, rollback і cleanup safety.
-     Git-метадані (`.git/` або файл `.git`) не знайдено для цього проєкту.
+     У `{absolute_wiki_artifact_directory}` знайдено wiki, але `.git/` немає.
+     Wiki не працює без git: snapshots, rollback і cleanup потребують commits.
 
-     Створити `.git/` у `{absolute_current_working_directory}` і продовжити wiki init? [y/N]
+     Виконати `git init` у `{absolute_current_working_directory}`, щоб полагодити? [y/N]
      ```
 
-     Substitute `{absolute_current_working_directory}` with the real absolute
-     cwd before showing the prompt. On explicit `y`, run `git init` in that
-     displayed current working directory, then restart Step 0 from that
-     directory. On anything else, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Нічого не створено.`
+     Substitute both placeholders with real absolute paths before showing the
+     prompt. On explicit `y`, run `git init` in the displayed cwd, then restart
+     Step 0; the wiki should resolve normally and the original operation
+     resumes. On anything else, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Нічого не змінено.` Do not create a second wiki and do not delete the existing artifacts.
 
-   - If the requested operation is not Init/bootstrap, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Спершу ініціалізуй git або запусти wiki init і підтвердь git init.`
+   - **No wiki artifacts found** (truly empty for wiki purposes):
+
+     - If the user's requested operation is Init/bootstrap, ask:
+
+       ```
+       Wiki потребує git для snapshots, rollback і cleanup safety.
+       Git-метадані (`.git/` або файл `.git`) не знайдено для цього проєкту.
+
+       Створити `.git/` у `{absolute_current_working_directory}` і продовжити wiki init? [y/N]
+       ```
+
+       Substitute `{absolute_current_working_directory}` with the real absolute
+       cwd before showing the prompt. On explicit `y`, run `git init` in that
+       displayed current working directory, then restart Step 0 from that
+       directory. On anything else, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Нічого не створено.`
+
+     - If the requested operation is not Init/bootstrap, stop and say: `Вікі не буде працювати без git: git є основою wiki для snapshots, rollback і cleanup. Спершу ініціалізуй git або запусти wiki init і підтвердь git init.`
+
+   Both gates (orphan-wiki repair and absent-state Init) are the only places
+   `git init` may run, and each requires explicit `[y]` from the user.
 
 2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
 3. **Read the Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
@@ -236,6 +260,13 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Git is now a hard prerequisite for every wiki operation:
   non-git Init must ask before running `git init`, and all other non-git wiki
   operations stop with an explanation instead of creating or using a wiki.
+
+### 4.2.9 (2026-05-17)
+- No schema migration. Step 0 now distinguishes orphan-wiki state (wiki
+  artifacts exist but no git marker) from truly empty projects: any operation
+  in an orphan-wiki project shows an active `git init` repair gate that
+  preserves the existing wiki, instead of suggesting `wiki init` for a wiki
+  that already exists.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

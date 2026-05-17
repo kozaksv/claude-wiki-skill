@@ -131,6 +131,25 @@ grep -q 'Scenario 2f: Worktree/submodule with no wiki yet' "$ROOT/tests/scenario
 grep -q 'git worktree repair' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery reference must address stale .git file (worktree removed) recovery"
 
+grep -q 'Orphan wiki detected' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must distinguish orphan-wiki state from truly absent projects"
+
+grep -q 'absolute_wiki_artifact_directory' "$ROOT/references/discovery-versioning.md" ||
+  fail "orphan-wiki gate must show the directory where wiki artifacts were found"
+
+grep -q 'orphan-wiki repair gate' "$ROOT/references/operation-init.md" ||
+  fail "operation-init must describe the orphan-wiki repair gate alongside the absent-state Init gate"
+
+if grep -q 'Init is the only operation that may run `git init`' "$ROOT/references/operation-init.md"; then
+  fail "operation-init must no longer claim Init is the only git-init gate after orphan-wiki repair gate was added"
+fi
+
+grep -q 'orphan-wiki repair gate' "$ROOT/references/operation-lint.md" ||
+  fail "operation-lint must reference the orphan-wiki repair gate when explaining the missing-git case"
+
+grep -q 'Scenario 3e: Orphan wiki' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
+  fail "scenarios must cover orphan-wiki (wiki exists, no git) repair flow"
+
 grep -q 'Running wiki in a non-git directory' "$ROOT/references/maintenance-and-mistakes.md" ||
   fail "maintenance-and-mistakes must list the non-git anti-pattern"
 

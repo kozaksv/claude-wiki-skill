@@ -9,8 +9,11 @@ Periodic health-check of the wiki.
 - When something feels off or inconsistent during other operations
 
 Discovery must already have found a git root. If git metadata (`.git/`
-directory or `.git` file) is missing, do not run Lint; tell the user to
-initialize git first or run `wiki init` and confirm the git-init gate.
+directory or `.git` file) is missing, do not run Lint. Step 0 decides what to
+show: if wiki artifacts exist (orphan wiki), the orphan-wiki repair gate from
+`references/discovery-versioning.md` will offer `git init` to preserve the
+existing wiki; otherwise tell the user to initialize git first or run `wiki
+init` and confirm the git-init gate.
 
 ### Checklist
 
