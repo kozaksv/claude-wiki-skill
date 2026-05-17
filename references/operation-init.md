@@ -79,17 +79,16 @@ repairs silently. Inspect project-local instruction files and global skill
 exports first. If no writes are needed, report:
 
 - `Проєктні instruction-файли: OK (no-op)`
-- `Cross-agent skill exports: OK (no-op)`
+- `Глобальні skill exports: OK (no-op)`
 
-If any item needs repair (Project-local instruction files need repair and/or
-global exports need repair), show a short approval block before writing files or
-running `install.sh --repair-exports`:
+If any project-local pointer files or global skill exports need repair, show a
+short approval block before writing files or running `install.sh --repair-exports`:
 
 ```
 Wiki вже існує: {state}, schema {wiki_version}.
 Проєктні instruction-файли потребують ремонту:
   - {missing-or-stale-instruction-file}
-Cross-agent skill exports потребують ремонту:
+Глобальні skill exports потребують ремонту:
   - {missing-or-broken-export}
 
 Полагодити ці cross-agent налаштування зараз? [y/N]
@@ -118,15 +117,16 @@ migration plan so there is one consent flow.
   2. {additional schema/content migration step, if any}
   ...
   N-1. Проєктні instruction-файли — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, якщо відсутні або stale
-  N. Cross-agent skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/skills/wiki`, якщо відсутні або broken
+  N. Глобальні skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/skills/wiki`, якщо відсутні або broken
 
 Зроблю всі N кроків одразу? [y] / [n] / [пропусти крок N]
 ```
 
 Substitute the schema/content migration entries with the actual ordered steps
-needed for that wiki, then append project-local pointer repair and export repair
-as the last two skippable steps when they are needed. `N` is the total visible
-step count.
+needed for that wiki. If project-local pointers need repair, append a
+`Проєктні instruction-файли` step. If global exports need repair, append a
+`Глобальні skill exports` step. Either, both, or neither repair step may be
+needed. `N` is the total visible step count after substitution.
 
 If the user skips the export step, continue with approved wiki migration steps
 and report that global exports still need manual repair. If the user skips the

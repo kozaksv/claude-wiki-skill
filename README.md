@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.2.6** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
+**Skill behavior version: 4.2.7** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -53,6 +53,9 @@ Exports created by install.sh:
 - **v4.2.6 on master:** recovery docs and scenarios now match the consent
   contract: existing wiki repairs inspect first, ask once, and write nothing
   without explicit `[y]`.
+- **v4.2.7 on master:** non-absent init wording is tighter: user-facing repair
+  labels are consistent, migration plans explain single-repair cases, and the
+  recovery check verifies exported `SKILL.md` files.
 - **Shared canonical cross-agent installer.** `install.sh` ставить canonical skill у `~/.claude/skills/wiki`, а потім створює symlink exports для Codex/Gemini.
 - **Agent-neutral discovery.** Wiki discovery читає `CLAUDE.md`, `AGENTS.md`, і `GEMINI.md`, а не тільки історичний Claude entrypoint.
 - **Thin skill entrypoint.** `SKILL.md` лишився trigger/routing contract, а операційні інструкції винесено в `references/`, щоб не вантажити весь 1600+ рядковий body на кожну активацію.
@@ -170,10 +173,11 @@ bash ~/.claude/skills/wiki/install.sh --repair-exports
 Перевірити exports можна так:
 
 ```bash
-readlink ~/.agents/skills/wiki ~/.gemini/skills/wiki 2>&1
+ls -L ~/.agents/skills/wiki/SKILL.md ~/.gemini/skills/wiki/SKILL.md 2>&1
 ```
 
-Якщо вони ведуть на `~/.claude/skills/wiki`, global exports уже OK.
+Якщо обидва `SKILL.md` відкриваються через export-шляхи, базова доступність
+exports OK; якщо бачите помилки, запустіть `--repair-exports`.
 
 Потім у проєкті скажіть `init wiki`. Якщо wiki вже існує, скіл не створить другу
 wiki: він знайде `docs/wiki/`, перевірить версію, перевірить project-local

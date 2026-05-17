@@ -243,6 +243,28 @@ comes from `references/discovery-versioning.md` and
 - After explicit `y`, the agent creates/updates the approved pointer files, runs
   `install.sh --repair-exports`, and reports both results.
 
+## Scenario 3c5: Current wiki export-only repair requires consent
+
+### Setup
+
+- Session is clearly running under Codex.
+- `CLAUDE.md` and `AGENTS.md` both point at `docs/wiki/schema.md`.
+- `docs/wiki/index.md` and `docs/wiki/schema.md` exist and are current.
+- `~/.agents/skills/wiki` is missing or broken.
+- User asks: `init wiki`.
+
+### Expected behavior
+
+- Discovery resolves the existing wiki; it does not create a second wiki.
+- State is `current`.
+- The agent inspects both project-local instruction files and global skill
+  exports.
+- Since project-local pointers are OK but the Codex export is broken, the agent
+  shows the Non-absent Init consent block listing only the global export repair.
+- Without explicit `y`, the agent does not run `install.sh --repair-exports`.
+- After explicit `y`, the agent runs `install.sh --repair-exports` and reports
+  the export repair result.
+
 ## Scenario 3d: Truly empty project stays empty
 
 ### Setup

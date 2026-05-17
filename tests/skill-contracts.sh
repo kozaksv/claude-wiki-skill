@@ -131,8 +131,20 @@ grep -q 'Cross-agent skill exports' "$ROOT/references/operation-init.md" ||
 grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" ||
   fail "init reference must consent-gate repairs for current/legacy/older/newer states"
 
-grep -q 'Project-local instruction files need repair' "$ROOT/references/operation-init.md" ||
+grep -q 'Проєктні instruction-файли потребують ремонту' "$ROOT/references/operation-init.md" ||
   fail "non-absent init consent block must include project-local pointer repairs"
+
+grep -q 'Глобальні skill exports потребують ремонту' "$ROOT/references/operation-init.md" ||
+  fail "non-absent init consent block must include global export repairs in the user-facing language"
+
+if grep -q 'Project-local instruction files: OK' "$ROOT/references/operation-init.md"; then
+  fail "non-absent init no-op labels must not mix English project-local status text into the UA flow"
+fi
+
+if ! awk '/write only after explicit approval\./ { getline; exit ($0 == "" ? 0 : 1) }' \
+  "$ROOT/references/discovery-versioning.md"; then
+  fail "discovery sync consent gate and read-only invariant should be separate paragraphs"
+fi
 
 if ! tr '\n' ' ' <"$ROOT/references/operation-init.md" |
   grep -q 'Without explicit y, do not write instruction files'; then
@@ -147,6 +159,12 @@ fi
 grep -q 'listing only the project-local repair' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
   fail "Scenario 3c2 must document consent-gated project-local pointer repair"
 
+grep -q 'listing only the global export repair' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
+  fail "cross-agent scenarios must cover exports-only non-absent init repair"
+
+# These exact README phrasing guards intentionally protect documentation-side
+# consent invariants. Wordsmithing is fine, but update the docs and guards
+# together so review can see the contract changed intentionally.
 grep -q 'Без \[y\] жодних файлів не пишеться' "$ROOT/README.md" ||
   fail "README recovery docs must say non-absent init repairs require explicit consent"
 
@@ -155,6 +173,11 @@ grep -q 'Combined migration plan with export repair' "$ROOT/references/operation
 
 grep -q 'Зроблю всі N кроків одразу' "$ROOT/references/operation-init.md" ||
   fail "combined migration plan must use computed N, not a literal step count"
+
+if ! tr '\n' ' ' <"$ROOT/references/operation-init.md" |
+  grep -q 'Either, both, or neither repair step may be needed'; then
+  fail "combined migration plan must clarify single-repair and no-repair cases"
+fi
 
 if grep -q 'Зроблю всі 3 кроки одразу' "$ROOT/references/operation-init.md"; then
   fail "combined migration plan must not hard-code a literal step count"

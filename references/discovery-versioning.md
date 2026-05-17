@@ -52,6 +52,7 @@ Run this sync during Init and explicit pointer-repair requests. For non-absent
 Init states (`current`, `legacy`, `older`, `newer`), gate writes through the
 Non-absent Init consent block in `references/operation-init.md`; inspect and
 report first, then write only after explicit approval.
+
 Do not run this sync during status, lint, or query; report missing/stale
 pointers as findings and tell the user to run `wiki init` or an explicit
 pointer repair if they want the files written. For ordinary read-only project
@@ -182,6 +183,11 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Clarified the consent contract across recovery docs,
   scenarios, and migration-plan templates: non-absent Init repairs inspect
   first and write nothing without explicit approval.
+
+### 4.2.7 (2026-05-17)
+- No schema migration. Polished non-absent Init wording: consistent
+  user-facing repair labels, explicit single-repair migration-plan handling,
+  and a stronger recovery diagnostic for exported skills.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.
