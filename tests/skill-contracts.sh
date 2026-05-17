@@ -147,6 +147,13 @@ fi
 grep -q 'orphan-wiki repair gate' "$ROOT/references/operation-lint.md" ||
   fail "operation-lint must reference the orphan-wiki repair gate when explaining the missing-git case"
 
+grep -q 'fewer than 20 active' "$ROOT/references/operation-lint.md" ||
+  fail "operation-lint must skip the full-lint heads-up for small wikis (< 20 active pages)"
+
+if grep -q 'Heads-up before starting full lint — always' "$ROOT/references/operation-lint.md"; then
+  fail "operation-lint must no longer claim the full-lint heads-up runs unconditionally"
+fi
+
 grep -q 'Scenario 3e: Orphan wiki' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
   fail "scenarios must cover orphan-wiki (wiki exists, no git) repair flow"
 

@@ -31,7 +31,7 @@ Run through each check and report findings:
 
    State the chosen subset at the top of the report (e.g. "Verified subset: full — N active pages" or "Verified subset: top-10 most-edited active" or "Verified subset: `concepts/architecture/` — N pages").
 
-   **Heads-up before starting full lint — always.** Print **exactly this block, nothing else**, then end the turn:
+   **Heads-up before starting full lint — only for larger wikis.** If `report()` finds fewer than 20 active + unprotected pages, skip the heads-up entirely and start verification immediately; on small wikis the full pass is short enough that asking about scope is pure friction. Otherwise print **exactly this block, nothing else**, then end the turn:
 
    ```
    🔍 Готую повний лінт: N активних сторінок.
@@ -46,7 +46,7 @@ Run through each check and report findings:
      • шлях до теки                    — напр. `concepts/architecture/`
    ```
 
-   Substitute real `N` and `K` from `report()`. Skip this block ONLY when the user already named a path-based scope, described a topic, or said "швидко" (the choice was already explicit).
+   Substitute real `N` and `K` from `report()`. Skip this block when (a) the user already named a path-based scope, described a topic, or said "швидко" (the choice was already explicit), or (b) `N < 20` — small wikis run full lint without a scope dialog.
 
    **Forbidden additions to the heads-up.** Do NOT print, alongside or after the block:
 

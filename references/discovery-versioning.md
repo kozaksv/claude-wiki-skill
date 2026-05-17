@@ -267,6 +267,11 @@ treat the partial state according to what actually exists (`schema.md`,
   in an orphan-wiki project shows an active `git init` repair gate that
   preserves the existing wiki, instead of suggesting `wiki init` for a wiki
   that already exists.
+
+### 4.2.10 (2026-05-17)
+- No schema migration. Lint heads-up dialog is now size-gated: wikis with
+  fewer than 20 active unprotected pages start full verification immediately
+  without asking about `швидко` / topic / path scope.
 ```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

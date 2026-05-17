@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.2.9** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
+**Skill behavior version: 4.2.10** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -64,6 +64,10 @@ Exports created by install.sh:
   `.git/`) get a dedicated repair gate from any wiki operation: the agent
   offers `git init` to preserve the existing wiki instead of suggesting `wiki
   init` for a wiki the user already has.
+- **v4.2.10 on master:** small wikis (< 20 active unprotected pages) skip the
+  full-lint scope heads-up and start verification immediately; the dialog
+  about `швидко` / topic / path remains for larger wikis where the choice is
+  meaningful.
 - **Shared canonical cross-agent installer.** `install.sh` ставить canonical skill у `~/.claude/skills/wiki`, а потім створює symlink exports для Codex/Gemini.
 - **Agent-neutral discovery.** Wiki discovery читає `CLAUDE.md`, `AGENTS.md`, і `GEMINI.md`, а не тільки історичний Claude entrypoint.
 - **Thin skill entrypoint.** `SKILL.md` лишився trigger/routing contract, а операційні інструкції винесено в `references/`, щоб не вантажити весь 1600+ рядковий body на кожну активацію.
