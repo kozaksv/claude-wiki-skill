@@ -4,7 +4,11 @@ Search the wiki to answer a question about the project.
 
 ### When to Query
 
-**Master rule: before generating any project-specific content from memory, query first — even when you think you know.** The wiki captures project-specific facts (paths, configs, prior decisions, gotchas) that may not match general training knowledge. Default-answering from memory is a gamble; query is cheap (3-5 file reads).
+**BLOCKING RULE (NON-NEGOTIABLE):** Перш ніж згенерувати будь-який project-specific контент — query the wiki. Жодних memory-first відповідей. Жодного «перевірю вікі пізніше», «спершу подивлюся файли», «я й так знаю». Послідовність — READ → CITE → ANSWER, без винятків окрім явного Empty-Wiki Exception (див. SKILL.md → Session-Start Contract).
+
+Відповідь без `[[page-name]]` цитат на wiki-backed темі — баг за контрактом, переробити з вікі. Це стосується кожної project-specific claim: path, config, recipe, setup-step, decision, «як ми робимо X». Цитата — це доказ, що ти справді прочитав вікі, а не вигадав.
+
+The wiki captures project-specific facts (paths, configs, prior decisions, gotchas) that may not match general training knowledge. Default-answering from memory is a gamble; query is cheap (3-5 file reads).
 
 This rule exists because the user should not have to know wiki keywords. The user types in plain Ukrainian — "як налаштувати X", "де лежить Y", "пам'ятаєш як ми Z" — and the active agent is responsible for translating that into a wiki check before generating anything.
 

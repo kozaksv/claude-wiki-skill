@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.2.20"
+version: "4.2.21"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
@@ -10,6 +10,10 @@ description: >
   before project-specific how-to/config/setup/recipe/explanation answers,
   including "як налаштувати X", "що таке X", "як працює X", "де лежить X",
   "пам'ятаєш як ми Y", "потрібно знову Z".
+  ОБОВ'ЯЗКОВО на старті сесії в проєкті з вікі: прочитай `{wiki}/index.md`
+  ДО будь-якої project-specific відповіді. Кожна project-specific відповідь
+  МАЄ містити `[[page-name]]` цитати з вікі. Відповідь без цитат на
+  wiki-backed темі — баг, переробити.
 ---
 
 # LLM Wiki (Karpathy Pattern)
@@ -48,6 +52,45 @@ Before **any** operation, load and follow:
 That reference contains Step 0 discovery, schema lookup, version comparison,
 migration flow, and the rule to resume the user's original operation after a
 migration. Never create a second wiki if a valid existing wiki can be found.
+
+## Session-Start Contract (NON-NEGOTIABLE)
+
+Якщо Step 0 знайшов валідну вікі для цього проєкту — діє блокуючий контракт.
+Жодних винятків окрім явно зазначеного нижче.
+
+1. **READ FIRST.** До першої project-specific відповіді в сесії — прочитай
+   `{wiki}/index.md` та сторінки, на які він вказує по темі питання. Не
+   після відповіді, не «пізніше», не «коли буде час» — спочатку.
+2. **CITE OR FAIL.** Кожна project-specific claim, recipe, path, config,
+   setup-step, «як ми робимо X», «де лежить Y», «як працює Z» МАЄ нести
+   `[[wikilink]]` на сторінку вікі, що це підтверджує. Відповідь без
+   `[[page-name]]` цитат на wiki-backed темі — баг, перероби з вікі.
+3. **NO MEMORY-FIRST.** «Я пам'ятаю як цей проєкт робить X» — недостатньо.
+   Memory не замінює read. Спершу прочитай вікі, потім цитуй, потім
+   відповідай. Якщо вікі суперечить пам'яті — вікі виграє.
+4. **EMPTY-WIKI EXCEPTION.** Якщо у вікі немає релевантної сторінки —
+   скажи це прямо («у вікі нема, відповідаю з training») І познач тему як
+   кандидата на crystallization (див. `references/crystallization.md`).
+   Цей exception легалізує відповідь без цитат — але лише якщо ти справді
+   прочитав `index.md` і релевантні сторінки, і їх немає. Не використовуй
+   його, щоб обійти крок READ FIRST.
+
+### Red Flags — це раціоналізації, СТОП
+
+| Думка                                | Реальність                                                       |
+|--------------------------------------|------------------------------------------------------------------|
+| «Я й так знаю»                       | Знання загального ≠ знання саме цього проєкту. Читай вікі.       |
+| «Питання просте»                     | Прості питання найчастіше мають специфічну відповідь у вікі.     |
+| «Подивлюся у файли — швидше»         | Файли = код. Вікі = рішення/обґрунтування. Спершу вікі.          |
+| «Перевірю вікі після відповіді»      | Ні. READ → CITE → ANSWER. Не «answer-then-verify».               |
+| «Це не project-specific»             | Якщо торкаєшся paths/configs/decisions цього проєкту — є.        |
+| «Цитата зайва, бо очевидно»          | Цитата дешева. Її відсутність = баг за контрактом.               |
+| «Я вже читав вікі в попередній сесії»| Resident-контекст не зберігся між сесіями. Читай знову.          |
+
+Контракт не залежить від типу операції — він діє завжди, коли є валідна
+вікі для поточного проєкту. Operation Query (`references/operation-query.md`)
+дає механіку (як шукати, як цитувати, як filing back); контракт тут — це
+коли і чому це обов'язково.
 
 ## Reference Loading Map
 
@@ -130,3 +173,13 @@ The supporting contracts are:
 - `references/cleanup-flow.md`
 - `references/self-improvement.md`
 - `references/maintenance-and-mistakes.md`
+
+## Session-Start Checklist
+
+При першому project-specific питанні в сесії (якщо Step 0 знайшов валідну вікі):
+
+- [ ] Прочитати `{wiki}/index.md`
+- [ ] Визначити релевантні до питання сторінки з index
+- [ ] Прочитати ці сторінки
+- [ ] Сформувати відповідь з `[[page-name]]` цитатами на прочитані сторінки
+- [ ] Якщо знання нове/синтезоване — filing back (нова сторінка) або mark for crystallization

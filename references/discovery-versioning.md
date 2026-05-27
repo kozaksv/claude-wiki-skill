@@ -175,25 +175,45 @@ For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
 
 - Compute `{schema_path_relative_to_instruction_file}` as the POSIX relative
   path from that instruction file's directory to the resolved `{wiki}/schema.md`.
-  Do not hard-code `docs/wiki/schema.md` unless that is the actual relative path
-  from the file being written.
+  Compute `{index_path_relative_to_instruction_file}` analogously for `{wiki}/index.md`.
+  Compute `{wiki_dir_relative_to_instruction_file}` as the relative path to the
+  wiki directory itself (no trailing `schema.md` / `index.md`). Do not hard-code
+  `docs/wiki/...` unless that is the actual relative path from the file being written.
+- The canonical `## Wiki` block to write is the **Session-Start Contract pointer**:
+
+  ```
+  ## Wiki
+
+  Wiki at `{wiki_dir_relative_to_instruction_file}`. Schema → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`.
+
+  **ОБОВ'ЯЗКОВО на старті сесії:** прочитай `{index_path_relative_to_instruction_file}` ДО
+  будь-якої project-specific відповіді (як налаштувати X / де лежить Y / як працює Z /
+  «пам'ятаєш як ми...»). Кожна така відповідь МАЄ містити `[[page-name]]` цитати на
+  сторінки вікі. Без цитат — баг, переробити. Memory-first заборонено: якщо вікі
+  суперечить пам'яті — вікі виграє.
+
+  Для пошуку викликай скіл `wiki` (operation: query).
+  ```
+
+  Substitute the three placeholders with real relative paths before writing.
 - If the file is missing, create missing minimal instruction files containing
-  only a short title and:
-  `## Wiki`
-  `Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`.`
-- If the file exists and has no `## Wiki` section, append that same section.
-- If the file already points at the resolved wiki, leave it unchanged.
-- If a valid existing pointer resolves to the resolved wiki but uses older
-  text, an absolute path, or a repo-root-style path, leave it unchanged. The
-  relative-path convention applies when writing new pointers or repairing stale
-  ones, not as a formatting migration for already-valid pointers.
+  only a short title and the full Session-Start Contract pointer block above.
+- If the file exists and has no `## Wiki` section, append the full pointer block.
+- If the file already has a `## Wiki` section that points at the resolved wiki
+  (any pointer line that resolves to a valid on-disk wiki — old one-line form,
+  Session-Start Contract block, absolute path, or repo-root-style path), leave
+  it unchanged. The Session-Start Contract block is the canonical form for
+  **new** pointers and **stale-pointer repairs**, not a formatting migration
+  for already-valid pointers. If the user wants to upgrade an existing valid
+  pointer to the new block, that is an explicit `wiki init` / pointer-repair
+  request, not an automatic rewrite.
 - If the file points at a different valid wiki, do not overwrite it silently;
   surface the conflict as a DECIDE finding during lint/cleanup.
 - If the file points at a stale path and the resolved wiki is valid, repair the
-  stale pointer to the resolved schema path and mention it in the response:
-  replace only the pointer line matching `Wiki schema and operations → ...`;
-  leave all other `## Wiki` section content untouched and surface extra legacy
-  schema/details as a DECIDE finding.
+  stale pointer by replacing the `## Wiki` section with the full Session-Start
+  Contract block above (since a stale-pointer repair rewrites that section
+  anyway). Mention the repair in the response. Surface extra legacy
+  schema/details that lived in the old `## Wiki` section as a DECIDE finding.
 
 Run this sync during Init and explicit pointer-repair requests. For non-absent
 Init states (`current`, `legacy`, `older`, `newer`), gate writes through the
@@ -360,6 +380,24 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.2.21 (2026-05-27)
+- No schema migration. Agent-behavior hardening: introduced
+  **Session-Start Contract** in SKILL.md as a NON-NEGOTIABLE block
+  contract — agent must read `{wiki}/index.md` before any
+  project-specific answer in a wiki-backed project, and every such
+  answer must carry `[[page-name]]` citations. Added Red-Flags
+  rationalization table and Session-Start Checklist. Operation Query
+  «Master rule» rephrased as **BLOCKING RULE (NON-NEGOTIABLE)** with
+  explicit «no citations = bug, retry» clause. Cross-agent
+  instruction-file sync now writes a full Session-Start Contract
+  pointer block (not a one-line pointer) to `CLAUDE.md` / `AGENTS.md` /
+  `GEMINI.md` for new pointers and stale-pointer repairs; already-valid
+  pointers are left unchanged (no formatting migration). Empty-Wiki
+  Exception preserved: agent says «у вікі нема, відповідаю з training»
+  and marks topic for crystallization. Motivation: agents were
+  default-answering from memory and skipping wiki reads despite the
+  «proactive query» description; soft language let them rationalize.
 
 ### 4.2.20 (2026-05-17)
 - No schema migration. Three contract clarifications close iterations
