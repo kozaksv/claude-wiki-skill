@@ -381,6 +381,25 @@ treat the partial state according to what actually exists (`schema.md`,
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
 
+### 4.3.0 (2026-06-02)
+- No schema migration (`wiki_version` stays `"4.0"`). New on-disk artifact:
+  `{wiki}/log/{YYYY-MM-DD}_to_{YYYY-MM-DD}.md` shards, created lazily by
+  **log rotation**. `{wiki}/log.md` now has a soft cap of 2000 lines; on
+  each log write, if the file is over cap, the oldest contiguous entries
+  are peeled into a date-range-named shard until the live log drops to
+  ~1000 lines. See `references/wiki-structure.md` → `## Log Rotation` for
+  the algorithm, shard naming, edge cases (single-date overflow, corrupt
+  log, missing `log/` dir, shard write failure), and reading semantics.
+  Existing wikis pick this up organically: an oversized `log.md` rotates
+  on its next log write, no migration prompt. An older skill (≤ 4.2.x)
+  reading a wiki that has rotated still sees a valid `log.md` (it just
+  won't see archived history in `log/`); this is the reason the schema
+  bump was deferred — change is additive, not breaking. Motivation:
+  `log.md` previously grew unbounded; very active wikis would eventually
+  hit the Read-tool pagination cliff at ~2000 lines. Activity-driven
+  rotation (not calendar-driven) bounds live-log size without producing
+  empty/tiny shards for quiet projects.
+
 ### 4.2.21 (2026-05-27)
 - No schema migration. Agent-behavior hardening: introduced
   **Session-Start Contract** in SKILL.md as a NON-NEGOTIABLE block

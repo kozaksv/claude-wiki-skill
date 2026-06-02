@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.2.20** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2 changed agent and installer behavior, not the on-disk schema major.
+**Skill behavior version: 4.3.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2/v4.3 changed agent behavior, installer behavior, and log substrate, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -27,6 +27,26 @@ Exports created by install.sh:
 `doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `96d6bf9e1df309c4b76d924d3a1f774f7ee33d12`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
+
+## What's new in v4.3
+
+- **v4.3.0 on master:** activity-driven **log rotation**. `{wiki}/log.md` now
+  has a soft cap of ~2000 lines; on each log write, if the file is over the
+  cap, the oldest contiguous entries are peeled into a date-range-named shard
+  at `{wiki}/log/{YYYY-MM-DD}_to_{YYYY-MM-DD}.md` until the live log drops
+  to ~1000 lines. Rotation is lazy and silent — no migration prompt — and
+  quiet projects never rotate. See `references/wiki-structure.md` →
+  `## Log Rotation` for the algorithm and edge cases. `wiki_version`
+  stays `"4.0"` because the change is additive: an older skill reading a
+  rotated wiki still sees a valid `log.md`.
+- **v4.2.21 on master:** **Session-Start Contract** in `SKILL.md` —
+  agent must read `{wiki}/index.md` before any project-specific answer
+  in a wiki-backed project, and every such answer must carry
+  `[[page-name]]` citations. Operation Query «Master rule» rephrased
+  as **BLOCKING RULE (NON-NEGOTIABLE)**. Cross-agent instruction-file
+  sync writes a full Session-Start Contract pointer block to
+  `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` for new pointers and stale
+  repairs; valid existing pointers are left unchanged.
 
 ## What changed in v4.2
 
