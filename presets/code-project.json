@@ -1,0 +1,8 @@
+{
+  "name": "code-project",
+  "tracks": [
+    {"dir": "guide", "type": "guide"},
+    {"dir": "workflows", "type": "workflow"},
+    {"dir": "modules", "type": "module", "requires": ["module"]}
+  ]
+}
