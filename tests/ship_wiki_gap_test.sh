@@ -96,6 +96,23 @@ if [ "$rc" != "1" ]; then echo "FAIL Covered (still a signal, exit 1) got $rc:";
 grep -q "^NEEDS-REVIEW | rule | foo " "$out" || { echo "FAIL Covered (not NEEDS-REVIEW):"; cat "$out"; fail=1; }
 grep -q "components/foo.md" "$out" || { echo "FAIL Covered (candidate page not listed):"; cat "$out"; fail=1; }
 
+# --- G1: --gaps-only with a real GAP (no covering page) -> still exit 1. ---
+rm -rf "$W/components"  # ensure foo is uncovered again -> GAP
+out="$(mktemp)"; rc="$(python3 "$GAP" --diff-file "$DA" --wiki "$W" --signals "$SIG" --gaps-only >"$out" 2>&1; echo $?)"
+if [ "$rc" != "1" ]; then echo "FAIL G1 (--gaps-only with a GAP not exit 1, got $rc):"; cat "$out"; fail=1; fi
+grep -q "^GAP | rule | foo " "$out" || { echo "FAIL G1 (no GAP line):"; cat "$out"; fail=1; }
+
+# --- G2: --gaps-only with ONLY a NEEDS-REVIEW (covered page) -> exit 0. ---
+mkdir -p "$W/components"
+printf -- '---\ntype: comp\n---\n# foo\nThe foo component handles requests.\n' > "$W/components/foo.md"
+out="$(mktemp)"; rc="$(python3 "$GAP" --diff-file "$DA" --wiki "$W" --signals "$SIG" --gaps-only >"$out" 2>&1; echo $?)"
+if [ "$rc" != "0" ]; then echo "FAIL G2 (--gaps-only with only NEEDS-REVIEW not exit 0, got $rc):"; cat "$out"; fail=1; fi
+grep -q "^NEEDS-REVIEW | rule | foo " "$out" || { echo "FAIL G2 (NEEDS-REVIEW not reported):"; cat "$out"; fail=1; }
+# Same diff WITHOUT --gaps-only still blocks (default = any signal -> exit 1).
+out="$(mktemp)"; rc="$(runsig "$DA" "$W" "$out")"
+if [ "$rc" != "1" ]; then echo "FAIL G2b (default mode NEEDS-REVIEW not exit 1, got $rc):"; cat "$out"; fail=1; fi
+rm -rf "$W/components"
+
 # --- Config-driven proof: SAME signal diff under a default wiki (signals: none)
 #     and NO --signals -> nothing detected -> exit 0 (patterns are NOT hardcoded).
 WD="$(mk_default_wiki)"

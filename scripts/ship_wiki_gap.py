@@ -15,11 +15,20 @@ area and buckets the signal:
 The detector only finds signals and candidates; it never judges page quality.
 
 Usage:
-  ship_wiki_gap.py --diff-file FILE --wiki DIR [--signals FILE]
-  ship_wiki_gap.py --git [--repo DIR] --wiki DIR [--signals FILE]
+  ship_wiki_gap.py --diff-file FILE --wiki DIR [--signals FILE] [--gaps-only]
+  ship_wiki_gap.py --git [--repo DIR] --wiki DIR [--signals FILE] [--gaps-only]
 
-Exit 0 = no signals (ship may proceed), 1 = signals found (gate must prompt),
-2 = usage/config/runtime error (FAIL-CLOSED — never silently 0 on bad input).
+Exit 0 = nothing to block on (ship may proceed), 1 = blocking signal(s) found
+(gate MUST stop and prompt), 2 = usage/config/runtime error (FAIL-CLOSED — never
+silently 0 on bad input).
+
+CALLER CONTRACT: this detector only reports; it cannot stop a ship on its own.
+The invoker (a /ship step, pre-push hook, or CI job) MUST treat a non-zero exit
+as a hard stop — `ship_wiki_gap.py ... || exit 1`. A caller that ignores the exit
+code defeats the gate. See references/ship-gate.md for ready-to-paste examples.
+
+By default ANY signal (GAP or NEEDS-REVIEW) yields exit 1. With --gaps-only only
+true GAPs block; NEEDS-REVIEW is printed but advisory (exit 0).
 
 Signals config shape (JSON):
   {"signal_patterns": {"<category>": "<regex>"}, "noise_patterns": ["<regex>"]}
@@ -395,6 +404,10 @@ def main(argv):
     parser.add_argument("--repo", default=".")
     parser.add_argument("--wiki", required=True)
     parser.add_argument("--signals", help="override signals JSON file (literal path)")
+    parser.add_argument(
+        "--gaps-only", action="store_true",
+        help="exit 1 only on true GAPs; bucket NEEDS-REVIEW as advisory (exit 0). "
+             "Lets a caller block on hard misses while only warning on soft ones.")
     args = parser.parse_args(argv[1:])
 
     # Resolve patterns first so a bad/unknown signals entrypoint fails CLOSED
@@ -427,6 +440,9 @@ def main(argv):
     signals = classify_diff(diff_text, signal_patterns, noise_patterns, tracks)
     signals = find_coverage(signals, args.wiki, tracks)
     print(render(signals))
+    if args.gaps_only:
+        # Only hard GAPs block; NEEDS-REVIEW is advisory (printed, exit 0).
+        return 1 if any(s["bucket"] == "GAP" for s in signals) else 0
     return 1 if signals else 0
 
 

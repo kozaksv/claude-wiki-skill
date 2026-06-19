@@ -126,6 +126,20 @@ class FailOpenTest(unittest.TestCase):
         tracks = hook._load_tracks_safe(w)
         self.assertIsNone(hook._writeback_target_for("a/b/c.py", tracks))
 
+    def test_failopen_is_observable_on_bad_config(self):
+        # Fail-open must stay non-blocking ([] returned) BUT leave a visible
+        # trace on stderr — a silent disable is the blind spot we are closing.
+        w = Path(_wiki(self.tmp,
+                       "---\npreset: code-project\ntracks:\n  - dir: a\n    type: x\n---\n"))
+        old = sys.stderr
+        sys.stderr = buf = io.StringIO()
+        try:
+            tracks = hook._load_tracks_safe(w)
+        finally:
+            sys.stderr = old
+        self.assertEqual(tracks, [])           # still fail-open (non-blocking)
+        self.assertIn("wiki-hook", buf.getvalue())  # but observable
+
 
 class StopEventTest(unittest.TestCase):
     """Stop must fire a single block with config-driven write-back targets and
@@ -165,18 +179,43 @@ class StopEventTest(unittest.TestCase):
         self.assertIn("components/widgets.md", data["reason"])
         self.assertNotIn("modules/", data["reason"])
 
-    def test_stop_reminds_once(self):
-        sid = "sessONCE"
+    def test_stop_escalates_once_then_caps(self):
+        # No wiki write happens between stops: stop #1 blocks, stop #2 escalates
+        # (one firmer reminder), stop #3 is capped -> silent. Max two blocks.
+        sid = "sessESC"
         hook.handle_post_tool_use(self.state, {
             "session_id": sid, "tool_name": "Write",
             "tool_input": {"file_path": "lib/widgets/x.py"}})
         rc1, out1 = self._capture(
             hook.handle_stop, self.state, self.wiki, self.root, {"session_id": sid})
-        self.assertTrue(out1.strip())
+        self.assertTrue(out1.strip())  # first reminder
+        rc2, out2 = self._capture(
+            hook.handle_stop, self.state, self.wiki, self.root, {"session_id": sid})
+        self.assertTrue(out2.strip())  # escalation (no wiki write yet)
+        self.assertEqual(json.loads(out2)["decision"], "block")
+        rc3, out3 = self._capture(
+            hook.handle_stop, self.state, self.wiki, self.root, {"session_id": sid})
+        self.assertEqual(rc3, 0)
+        self.assertEqual(out3.strip(), "")  # capped at two blocks
+
+    def test_stop_releases_after_wiki_write(self):
+        # After the first block the agent writes a page INSIDE the wiki dir; the
+        # next stop must NOT nag (the verify-the-write gap is closed).
+        sid = "sessWROTE"
+        hook.handle_post_tool_use(self.state, {
+            "session_id": sid, "tool_name": "Write",
+            "tool_input": {"file_path": "lib/widgets/x.py"}})
+        rc1, out1 = self._capture(
+            hook.handle_stop, self.state, self.wiki, self.root, {"session_id": sid})
+        self.assertTrue(out1.strip())  # first reminder
+        # Agent now edits a wiki page (absolute path inside the wiki dir).
+        hook.handle_post_tool_use(self.state, {
+            "session_id": sid, "tool_name": "Edit",
+            "tool_input": {"file_path": str(self.wiki / "components" / "widgets.md")}})
         rc2, out2 = self._capture(
             hook.handle_stop, self.state, self.wiki, self.root, {"session_id": sid})
         self.assertEqual(rc2, 0)
-        self.assertEqual(out2.strip(), "")  # no second block
+        self.assertEqual(out2.strip(), "")  # released, no escalation
 
     def test_stop_no_mutation_no_block(self):
         rc, out = self._capture(

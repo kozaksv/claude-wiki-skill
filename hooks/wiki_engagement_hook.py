@@ -44,6 +44,19 @@ _SAFE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _SAFE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
+def _warn(msg: str) -> None:
+    """Emit a one-line trace to stderr for an otherwise-swallowed failure.
+
+    Every handler stays fail-open (a broken wiki never blocks the agent), but a
+    silent swallow is a blind spot: a misconfigured wiki could disable write-back
+    forever and no one would notice. This makes that observable without blocking.
+    Best-effort: if even stderr is unavailable we give up silently."""
+    try:
+        sys.stderr.write("wiki-hook: %s\n" % msg)
+    except Exception:
+        pass
+
+
 def _read_json_stdin() -> dict:
     # strict=False tolerates raw control characters (e.g. literal newlines inside
     # an apply_patch/diff string) that real tool payloads may embed; a strict
@@ -300,8 +313,31 @@ def _load_tracks_safe(wiki: Path) -> list:
         return []
     try:
         return wiki_config.load_tracks(str(wiki)) or []
-    except Exception:
+    except Exception as exc:
+        _warn("track config error (write-back disabled) at %s: %s" % (wiki, exc))
         return []
+
+
+def _paths_within_wiki(paths, wiki) -> bool:
+    """True if any changed path resolves to a file inside the wiki directory.
+
+    Used by Stop to verify the agent actually engaged with the wiki (vs. merely
+    being reminded). Relative paths are resolved against cwd; the autogen FACTS
+    writer runs as a separate subprocess and never appears in `paths`, so it
+    cannot be mistaken for an agent write. Best-effort: any error -> False."""
+    try:
+        wiki_real = os.path.realpath(str(wiki))
+    except Exception:
+        return False
+    for p in paths or []:
+        try:
+            pp = str(p)
+            pr = os.path.realpath(pp if os.path.isabs(pp) else os.path.join(os.getcwd(), pp))
+        except Exception:
+            continue
+        if pr == wiki_real or pr.startswith(wiki_real + os.sep):
+            return True
+    return False
 
 
 def _component_from_glob(path: str, glob: str):
@@ -451,8 +487,8 @@ def _run_autogen(wiki: Path, src: Path, paths) -> None:
             [sys.executable, str(_AUTOGEN), "--src", str(src),
              "--wiki", str(wiki), "--paths", *[str(p) for p in paths]],
             timeout=30, capture_output=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn("autogen failed: %s" % exc)
 
 
 def handle_stop(state_dir: Path, wiki: Path, src: Path, payload: dict) -> int:
@@ -469,26 +505,47 @@ def handle_stop(state_dir: Path, wiki: Path, src: Path, payload: dict) -> int:
     had_mutation = tr_mutation or bool(state.get("had_mutation")) or bool(state_paths)
     if not had_mutation:
         return 0
-    if state.get("stop_reminded"):
-        return 0  # remind at most once per session
-    state["stop_reminded"] = True
-    _save_state(sf, state)
     paths: list[str] = []
     for p in list(tr_paths) + list(state_paths):
         if p not in paths:
             paths.append(p)
-    # Autonomous core: refresh deterministic FACTS pages right now — no nag,
-    # no LLM. Curated prose/rationale is the only thing left for the agent.
-    _run_autogen(wiki, src, paths)
-    reason = ("Структурні факти змінених модулів уже записані у вікі "
-              "автоматично. Якщо в цій сесії зʼявилось ТРИВАЛЕ знання, якого "
-              "нема в коді (рішення/чому саме так/граблі/нова конвенція/новий "
-              "механізм) — додай його ПРОЗОЮ над авто-блоком у %s ЗАРАЗ "
-              "сам, не чекай прохання. Якщо тривалого знання нема — заверши."
-              % wiki)
+    # Autonomous core: refresh deterministic FACTS pages once per session — no
+    # nag, no LLM. Curated prose/rationale is the only thing left for the agent.
+    if not state.get("autogen_done"):
+        _run_autogen(wiki, src, paths)
+        state["autogen_done"] = True
+        _save_state(sf, state)
+
+    # Verify-the-write gap: a reminder is only "satisfied" if the agent actually
+    # wrote something INSIDE the wiki. If it did (this session), never nag.
+    if _paths_within_wiki(paths, wiki):
+        return 0
+
+    # Otherwise nag — but at most twice (one reminder + one escalation), so a
+    # genuine "nothing durable to add" can end the session without a loop and
+    # without pressure to fabricate wiki prose.
+    block_count = int(state.get("block_count") or 0)
+    if block_count >= 2:
+        return 0  # capped — released
+
+    if block_count == 0:
+        reason = ("Структурні факти змінених модулів уже записані у вікі "
+                  "автоматично. Якщо в цій сесії зʼявилось ТРИВАЛЕ знання, якого "
+                  "нема в коді (рішення/чому саме так/граблі/нова конвенція/новий "
+                  "механізм) — додай його ПРОЗОЮ над авто-блоком у %s ЗАРАЗ "
+                  "сам, не чекай прохання. Якщо тривалого знання нема — заверши."
+                  % wiki)
+    else:
+        reason = ("Ти завершуєш, але у вікі (%s) так і не зʼявилось запису цієї "
+                  "сесії. Це останнє нагадування: АБО додай прозу про тривале "
+                  "знання ЗАРАЗ, АБО явно напиши одним рядком, чому додавати нема "
+                  "чого (зміна тривіальна / знання вже в коді). Не ігноруй мовчки."
+                  % wiki)
     targets = _writeback_targets(paths, _load_tracks_safe(wiki))
     if targets:
         reason += " Цільові сторінки write-back: " + " і ".join(targets) + "."
+    state["block_count"] = block_count + 1
+    _save_state(sf, state)
     print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
     return 0
 
@@ -533,7 +590,17 @@ def main() -> int:
         if args.event == "post-tool-use":
             return handle_post_tool_use(state_dir, payload)
         return handle_stop(state_dir, wiki, src, payload)
-    except Exception:
+    except Exception as exc:
+        # Fail-open: never block the agent on a hook bug — but leave a trace
+        # (stderr + a per-session error counter) so the failure is observable.
+        _warn("unhandled error in %s: %s" % (args.event, exc))
+        try:
+            sf = state_dir / (_state_key(payload) + ".json")
+            st = _load_state(sf)
+            st["hook_errors"] = int(st.get("hook_errors") or 0) + 1
+            _save_state(sf, st)
+        except Exception:
+            pass
         return 0
 
 
