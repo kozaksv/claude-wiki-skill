@@ -418,8 +418,8 @@ grep -q 'Cross-agent instruction-file sync' "$ROOT/references/operation-init.md"
 grep -q '{schema_path_relative_to_instruction_file}' "$ROOT/references/discovery-versioning.md" ||
   fail "instruction-file sync must compute schema pointer relative to each instruction file"
 
-grep -q 'replace only the pointer line' "$ROOT/references/discovery-versioning.md" ||
-  fail "instruction-file sync must preserve custom Wiki section content when repairing stale pointers"
+grep -q 'replacing the `## Wiki` section with the full Session-Start' "$ROOT/references/discovery-versioning.md" ||
+  fail "instruction-file sync must repair a stale pointer by rewriting the ## Wiki section with the Session-Start Contract block"
 
 grep -q 'Do not run this sync during status, lint, or query' "$ROOT/references/discovery-versioning.md" ||
   fail "status/lint/query must remain read-only unless the user explicitly asks for pointer repair"
@@ -488,7 +488,7 @@ grep -q 'outcome checklist, not an execution-order trace' "$ROOT/references/oper
 grep -q 'Use Execute checklist numbering' "$ROOT/references/discovery-versioning.md" ||
   fail "partial-failure reporting must clarify which step numbering to use"
 
-grep -q 'valid existing pointer resolves to the resolved wiki' "$ROOT/references/discovery-versioning.md" ||
+grep -q 'any pointer line that resolves to a valid on-disk wiki' "$ROOT/references/discovery-versioning.md" ||
   fail "instruction-file sync must define behavior for valid but non-canonical pointer text"
 
 if grep -q 'create missing minimal instruction files with "Wiki schema → {schema_path_relative_to_instruction_file}"' "$ROOT/references/operation-init.md"; then
