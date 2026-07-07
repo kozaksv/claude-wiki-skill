@@ -103,6 +103,18 @@
   - `writing-skills` не повертається ніде у `references/`.
 - Наявні guard'и полів РЕФЛЕКСІЇ (`Автоматизував:` тощо) і version-major match
   проходять без змін (мажор лишається 4).
+- **Атомарність (обов'язково, знімає ризик неузгодженого CI).** Ці зміни тестів —
+  частина implementation-фази, НЕ spec-коміту. Перевертання guard'а 383 і нові
+  анти-return guard'и МАЮТЬ landing-итися **тим самим комітом**, що видаляє
+  відповідні токени (`set_skill_link`, `🧹`, `Two entry points`, `writing-skills`)
+  з `references/`. Жодна половина не йде окремо:
+  - guard-flip без видалення токенів → CI ламається (анти-return бачить токен);
+  - видалення токенів без flip'а → CI ламається (старий guard 383 вимагає
+    наявності `set_skill_link`).
+  Тому spec-коміт свідомо НЕ чіпає `tests/skill-contracts.sh`: зелений CI на
+  spec-коміті **очікуваний і коректний** — старі guard'и стережуть ще не змінену
+  поведінку references. Це не «мовчазна втрата покриття»; покриття переноситься
+  атомарно разом зі зміною references у implementation-коміті.
 
 ### Тест-сценарії
 
@@ -152,7 +164,12 @@
 
 ## Верифікація
 
-1. `bash tests/skill-contracts.sh` — зелений.
+1. `bash tests/skill-contracts.sh` — зелений на кожному кроці. На spec-коміті
+   тест не змінюється (лишається зеленим на старій поведінці). На
+   implementation-коміті той самий діф одночасно видаляє токени з `references/`
+   і додає анти-return guard'и (перевернутий 383 + `🧹`/`Two entry points`/
+   `writing-skills`) — після чого тест знову зелений уже на новій поведінці.
+   Проміжного стану з червоним CI не існує (див. «Атомарність» вище).
 2. Grep-sweep: `🧹`, `writing-skills`, `cleanup-prompt`, `Two entry points`,
    `set_skill_link` (поза `install.sh`/`uninstall.sh`), `винеси в скіл`,
    `skill — delegated`, `skill — created` — нуль збігів у `SKILL.md`,

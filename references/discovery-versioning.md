@@ -212,8 +212,11 @@ For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
 - If the file points at a stale path and the resolved wiki is valid, repair the
   stale pointer by replacing the `## Wiki` section with the full Session-Start
   Contract block above (since a stale-pointer repair rewrites that section
-  anyway). Mention the repair in the response. Surface extra legacy
-  schema/details that lived in the old `## Wiki` section as a DECIDE finding.
+  anyway). **Before overwriting, capture any custom or legacy content in the old
+  `## Wiki` section** (extra schema, hand-written notes, non-canonical details)
+  and surface it as a DECIDE finding — never silently discard it. Only rewrite
+  the section after that content has been surfaced. Mention the repair in the
+  response.
 
 Run this sync during Init and explicit pointer-repair requests. For non-absent
 Init states (`current`, `legacy`, `older`, `newer`), gate writes through the

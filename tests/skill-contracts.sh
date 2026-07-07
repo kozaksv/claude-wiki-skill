@@ -421,6 +421,9 @@ grep -q '{schema_path_relative_to_instruction_file}' "$ROOT/references/discovery
 grep -q 'replacing the `## Wiki` section with the full Session-Start' "$ROOT/references/discovery-versioning.md" ||
   fail "instruction-file sync must repair a stale pointer by rewriting the ## Wiki section with the Session-Start Contract block"
 
+grep -q 'never silently discard' "$ROOT/references/discovery-versioning.md" ||
+  fail "stale-pointer repair must surface pre-existing custom ## Wiki content as a DECIDE finding before overwriting"
+
 grep -q 'Do not run this sync during status, lint, or query' "$ROOT/references/discovery-versioning.md" ||
   fail "status/lint/query must remain read-only unless the user explicitly asks for pointer repair"
 

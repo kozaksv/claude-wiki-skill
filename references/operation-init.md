@@ -291,7 +291,7 @@ After consent:
    ---
    ```
 
-   Add a single `## Wiki` pointer through Cross-agent instruction-file sync: ensure `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` each point to _"Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`."_ Create missing minimal instruction files as needed. For v1/v2 migrations, move existing instruction-file schema sections into `schema.md` and replace only the pointer with the relative schema path.
+   Add a single `## Wiki` pointer through Cross-agent instruction-file sync: ensure `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` each point to _"Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`."_ Create missing minimal instruction files as needed. For v1/v2 migrations, move existing instruction-file schema sections into `schema.md`, then let Cross-agent instruction-file sync (see `references/discovery-versioning.md`) own the `## Wiki` section: it rewrites that section to the canonical Session-Start Contract block and surfaces any extra legacy schema/details that lived there as a DECIDE finding before overwriting. Do not hand-edit only the pointer line here — the sync rules in `references/discovery-versioning.md` are the single source of truth for what happens to the `## Wiki` section.
 6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
