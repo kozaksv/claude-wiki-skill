@@ -141,4 +141,46 @@ grep -q "$HOME_DIR/claude-doc-extract-skill .*local changes" "$TMP/uninstall-clo
   exit 1
 }
 
+# A foreign canonical symlink ($SKILLS_ROOT/wiki -> attacker dir) whose
+# hooks/uninstall-hooks.sh is executable must NEVER be run — the uninstaller
+# is invoked through the real clone dir only (codex-атк P1).
+setup_installed_tree
+mkdir -p "$TMP/evil/hooks"
+cat >"$TMP/evil/hooks/uninstall-hooks.sh" <<EVIL
+#!/usr/bin/env bash
+touch "$TMP/evil-ran"
+EVIL
+chmod +x "$TMP/evil/hooks/uninstall-hooks.sh"
+rm "$HOME_DIR/.claude/skills/wiki"
+ln -s "$TMP/evil" "$HOME_DIR/.claude/skills/wiki"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" >"$TMP/uninstall-foreign-hook.log" 2>&1
+expect_missing "$TMP/evil-ran"
+
+# Missing clone uninstaller + orphaned hook marker in settings.json: the
+# clone that hosts the recovery script must be preserved under --remove-clones
+# (agy-кор / codex-атк P1 — the "symlink absent / script missing" case).
+setup_installed_tree
+mkdir -p "$HOME_DIR/.claude"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"command":"x /skills/wiki/hooks/session-start.sh"}]}]}}\n' >"$HOME_DIR/.claude/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-orphan-marker.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+expect_missing "$HOME_DIR/claude-doc-extract-skill"
+grep -q "git hooks removal failed" "$TMP/uninstall-orphan-marker.log" || {
+  echo "expected orphaned-marker clone to be preserved under --remove-clones"
+  exit 1
+}
+
+# Present, working clone uninstaller is actually invoked via the real clone
+# dir, and a successful run does not block clone removal.
+setup_installed_tree
+mkdir -p "$HOME_DIR/claude-wiki-skill/hooks"
+cat >"$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh" <<HOOK
+#!/usr/bin/env bash
+touch "$TMP/real-hook-ran"
+HOOK
+chmod +x "$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-hook-run.log" 2>&1
+expect_exists "$TMP/real-hook-ran"
+expect_missing "$HOME_DIR/claude-wiki-skill"
+
 echo "uninstall: ok"

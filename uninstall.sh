@@ -100,21 +100,36 @@ remove_clone_dir() {
 
 echo "=== Wiki Skill — uninstall ==="
 
-# Git hooks (best-effort). Must run before the canonical $SKILLS_ROOT/wiki
-# symlink is removed below — once that link is gone, hooks/uninstall-hooks.sh
-# is no longer reachable through it. A failure here is non-fatal; the rest
-# of uninstall still proceeds.
-SKILL_LINK="$SKILLS_ROOT/wiki"
-if [ -x "$SKILL_LINK/hooks/uninstall-hooks.sh" ]; then
-  if ! bash "$SKILL_LINK/hooks/uninstall-hooks.sh"; then
-    # Point the recovery command at the real clone-dir path, NOT through
-    # $SKILL_LINK — the symlink removal below (remove_symlink_entry
-    # "$SKILLS_ROOT/wiki") makes $SKILL_LINK dangling before the user can
-    # ever retry, which would otherwise strand the orphaned hook entries in
-    # settings.json with no working recovery command (agy-атк P1).
-    echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$SKILL_DIR/hooks/uninstall-hooks.sh\""
+# Git hooks (best-effort). Runs before --remove-clones deletes $SKILL_DIR
+# below. A failure here is non-fatal; the rest of uninstall still proceeds.
+#
+# The uninstaller is invoked through the REAL clone dir
+# ($SKILL_DIR/hooks/uninstall-hooks.sh), NEVER through the canonical symlink
+# $SKILLS_ROOT/wiki. That symlink is attacker-influenceable: a foreign link
+# (e.g. ~/.claude/skills/wiki -> /tmp/evil, with /tmp/evil/hooks/
+# uninstall-hooks.sh executable) would otherwise make us run an
+# attacker-controlled script (codex-атк P1). Using $SKILL_DIR also loses no
+# legitimate coverage: when $SKILLS_ROOT/wiki correctly points at $SKILL_DIR,
+# "$SKILLS_ROOT/wiki/hooks/uninstall-hooks.sh" IS "$SKILL_DIR/hooks/
+# uninstall-hooks.sh" — the same file.
+HOOK_UNINSTALLER="$SKILL_DIR/hooks/uninstall-hooks.sh"
+HOOK_MARKER="/skills/wiki/hooks/"
+SETTINGS_JSON="$HOME/.claude/settings.json"
+if [ -x "$HOOK_UNINSTALLER" ]; then
+  if ! bash "$HOOK_UNINSTALLER"; then
+    echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$HOOK_UNINSTALLER\""
     HOOKS_FAILED=1
   fi
+elif [ -f "$SETTINGS_JSON" ] && grep -q "$HOOK_MARKER" "$SETTINGS_JSON" 2>/dev/null; then
+  # No usable uninstaller (clone script missing/broken/not executable, or the
+  # canonical symlink is dangling/foreign), yet settings.json still carries
+  # our hook marker — the global hooks are orphaned. Flag HOOKS_FAILED so
+  # --remove-clones does NOT delete the clone that hosts the recovery script,
+  # which would strand those entries with no way to clean them up (agy-кор /
+  # codex-атк P1: the "symlink absent / script missing" case, not just the
+  # "script exits non-zero" case).
+  echo "Увага: скрипт видалення git hooks недоступний ($HOOK_UNINSTALLER), але записи hooks лишились у $SETTINGS_JSON. Відновіть клон і запустіть вручну: bash \"$HOOK_UNINSTALLER\""
+  HOOKS_FAILED=1
 fi
 
 # Remove exports first so canonical links do not become dangling during a
