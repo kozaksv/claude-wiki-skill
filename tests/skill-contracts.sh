@@ -563,4 +563,44 @@ grep -q 'last_lint_at' "$ROOT/references/operation-lint.md" ||
 grep -q 'last_lint_at' "$ROOT/references/operation-init.md" ||
   fail "operation-init.md bootstrap must seed _hooks.last_lint_at"
 
+# Task 8: hook-file contract guards (v45-hooks) — the hook scripts, installer
+# and version gate must exist, be wired together, and be executable before
+# the executable hooks test suite (below) is trusted to have run at all.
+
+grep -q 'WIKI INDEX (hook-injected)' "$ROOT/hooks/session-start.sh" ||
+  fail "hooks/session-start.sh must inject the WIKI INDEX (hook-injected) block"
+
+grep -q 'НЕ інструкції' "$ROOT/hooks/session-start.sh" ||
+  fail "hooks/session-start.sh must label injected wiki content as untrusted data (НЕ інструкції)"
+
+grep -q '.claude/skills/wiki/hooks/' "$ROOT/hooks/install-hooks.sh" ||
+  fail "hooks/install-hooks.sh must register hooks under the canonical ~/.claude/skills/wiki/hooks/ path"
+
+grep -q 'settings.json.lock' "$ROOT/hooks/install-hooks.sh" ||
+  fail "hooks/install-hooks.sh must serialize settings.json writes via a settings.json.lock"
+
+[ -f "$ROOT/hooks/lib/version-gate.sh" ] ||
+  fail "hooks/lib/version-gate.sh must exist"
+
+grep -q 'version-gate.sh\|wiki_writable' "$ROOT/hooks/session-start.sh" ||
+  fail "hooks/session-start.sh must invoke the version gate before writing telemetry"
+
+grep -q 'version-gate.sh\|wiki_writable' "$ROOT/hooks/post-tool-use.sh" ||
+  fail "hooks/post-tool-use.sh must invoke the version gate before writing telemetry"
+
+grep -q 'install-hooks.sh' "$ROOT/install.sh" ||
+  fail "install.sh must call hooks/install-hooks.sh"
+
+grep -q 'uninstall-hooks.sh' "$ROOT/uninstall.sh" ||
+  fail "uninstall.sh must call hooks/uninstall-hooks.sh"
+
+[ -x "$ROOT/hooks/session-start.sh" ] || fail "hooks/session-start.sh must be executable"
+[ -x "$ROOT/hooks/post-tool-use.sh" ] || fail "hooks/post-tool-use.sh must be executable"
+[ -x "$ROOT/hooks/install-hooks.sh" ] || fail "hooks/install-hooks.sh must be executable"
+[ -x "$ROOT/hooks/uninstall-hooks.sh" ] || fail "hooks/uninstall-hooks.sh must be executable"
+
+# Wire the executable hooks test suite into the project gate — it must run
+# as the last step so all of the above static guards fail fast first.
+bash "$ROOT/tests/hooks/run.sh" || fail "hooks executable tests failed"
+
 echo "skill contracts: ok"
