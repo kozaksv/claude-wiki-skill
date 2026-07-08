@@ -247,7 +247,7 @@ last_migration: "2026-05-01"
 ---
 ```
 
-The skill itself has a version in this file's frontmatter (`version: "4.2.0"`). For state detection, compare the schema major (`4` for `4.0`, `4.1`, `4.2`) with the skill major (`4` for `4.2.0`). v4.1/v4.2 changed agent behavior and installer behavior, not the on-disk wiki schema; a fresh v4.2 skill can still create `wiki_version: "4.0"` and be current.
+The skill itself has a version in this file's frontmatter (`version: "4.4.0"`). For state detection, compare the schema major (`4` for `4.0`, `4.1`, ..., `4.4`) with the skill major (`4` for `4.4.0`). v4.x releases change agent behavior and installer behavior, not the on-disk wiki schema; a fresh v4.x skill can still create `wiki_version: "4.0"` and be current.
 
 ### State detection on Step 0
 
@@ -383,6 +383,16 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.4.0 (2026-07-07)
+- No schema migration (`wiki_version` stays `"4.0"`); zero migrations required
+  for existing wikis. Crystallization is now wiki-only: the skill tier is
+  removed, so the old delegation-vs-direct-create topology no longer exists.
+  The embedded cleanup-prompt is removed; the cleanup-flow is now
+  single-entry via `wiki status` instead of being offered inline after every
+  reflection. Motivation: prompt fatigue from the emoji cleanup-prompt asking
+  after every reflection, plus an unused skill tier whose
+  installer-safety/export-topology surface never paid off in practice.
 
 ### 4.3.0 (2026-06-02)
 - No schema migration (`wiki_version` stays `"4.0"`). New on-disk artifact:
