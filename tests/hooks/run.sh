@@ -811,6 +811,37 @@ sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
 _ptu_stdin "Read" "$fixture/docs/wiki/index.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
 assert_file_unchanged "post-tool-use: Read index.md not counted" "$fixture/docs/wiki/.usage.json" "$sha_before"
 
+# 4b. Read an ARCHIVED LOG SHARD under {wiki}/log/ -> excluded, not counted
+#     (wiki-structure.md "Out of scope": "Shards are not tracked in
+#     {wiki}/.usage.json. Telemetry tracks knowledge pages, not the log
+#     substrate."). A shard basename like `2026-01-01_to_2026-01-02.md`
+#     passes the *.md filter and is not one of index.md/schema.md/log.md,
+#     so without a log/-subtree guard it would get a phantom page record.
+fixture="$(make_fixture)"
+mkdir -p "$fixture/docs/wiki/log"
+cat >"$fixture/docs/wiki/log/2026-01-01_to_2026-01-02.md" <<'EOF'
+## [2026-01-01] init | Foo
+EOF
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "Read" "$fixture/docs/wiki/log/2026-01-01_to_2026-01-02.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_file_unchanged "post-tool-use: Read archived log shard not counted" "$fixture/docs/wiki/.usage.json" "$sha_before"
+key_present="$(python3 -c "
+import json
+d = json.load(open('$fixture/docs/wiki/.usage.json'))
+print(any(k.startswith('log/') for k in d.keys()))
+" 2>/dev/null)"
+assert_eq "post-tool-use: no log/-prefixed phantom page record created" "False" "$key_present"
+
+# 4c. Write/Edit an archived log shard -> also excluded (not just Read).
+fixture="$(make_fixture)"
+mkdir -p "$fixture/docs/wiki/log"
+cat >"$fixture/docs/wiki/log/2026-02-01_to_2026-02-02.md" <<'EOF'
+## [2026-02-01] init | Bar
+EOF
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "Edit" "$fixture/docs/wiki/log/2026-02-01_to_2026-02-02.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_file_unchanged "post-tool-use: Edit archived log shard not counted" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
 # 5. Read a file OUTSIDE the wiki -> no change at all.
 fixture="$(make_fixture)"
 mkdir -p "$fixture/src"

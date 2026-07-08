@@ -282,7 +282,9 @@ print(cwd if isinstance(cwd, str) else "")
     *) exit 0 ;;
   esac
 
-  # Filters: only *.md, excluding the service-navigation pages.
+  # Filters: only *.md, excluding the service-navigation pages and the
+  # entire {wiki}/log/ subtree (archived log shards — see the log/ guard
+  # below).
   case "$file_real" in
     *.md) ;;
     *) exit 0 ;;
@@ -291,6 +293,18 @@ print(cwd if isinstance(cwd, str) else "")
   base="$(basename "$file_real")"
   case "$base" in
     index.md|schema.md|log.md) exit 0 ;;
+  esac
+
+  # Exclude the entire {wiki}/log/ subtree (archived log shards, e.g.
+  # {wiki}/log/2026-01-01_to_2026-01-02.md): wiki-structure.md's log-rotation
+  # "Out of scope" is explicit — "Shards are not tracked in
+  # {wiki}/.usage.json. Telemetry tracks knowledge pages, not the log
+  # substrate." A shard's basename passes the *.md filter above and is
+  # never index.md/schema.md/log.md, so without this guard every Read/Edit
+  # of a rotated shard would create a phantom page record that pollutes
+  # status/lint/doctor with fake page activity.
+  case "$file_real" in
+    "$wiki_real"/log/*) exit 0 ;;
   esac
 
   # Version gate BEFORE any write: legacy/unrecognized schema -> untouched.
