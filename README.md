@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.4.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2/v4.3/v4.4 changed agent behavior, installer behavior, and log substrate, not the on-disk schema major.
+**Skill behavior version: 4.5.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2/v4.3/v4.4/v4.5 changed agent behavior, installer behavior, and log substrate, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -27,6 +27,60 @@ Exports created by install.sh:
 `doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `96d6bf9e1df309c4b76d924d3a1f774f7ee33d12`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
+
+## What's new in v4.5
+
+- **v4.5.0 on master:** Session-Start Contract і телеметрія отримали
+  hook-backed шлях (Claude Code only) поверх існуючої text-only
+  дисципліни — вона нікуди не зникла й лишається fallback для Codex/Gemini
+  та для Claude Code без встановлених hooks. Два глобальні, per-machine
+  хуки реєструються в `~/.claude/settings.json`:
+  - **SessionStart** — автоматично інжектить `{wiki}/index.md` у контекст
+    кожної нової сесії (`startup|clear|compact`), з untrusted-data
+    преамбулою і лімітом 24 KB, плюс нагадування про `wiki lint`, якщо
+    він не запускався понад 7 днів.
+  - **PostToolUse** — автоматично інкрементує `.usage.json`
+    (`view_count`/`patch_count`, `last_viewed_at`/`last_patched_at`) на
+    кожен `Read`/`Edit`/`Write`/`MultiEdit` по сторінці вікі — без
+    ручного bump.
+  - **`wiki doctor`** (нова операція, `references/operation-doctor.md`) —
+    read-only діагностика вікі й hook-шару з DECIDE-меню репарацій.
+  - Обидва хуки fail-open (`test -x ... || exit 0`): відсутній або
+    зламаний скрипт ніколи не блокує Read/Edit/Write чи старт сесії.
+  - `wiki_version` лишається `"4.0"` — зміна тільки в installer/agent
+    behavior, не в on-disk схемі.
+
+### Встановлення хуків на інших машинах
+
+Хуки — **per-machine**, не per-project: один запис у
+`~/.claude/settings.json` цього хоста обслуговує всі wiki-проєкти на
+ньому. Щоб увімкнути їх на іншому сервері, окремий крок не потрібен:
+
+1. **Через оновлення скіла** (типовий шлях) — той самий install/update
+   command із розділу [«Оновлення»](#оновлення) нижче: `install.sh`
+   наприкінці встановлення best-effort викликає
+   `hooks/install-hooks.sh` сам. Ідемпотентно — повторний запуск нічого
+   не дублює.
+2. **Через сесію в проєкті** — якщо skill вже підтягнув
+   `hooks/install-hooks.sh`, але `install.sh` явно не перезапускали,
+   скіл сам запропонує install при першому discovery в сесії:
+   `[y] встановити` / `[n] не зараз` / `[не питай більше]`. Спрацьовує
+   лише для Claude Code (не для Codex/Gemini — там хуків немає, і скіл
+   лишається на text-only Session-Start Contract).
+3. **Вручну** (headless / CI / без інтерактивної сесії):
+   ```bash
+   bash ~/.claude/skills/wiki/hooks/install-hooks.sh
+   ```
+   і для відкату:
+   ```bash
+   bash ~/.claude/skills/wiki/hooks/uninstall-hooks.sh
+   ```
+
+Перевірити, що хуки реально активні: у новій сесії Claude Code в
+wiki-проєкті контекст має містити блок
+`=== WIKI INDEX (hook-injected) ===`. Якщо запис у
+`~/.claude/settings.json` є, а блока немає — це «зламані хуки»;
+діагностуйте через `wiki doctor`, не перевстановлюйте наосліп.
 
 ## What's new in v4.4
 
@@ -378,6 +432,8 @@ bash ~/claude-wiki-skill/uninstall.sh
 ```
 
 За замовчуванням real clone-директорії `~/claude-wiki-skill` і `~/claude-doc-extract-skill` лишаються на диску, щоб не видалити локальні зміни випадково.
+
+Якщо на цій машині встановлені global session hooks (v4.5+), `uninstall.sh` перед видаленням symlink'ів best-effort прибирає й їхні записи з `~/.claude/settings.json` через `hooks/uninstall-hooks.sh`. Провал цього кроку не блокує решту видалення — скрипт покаже команду для ручного повтору.
 
 Щоб прибрати й real clones, якщо вони є clean git repos:
 
