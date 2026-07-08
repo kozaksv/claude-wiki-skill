@@ -383,6 +383,13 @@ When ALL buckets (🟢 / 🟡 / 🔵) are empty (clean wiki, nothing applied, no
 
 ### After completion
 
+At the end of every lint run — full pass, "швидко" top-10, a scoped subset,
+or a single-topic run — write `_hooks.last_lint_at = now` into
+`{wiki}/.usage.json` (see `## Dual-signal rule` and the reserved `_hooks`
+metadata key in `references/telemetry.md`). This happens regardless of
+whether any AUTO/DECIDE findings were produced — even a clean run
+(`✅ Лінт чистий...`) still counts as a lint pass for staleness purposes.
+
 Lint, `wiki status`, and cleanup-flow never emit a separate РЕФЛЕКСІЯ block. The lint report itself is the visible reasoning layer: it shows what was verified, what was auto-applied, what needs a decision, and how to revert. Adding reflection after that is recursive noise.
 
 If AUTO fixes were applied, the report's 🟢 / ВІДКАТ sections carry the explanation and rollback handles. If the user later says `відкат` / `відкат N`, perform the revert and print a short confirmation («Відкатив N правок. Файли повернуто.»), but still do not append a РЕФЛЕКСІЯ block.

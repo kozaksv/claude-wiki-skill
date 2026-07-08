@@ -24,6 +24,15 @@ If the trigger is ambiguous (e.g. user just says "wiki?"), confirm before runnin
      - {wiki}/entities/**/*.md  (recursive — entities are categorized)
      - {wiki}/transcripts/*.md
 3. COUNT binaries in archive/ (the project-level archive sibling, gitignored)
+3a. DETECT hooks state from `_hooks` (see `references/telemetry.md` →
+    reserved `_hooks` key and dual-signal rule):
+     - No `_hooks` key at all, or the canonical hook marker absent from
+       `~/.claude/settings.json` → «не встановлені»
+     - `_hooks` present but both `session_start_at`/`post_tool_use_at`
+       stale or absent → «heartbeat застарілий»
+     - `session_start_at` fresh but `post_tool_use_at` stale/absent →
+       «інжект є, телеметрія мертва» (the injected-but-dead state)
+     - Both `session_start_at` and `post_tool_use_at` fresh → «активні»
 4. COMPUTE activity rankings from .usage.json:
      - Top 2 by view_count (most consulted)
      - Top 2 by use_count (most cited as [[wikilinks]])
@@ -50,6 +59,7 @@ Print this verbatim shape (substitute real numbers, real `[[wikilinks]]`, real t
 Версія: {N.M} ({стан: актуальна / застаріла / новіша за скіл})
 Сторінок: {total} (concepts: {C}, entities: {E}, transcripts: {T})
 Прив'язаних бінарних файлів у archive/: {B}
+Хуки: {✅ активні / ⚠️ не встановлені — wiki doctor / ⚠️ heartbeat застарілий — wiki doctor / ⚠️ інжект є, телеметрія мертва (свіжий session_start_at, застарілий post_tool_use_at) — wiki doctor}
 
 Активність (з .usage.json):
   Найчастіше консультуються:  [[page-x]] ({n} view), [[page-y]] ({n})

@@ -254,7 +254,7 @@ order steps differently for safe creation, migration, and failure reporting.
   5. docs/wiki/concepts/ — порожня папка
   6. docs/wiki/entities/ — {entities-step}
   7. docs/wiki/transcripts/ — порожня папка
-  8. docs/wiki/.usage.json — порожній dict {}
+  8. docs/wiki/.usage.json — телеметрія, порожня крім `_hooks.last_lint_at = now`
   9. archive/ — поза wiki (gitignored)
   10. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with a relative "Wiki schema → ..." path computed per file (usually `docs/wiki/schema.md`)
   11. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
@@ -292,7 +292,13 @@ After consent:
    ```
 
    Add a single `## Wiki` pointer through Cross-agent instruction-file sync: ensure `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` each point to _"Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`."_ Create missing minimal instruction files as needed. For v1/v2 migrations, move existing instruction-file schema sections into `schema.md`, then let Cross-agent instruction-file sync (see `references/discovery-versioning.md`) own the `## Wiki` section: it rewrites that section to the canonical Session-Start Contract block and surfaces any extra legacy schema/details that lived there as a DECIDE finding before overwriting. Do not hand-edit only the pointer line here — the sync rules in `references/discovery-versioning.md` are the single source of truth for what happens to the `## Wiki` section.
-6a. Create `{wiki}/.usage.json` with `{}` (empty dict). This is the telemetry sidecar — see `## Telemetry Sidecar`.
+6a. Create `{wiki}/.usage.json`. This is the telemetry sidecar — see `## Telemetry Sidecar`. It is not a bare empty dict: seed it with the reserved `_hooks` metadata key so a freshly bootstrapped wiki isn't immediately flagged as overdue for lint (see `references/telemetry.md` → reserved `_hooks` key):
+
+    ```json
+    { "_hooks": { "last_lint_at": "{today}T00:00:00Z" } }
+    ```
+
+    Substitute the actual bootstrap timestamp for `{today}T00:00:00Z`. `_hooks.last_lint_at = now` at birth covers the "fresh wiki, no lint yet" edge — a wiki born today has nothing to be stale about, so it should not immediately surface a lint-reminder.
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)

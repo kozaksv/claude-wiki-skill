@@ -551,4 +551,16 @@ init_schema_major="$(grep -E 'wiki_version: "[0-9]+\.' "$ROOT/references/operati
 [ "$skill_version" = "$init_schema_major" ] ||
   fail "operation-init wiki_version major ($init_schema_major) must match SKILL.md major ($skill_version)"
 
+grep -q '_hooks' "$ROOT/references/telemetry.md" ||
+  fail "telemetry.md must define the reserved _hooks metadata key"
+
+grep -q 'post_tool_use_at' "$ROOT/references/telemetry.md" ||
+  fail "telemetry.md must define the _hooks.post_tool_use_at field and dual-signal rule"
+
+grep -q 'last_lint_at' "$ROOT/references/operation-lint.md" ||
+  fail "operation-lint.md must write _hooks.last_lint_at at the end of a lint run"
+
+grep -q 'last_lint_at' "$ROOT/references/operation-init.md" ||
+  fail "operation-init.md bootstrap must seed _hooks.last_lint_at"
+
 echo "skill contracts: ok"

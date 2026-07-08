@@ -59,6 +59,13 @@ These are the actions you must perform on `.usage.json` during operations. Read 
 
 Translate these into concrete file mutations: read JSON, modify dict, write back atomically. Do not maintain counters in memory across turns — re-read the file each operation.
 
+**On `bump_view`/`bump_patch` (rows above):** when Claude Code hooks are
+installed, these calls **may** be pattern-suppressed — but the suppression
+applies only when confirmed live PostToolUse telemetry (fresh
+`_hooks.post_tool_use_at`), never merely because an index-inject block was
+observed this session. See `### Dual-signal rule` and `### Manual-bump
+suppression rule` below for the full contract.
+
 ### Tolerance rules
 
 The wiki operation must never fail because of telemetry. Apply these rules:
@@ -80,4 +87,74 @@ Telemetry never marks a page as "stale". It surfaces signals that help you choos
 | `created_at` | Display in `wiki status` output, used for "longest unverified" sorting |
 
 Lint and `wiki status` use these to propose a small subset of pages to read in full. The actual judgment ("is this stale?") still requires a content read.
+
+### `_hooks` — reserved metadata key
+
+Any key in `.usage.json` starting with `_` is **reserved metadata, not a page
+record**. `report()` and every page-iteration (Lint's candidate scan, `wiki
+status`'s activity rankings, phantom-record detection) must skip `_`-prefixed
+keys entirely — they are never counted as pages, never flagged as
+missing-fields, never proposed for `forget()`.
+
+The one metadata key v4.5 defines is `_hooks`, written by the optional Claude
+Code session hooks (`hooks/session-start.sh`, `hooks/post-tool-use.sh`) and
+by the agent at points noted in the relevant operation references. Its shape:
+
+```json
+{
+  "_hooks": {
+    "session_start_at": "2026-07-08T09:00:00Z",
+    "post_tool_use_at": "2026-07-08T09:04:12Z",
+    "last_lint_at": "2026-07-08T09:10:00Z",
+    "hook_version": "4.5.0"
+  }
+}
+```
+
+All four fields are optional — a fresh `.usage.json` may have no `_hooks` key
+at all, or a partial one. This is covered by the existing silent-backfill
+rule above (`## Tolerance rules`): missing fields are filled with defaults
+(here: absent) on read, no schema bump, no migration prompt. `_hooks` is
+metadata about the telemetry system itself, not a versioned record shape.
+
+### Dual-signal rule — two independent heartbeats
+
+Two separate things can each be true or false, and neither implies the
+other:
+
+1. **`index injected`** — a `WIKI INDEX (hook-injected)` block appeared in
+   the current session's context. This proves only that `session-start.sh`
+   fired for this session (fresh `_hooks.session_start_at`). It says nothing
+   about whether the per-tool-call telemetry hook is running.
+2. **`telemetry active`** — `post-tool-use.sh` is actually firing on
+   `Read`/`Edit`/`Write` calls. This can be proven **only** by a fresh
+   `_hooks.post_tool_use_at` (i.e. updated during the current session, after
+   the agent's own `Read` of a wiki page) — never by the presence of the
+   inject block. A session can have a live inject block and a completely
+   dead PostToolUse hook (missing `python3`, a stdin field mismatch, a write
+   failure) — this is the "injected-but-dead" state, and it is
+   indistinguishable from full telemetry health unless the two signals are
+   checked separately.
+
+### Manual-bump suppression rule
+
+`bump_view(path)` / `bump_patch(path)` calls that the agent would otherwise
+make manually (per the Mutator API above) are suppressed **only** when
+telemetry is confirmed active — i.e. `_hooks.post_tool_use_at` is fresh for
+the current session. If the index was injected (`session_start_at` fresh)
+but `post_tool_use_at` is stale or absent, the agent continues making manual
+`bump_view`/`bump_patch` calls as a fallback. Reasoning: a double-count is
+caught by Lint (a implausibly high `view_count`/`patch_count` is a visible,
+correctable artifact); a silently suppressed bump that should have fired
+manually produces a permanently zeroed telemetry record, which is invisible
+and non-recoverable. When in doubt, bump.
+
+`bump_use(path)` is **always** manual, regardless of hook state — no hook
+observes `[[wikilink]]` additions inside a page body, so there is no signal
+that could suppress it.
+
+Notes on `bump_view`/`bump_patch` above (`## Mutator API`): suppression
+applies **only** when PostToolUse telemetry is confirmed live via a fresh
+`_hooks.post_tool_use_at`, never merely because an index-inject block was
+observed this session.
 

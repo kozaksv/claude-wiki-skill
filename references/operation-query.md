@@ -45,6 +45,15 @@ Concretely, query when:
 
 After step 3, for each page you read with the `Read` tool, call `bump_view(path)` against `.usage.json` (see `## Telemetry Sidecar`). If step 5 fires and you create or edit a page, also call `bump_patch(new_path)` and `bump_use(target)` for each `[[wikilink]]` added.
 
+**Step 6 is conditional, not unconditional.** `bump_view`/`bump_patch` are
+suppressed **only** when `_hooks.post_tool_use_at` is fresh for the current
+session — i.e. confirmed-live PostToolUse telemetry, per the dual-signal
+rule (`references/telemetry.md`). A `WIKI INDEX (hook-injected)` block in
+context proves only that SessionStart fired; it does **not** by itself
+suppress step 6. If the index was injected but `post_tool_use_at` is stale
+or absent, keep making the manual `bump_view`/`bump_patch` calls above as
+fallback. `bump_use(path)` is always manual, hooks or no hooks.
+
 ### Filing Back
 
 When a query produces a valuable synthesis (comparison, analysis, connection between topics), consider saving it as a new wiki page. This is a key Karpathy insight: **good answers compound into the knowledge base** rather than disappearing into chat history.
