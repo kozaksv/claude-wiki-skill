@@ -19,6 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DISCOVER_LIB="$ROOT/hooks/lib/discover.sh"
 VERSION_GATE_LIB="$ROOT/hooks/lib/version-gate.sh"
 SESSION_START_HOOK="$ROOT/hooks/session-start.sh"
+POST_TOOL_USE_HOOK="$ROOT/hooks/post-tool-use.sh"
 
 # shellcheck source=../../hooks/lib/discover.sh
 source "$DISCOVER_LIB"
@@ -630,6 +631,196 @@ out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
 rc=$?
 assert_eq "session-start: no wiki -> empty stdout" "" "$out"
 assert_eq "session-start: no wiki -> exit 0" "0" "$rc"
+
+echo "=== post-tool-use.sh ===" >&2
+
+# post-tool-use.sh is a standalone hook process (it calls `exit` on every
+# path) — run as a subprocess, never sourced.
+
+_ptu_stdin() {
+  # $1 = tool_name, $2 = file_path. Prints the stdin-JSON shape documented
+  # by Claude Code hooks (tool_name, tool_input.file_path).
+  printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$1" "$2"
+}
+
+_ptu_field() {
+  # $1 = .usage.json path, $2 = key, $3 = field. Empty string if the key or
+  # field is absent (missing record, corrupt file, etc.).
+  python3 -c "
+import json
+try:
+    d = json.load(open('$1'))
+except Exception:
+    d = {}
+rec = d.get('$2', {})
+if not isinstance(rec, dict):
+    rec = {}
+v = rec.get('$3', '')
+print('' if v is None else v)
+" 2>/dev/null
+}
+
+# 1. Read a wiki page -> view_count + 1, last_viewed_at set.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: Read exits 0" "0" "$rc"
+vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: Read bumps view_count to 1" "1" "$vc"
+lva="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "last_viewed_at")"
+if [ -n "$lva" ]; then r=0; else r=1; fi
+assert_eq "post-tool-use: Read sets last_viewed_at" "0" "$r"
+
+# 2. Edit a wiki page -> patch_count + 1, last_patched_at set.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+_ptu_stdin "Edit" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+pc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+assert_eq "post-tool-use: Edit bumps patch_count to 1" "1" "$pc"
+lpa="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "last_patched_at")"
+if [ -n "$lpa" ]; then r=0; else r=1; fi
+assert_eq "post-tool-use: Edit sets last_patched_at" "0" "$r"
+
+# 3. Write a brand-new page -> record created with all 10 default fields
+#    (nine besides the incremented one, per telemetry.md's ten-field shape).
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/newpage.md" <<'EOF'
+# New Page
+EOF
+_ptu_stdin "Write" "$fixture/docs/wiki/newpage.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+field_count="$(python3 -c "
+import json
+d = json.load(open('$fixture/docs/wiki/.usage.json'))
+print(len(d.get('newpage.md', {})))
+" 2>/dev/null)"
+assert_eq "post-tool-use: Write of new page creates record with 10 fields" "10" "$field_count"
+pc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "newpage.md" "patch_count")"
+assert_eq "post-tool-use: Write bumps patch_count to 1" "1" "$pc"
+
+# 4. Read index.md -> excluded, not counted (service-navigation page).
+fixture="$(make_fixture)"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "Read" "$fixture/docs/wiki/index.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_file_unchanged "post-tool-use: Read index.md not counted" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 5. Read a file OUTSIDE the wiki -> no change at all.
+fixture="$(make_fixture)"
+mkdir -p "$fixture/src"
+cat >"$fixture/src/outside.md" <<'EOF'
+# Outside
+EOF
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "Read" "$fixture/src/outside.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: Read outside wiki exits 0" "0" "$rc"
+assert_file_unchanged "post-tool-use: Read outside wiki -> .usage.json unchanged" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 6. Corrupt .usage.json -> recovered to {} + fresh record written.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+printf '{not valid json' >"$fixture/docs/wiki/.usage.json"
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+if python3 -c "import json; json.load(open('$fixture/docs/wiki/.usage.json'))" 2>/dev/null; then r=0; else r=1; fi
+assert_eq "post-tool-use: corrupt .usage.json recovered to valid JSON" "0" "$r"
+vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: corrupt .usage.json -> fresh record written (view_count 1)" "1" "$vc"
+
+# 7. No python3 on PATH -> exit 0, .usage.json untouched. A curated PATH
+#    dir carries symlinks to every OTHER external tool the hook needs
+#    (bash, dirname, basename, realpath, sed, cat, git) but deliberately
+#    omits python3 — an outright-empty PATH would also break command
+#    lookup for `bash` itself (both bash and zsh resolve the invoked
+#    command's name against the OVERRIDDEN PATH of a `VAR=val cmd`
+#    prefix, not the caller's), giving a false "no python3" signal for
+#    the wrong reason (127 from a missing `bash`, not the hook's own
+#    python3 guard).
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+curated_path_dir="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-nopython.XXXXXX")"
+track_tmp "$curated_path_dir"
+for _tool in bash dirname basename realpath sed cat git; do
+  _tool_src="$(command -v "$_tool" 2>/dev/null)"
+  [ -n "$_tool_src" ] && ln -s "$_tool_src" "$curated_path_dir/$_tool"
+done
+out="$(_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" PATH="$curated_path_dir" bash "$POST_TOOL_USE_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "post-tool-use: no python3 -> exit 0" "0" "$rc"
+assert_file_unchanged "post-tool-use: no python3 -> .usage.json untouched" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 8. file_path resolution: a RELATIVE file_path (as Claude Code sends it)
+#    must resolve against $CLAUDE_PROJECT_DIR, not the hook process's own
+#    cwd — invoke from an unrelated subdirectory of the fixture.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+mkdir -p "$fixture/other/subdir"
+( cd "$fixture/other/subdir" && _ptu_stdin "Read" "docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1 )
+vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: relative file_path resolves against CLAUDE_PROJECT_DIR (not hook cwd)" "1" "$vc"
+
+# 9. Version gate: legacy schema.md (not 4.0) -> .usage.json NOT touched.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+cat >"$fixture/docs/wiki/schema.md" <<'EOF'
+---
+wiki_version: "3.0"
+---
+EOF
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "Edit" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_file_unchanged "post-tool-use: legacy schema.md -> .usage.json untouched" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 9b. Version gate: schema.md entirely absent -> same contract.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+rm -f "$fixture/docs/wiki/schema.md"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "Edit" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_file_unchanged "post-tool-use: missing schema.md -> .usage.json untouched" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 10. Version gate: schema 4.0 but .usage.json absent -> sidecar creation
+#     allowed (wiki_bootstrappable path).
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+rm -f "$fixture/docs/wiki/.usage.json"
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+if [ -f "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
+assert_eq "post-tool-use: current schema + missing .usage.json -> sidecar created" "0" "$r"
+vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: bootstrapped sidecar has fresh view_count 1" "1" "$vc"
+
+# 10b. Fixture without .usage.json AND legacy schema.md -> no file created
+#      at all (neither wiki_writable nor wiki_bootstrappable).
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+rm -f "$fixture/docs/wiki/.usage.json"
+cat >"$fixture/docs/wiki/schema.md" <<'EOF'
+---
+wiki_version: "3.0"
+---
+EOF
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+if [ -f "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
+assert_eq "post-tool-use: legacy schema + missing .usage.json -> sidecar NOT created" "1" "$r"
 
 # ---- summary ----
 echo "" >&2
