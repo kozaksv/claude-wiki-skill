@@ -6,13 +6,18 @@
 # (docs/superpowers/plans/2026-07-08-v45-hooks.md Task 4).
 #
 # Design (see plan Task 4 for the full rationale):
-#   1. Serialized read-modify-write under an exclusive lock on
-#      ~/.claude/settings.json.lock. Prefers `flock` (fd-based, released by
-#      the kernel on any process exit); falls back to an atomic `mkdir`
-#      lock-directory when `flock` is unavailable (stock macOS). The
-#      mkdir-fallback records its own PID inside the lock dir and installs
-#      an EXIT/INT/TERM trap so a crash or interrupt while holding the lock
-#      can never deadlock a future run.
+#   1. Serialized read-modify-write under ONE exclusive mutex: an atomic
+#      `mkdir` lock-directory (~/.claude/settings.json.lockdir). A single
+#      primitive is used for EVERY invocation — never flock-when-available /
+#      mkdir-otherwise — because two different primitives guarding the same
+#      resource are not mutually exclusive: an flock holder and a concurrent
+#      mkdir holder (whether flock is missing on one, or the caller sets
+#      WIKI_HOOKS_FORCE_MKDIR_LOCK) would both enter the critical section and
+#      corrupt settings.json (codex-атк P1). The mkdir lock records its own
+#      PID inside the lock dir and installs an EXIT/INT/TERM trap plus
+#      pid-liveness + mtime-age reclaim, so a crash or interrupt while
+#      holding the lock can never deadlock a future run — nothing is lost by
+#      not using flock.
 #   2. settings.json is read fresh, under the lock, immediately before the
 #      merge — never a cached/earlier snapshot.
 #   3. A timestamped backup is written before any merge (only once the
@@ -58,7 +63,6 @@ fi
 HOME_DIR="$HOME"
 CLAUDE_DIR="$HOME_DIR/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-LOCK_FILE="$SETTINGS_FILE.lock"
 LOCK_DIR="$SETTINGS_FILE.lockdir"
 LOCK_TIMEOUT="${WIKI_HOOKS_LOCK_TIMEOUT:-10}"
 LOCK_POLL="${WIKI_HOOKS_LOCK_POLL:-0.2}"
@@ -164,14 +168,12 @@ acquire_mkdir() {
   done
 }
 
-# WIKI_HOOKS_FORCE_MKDIR_LOCK lets tests exercise the mkdir-fallback path
-# deterministically even on hosts where `flock` happens to be installed.
-if [ "${WIKI_HOOKS_FORCE_MKDIR_LOCK:-0}" = "1" ] || ! command -v flock >/dev/null 2>&1; then
-  acquire_mkdir || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
-else
-  exec 9>"$LOCK_FILE" 2>/dev/null || fail "cannot open lock file $LOCK_FILE"
-  flock -w "$LOCK_TIMEOUT" 9 || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
-fi
+# Single, universal mutex: the mkdir lock-directory, for every invocation.
+# Deliberately NOT flock-when-available/mkdir-otherwise — mixing the two on
+# the same resource loses mutual exclusion (codex-атк P1). The legacy
+# WIKI_HOOKS_FORCE_MKDIR_LOCK env is retained only for backward-compatible
+# test invocations; it is now a no-op since mkdir is always used.
+acquire_mkdir || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
 
 # Test-only seam: hold the lock open for a bit so tests can exercise
 # interrupt/trap-cleanup behavior deterministically. No-op by default.

@@ -1025,6 +1025,32 @@ rc=$?
 assert_eq "post-tool-use: FIFO .usage.json -> returns promptly, exit 0 (never blocks)" "0" "$rc"
 rm -f "$fixture/docs/wiki/.usage.json"
 
+# 10. Relative file_path resolves against the documented stdin `cwd` when
+#     $CLAUDE_PROJECT_DIR is UNSET and the hook runs from a subdir. Without
+#     parsing stdin cwd the anchor falls back to pwd (the subdir), the
+#     in-wiki guard mis-resolves, and telemetry silently vanishes on a real
+#     Claude Code invocation that doesn't export CLAUDE_PROJECT_DIR
+#     (codex-атк P1).
+fixture="$(make_fixture)"
+u="$fixture/docs/wiki/.usage.json"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+mkdir -p "$fixture/some/other/subdir"
+echo '{"tool_name":"Read","cwd":"'"$fixture"'","tool_input":{"file_path":"docs/wiki/foo.md"}}' \
+  | ( cd "$fixture/some/other/subdir" && env -u CLAUDE_PROJECT_DIR bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1 )
+assert_eq "post-tool-use: relative file_path resolves against stdin cwd when CLAUDE_PROJECT_DIR unset" \
+  "1" "$(ptu_field "$u" "d['foo.md']['view_count']")"
+
+# 11. Regression: post-tool-use.sh MUST be committed executable. install
+#     registers `test -x <canonical> && <canonical> || exit 0`, so a
+#     non-executable file (git mode 100644) makes the installed hook a silent
+#     no-op — PostToolUse telemetry never fires (codex-атк P1). The blocks
+#     above all run it via `bash`, bypassing the -x guard, so assert the git
+#     index mode + on-disk bit explicitly.
+mode="$(git -C "$ROOT" ls-files -s -- hooks/post-tool-use.sh 2>/dev/null | awk '{print $1}')"
+assert_eq "post-tool-use: committed with executable git mode (100755)" "100755" "$mode"
+assert_eq "post-tool-use: executable bit set on disk" "yes" \
+  "$([ -x "$POST_TOOL_USE_HOOK" ] && echo yes || echo no)"
+
 echo "=== install-hooks.sh / uninstall-hooks.sh ===" >&2
 
 # install-hooks.sh / uninstall-hooks.sh are standalone processes (they
@@ -1324,6 +1350,19 @@ rc=0
 env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
 assert_eq "interrupt-under-lock: next install proceeds normally (not deadlocked)" "0" "$rc"
 assert_eq "interrupt-under-lock: settings.json ends up valid with 1 SessionStart entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+
+# Lock-primitive unification (codex-атк P1): install and uninstall must guard
+# settings.json with ONE shared mutex (the mkdir lock-directory), never a
+# flock-when-available / mkdir-otherwise split — an flock holder and a
+# concurrent mkdir holder (missing flock, or WIKI_HOOKS_FORCE_MKDIR_LOCK) do
+# not exclude each other. Assert statically that neither script makes an
+# `flock -w` call and that both acquire the mkdir lock unconditionally.
+for sc in "$INSTALL_HOOKS_SCRIPT" "$UNINSTALL_HOOKS_SCRIPT"; do
+  n="$(basename "$sc")"
+  assert_eq "lock-unify: $n makes no flock -w call" "0" "$(grep -c 'flock -w' "$sc")"
+  assert_eq "lock-unify: $n acquires the mkdir lock unconditionally" "yes" \
+    "$(grep -qE '^acquire_mkdir \|\| fail' "$sc" && echo yes || echo no)"
+done
 
 # ---- summary ----
 echo "" >&2

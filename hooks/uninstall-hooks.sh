@@ -4,9 +4,11 @@
 # Removes the wiki skill's two global Claude Code hooks from
 # ~/.claude/settings.json (docs/superpowers/plans/2026-07-08-v45-hooks.md
 # Task 4). Mirrors install-hooks.sh's locking, read-under-lock, backup and
-# atomic-write discipline exactly (same lock file, same lock-dir fallback,
+# atomic-write discipline exactly (same single mkdir lock-directory mutex,
 # same trap-based crash recovery) — only the merge step differs: strip,
-# never add.
+# never add. Using the SAME single primitive as install-hooks.sh is what
+# keeps a concurrent install and uninstall mutually exclusive (codex-атк
+# P1); two different primitives on ~/.claude/settings.json would not.
 #
 # Granularity matches install-hooks.sh: only elements of a matcher-entry's
 # nested `hooks[]` array whose `command` contains the `/skills/wiki/hooks/`
@@ -35,7 +37,6 @@ fi
 HOME_DIR="$HOME"
 CLAUDE_DIR="$HOME_DIR/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-LOCK_FILE="$SETTINGS_FILE.lock"
 LOCK_DIR="$SETTINGS_FILE.lockdir"
 LOCK_TIMEOUT="${WIKI_HOOKS_LOCK_TIMEOUT:-10}"
 LOCK_POLL="${WIKI_HOOKS_LOCK_POLL:-0.2}"
@@ -141,14 +142,12 @@ acquire_mkdir() {
   done
 }
 
-# WIKI_HOOKS_FORCE_MKDIR_LOCK lets tests exercise the mkdir-fallback path
-# deterministically even on hosts where `flock` happens to be installed.
-if [ "${WIKI_HOOKS_FORCE_MKDIR_LOCK:-0}" = "1" ] || ! command -v flock >/dev/null 2>&1; then
-  acquire_mkdir || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
-else
-  exec 9>"$LOCK_FILE" 2>/dev/null || fail "cannot open lock file $LOCK_FILE"
-  flock -w "$LOCK_TIMEOUT" 9 || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
-fi
+# Single, universal mutex: the mkdir lock-directory, for every invocation —
+# the SAME primitive install-hooks.sh uses, so install and uninstall exclude
+# each other. Deliberately NOT flock-when-available/mkdir-otherwise (codex-атк
+# P1). WIKI_HOOKS_FORCE_MKDIR_LOCK is retained only for backward-compatible
+# test invocations and is now a no-op since mkdir is always used.
+acquire_mkdir || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
 
 # Test-only seam: hold the lock open for a bit so tests can exercise
 # interrupt/trap-cleanup behavior deterministically. No-op by default.
