@@ -71,10 +71,23 @@ mkdir -p "$CLAUDE_DIR" 2>/dev/null || fail "cannot create $CLAUDE_DIR"
 LOCK_ACQUIRED_MKDIR=0
 
 on_exit() {
-  local ec=$?
+  local ec=$? owner=""
   if [ "$LOCK_ACQUIRED_MKDIR" = "1" ]; then
-    rm -f "$LOCK_DIR/pid" 2>/dev/null
-    rmdir "$LOCK_DIR" 2>/dev/null
+    # Tear down the lock ONLY if we still own it. A slow/suspended holder
+    # can be force-cleared and have the lock re-acquired by another process
+    # (dead-pid or mtime-age reclaim in acquire_mkdir); that new owner has
+    # written its OWN, different pid into $LOCK_DIR/pid. Blindly rm/rmdir-ing
+    # here would delete the LIVE owner's lock and expose settings.json to a
+    # concurrent unguarded write (agy-атк P1). So remove only when the pid
+    # file still names us ($$), or is empty/absent — the empty/absent case
+    # is our own mid-acquire window (mkdir done, pid not yet written), which
+    # the mtime fallback in acquire_mkdir protects from steals, so it is
+    # unambiguously ours to clean up.
+    owner="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
+    if [ -z "$owner" ] || [ "$owner" = "$$" ]; then
+      rm -f "$LOCK_DIR/pid" 2>/dev/null
+      rmdir "$LOCK_DIR" 2>/dev/null
+    fi
   fi
   exit "$ec"
 }
@@ -114,19 +127,30 @@ acquire_mkdir() {
     fi
     if [ -f "$LOCK_DIR/pid" ]; then
       pid="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
-      if [ -n "$pid" ] && is_pid_alive "$pid"; then
-        : # live owner — never steal, just wait.
-      else
-        # dead/unreadable pid -> force-clear stale lock and retry.
-        rm -f "$LOCK_DIR/pid" 2>/dev/null
-        rmdir "$LOCK_DIR" 2>/dev/null
-        continue
-      fi
     else
-      # No pid file at all (crash between mkdir and pid write): fall back
-      # to mtime age as the ONLY signal in this narrow case.
+      pid=""
+    fi
+    if [ -n "$pid" ] && is_pid_alive "$pid"; then
+      : # live owner — never steal, just wait.
+    elif [ -n "$pid" ]; then
+      # Non-empty pid naming a dead/unreadable process -> genuinely stale
+      # lock; force-clear and retry.
+      rm -f "$LOCK_DIR/pid" 2>/dev/null
+      rmdir "$LOCK_DIR" 2>/dev/null
+      continue
+    else
+      # Empty OR absent pid file. An empty pid file is NOT a dead owner: it
+      # is the winner's mid-acquire race window — `mkdir` has succeeded and
+      # `echo $$` has created but not yet filled the pid file. Force-clearing
+      # here would steal a lock whose owner is a live process about to run
+      # under it, defeating mutual exclusion (agy-атк P1). Treat empty
+      # EXACTLY like absent: fall back to mtime age as the ONLY reclaim
+      # signal, so only a genuinely abandoned lock is ever reclaimed. Remove
+      # the (possibly-present, possibly-empty) pid file before rmdir, since
+      # rmdir fails on a non-empty directory.
       age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
       if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_TIMEOUT" ]; then
+        rm -f "$LOCK_DIR/pid" 2>/dev/null
         rmdir "$LOCK_DIR" 2>/dev/null
         continue
       fi
