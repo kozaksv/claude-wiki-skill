@@ -99,6 +99,17 @@ remove_clone_dir() {
 
 echo "=== Wiki Skill — uninstall ==="
 
+# Git hooks (best-effort). Must run before the canonical $SKILLS_ROOT/wiki
+# symlink is removed below — once that link is gone, hooks/uninstall-hooks.sh
+# is no longer reachable through it. A failure here is non-fatal; the rest
+# of uninstall still proceeds.
+SKILL_LINK="$SKILLS_ROOT/wiki"
+if [ -x "$SKILL_LINK/hooks/uninstall-hooks.sh" ]; then
+  if ! bash "$SKILL_LINK/hooks/uninstall-hooks.sh"; then
+    echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$SKILL_LINK/hooks/uninstall-hooks.sh\""
+  fi
+fi
+
 # Remove exports first so canonical links do not become dangling during a
 # partial uninstall.
 remove_symlink_entry "$AGENTS_SKILLS_ROOT/wiki" "$SKILLS_ROOT/wiki"

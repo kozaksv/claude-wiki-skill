@@ -302,6 +302,19 @@ else
   echo "Увага: doc-extract не встановлено. Wiki skill працюватиме, але ingest-binary буде недоступний до повторного встановлення."
 fi
 
+# 4. Git hooks (best-effort). Registers the wiki skill's global Claude Code
+# hooks (SessionStart, PostToolUse) into ~/.claude/settings.json via the
+# canonical entrypoint. A failure here must never abort the wiki install —
+# text/source wiki operations work fine without hooks; only the automated
+# session-start/log-rotation conveniences are lost.
+if [ -x "$SKILL_LINK/hooks/install-hooks.sh" ]; then
+  if ! bash "$SKILL_LINK/hooks/install-hooks.sh"; then
+    echo "Увага: не вдалося встановити git hooks. Запустіть вручну: bash \"$SKILL_LINK/hooks/install-hooks.sh\""
+  fi
+else
+  echo "Увага: install-hooks.sh не знайдено в $SKILL_LINK/hooks — hooks не встановлено."
+fi
+
 ANY_SKIPPED=0
 for status in "$WIKI_AGENTS_STATUS" "$WIKI_GEMINI_STATUS" "$DOC_AGENTS_STATUS" "$DOC_GEMINI_STATUS"; do
   [ "$status" = "skipped" ] && ANY_SKIPPED=1
