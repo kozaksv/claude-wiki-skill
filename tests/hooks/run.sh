@@ -369,6 +369,54 @@ expected="$(real "$fixture/from-agents/wiki")"
 out="$(discover_wiki "$fixture" 2>/dev/null)"
 assert_eq "agent-neutral: stale CLAUDE.md does not mask valid AGENTS.md pointer" "$expected" "$out"
 
+# 12b. agent-neutral, stale-but-PRESENT pointer: CLAUDE.md carries a broken
+#      backtick pointer (non-empty, resolves nowhere) while AGENTS.md in the
+#      SAME directory has a valid one. The broken pointer must be validated
+#      and skipped, not returned (agy-атк P1 follow-up).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/from-agents/wiki"
+printf 'agents index' >"$fixture/from-agents/wiki/index.md"
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki at `moved/away/long/ago`.
+EOF
+cat >"$fixture/AGENTS.md" <<'EOF'
+## Wiki
+
+Wiki at `from-agents/wiki`.
+EOF
+expected="$(real "$fixture/from-agents/wiki")"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "stale CLAUDE.md pointer does not mask valid AGENTS.md pointer beside it" "$expected" "$out"
+
+# 12c. stale NESTED pointer must not mask a valid root-level custom-path
+#      pointer: sub/CLAUDE.md has a broken pointer, the repo root's
+#      CLAUDE.md points at a custom (non-docs/wiki) location. The walk-up
+#      must skip the invalid nested candidate and keep climbing
+#      (agy-атк P1). Custom path on purpose: the docs/wiki fallback could
+#      otherwise mask a broken Phase 1.
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/sub" "$fixture/knowledge/wiki"
+printf 'root custom index' >"$fixture/knowledge/wiki/index.md"
+cat >"$fixture/sub/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki at `does/not/exist/here`.
+EOF
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki at `knowledge/wiki`.
+EOF
+expected="$(real "$fixture/knowledge/wiki")"
+out="$(discover_wiki "$fixture/sub" 2>/dev/null)"
+assert_eq "stale nested pointer does not mask valid root custom-path pointer" "$expected" "$out"
+
 # 13. set -euo pipefail safety: a "## Wiki" section that exists but has NO
 #     backtick token makes the awk|grep|head|sed pipe exit non-zero. Sourced
 #     under `set -euo pipefail`, discover_wiki must NOT abort the caller on
@@ -472,6 +520,19 @@ if wiki_writable "$wiki"; then r=0; else r=1; fi
 assert_eq "wiki_writable: no frontmatter block -> false" "1" "$r"
 if wiki_bootstrappable "$wiki"; then r=0; else r=1; fi
 assert_eq "wiki_bootstrappable: no frontmatter block -> false" "1" "$r"
+
+# g. CRLF line endings: a schema.md checked out with \r\n must still pass
+#    the gate — the parser strips \r before comparing delimiters and the
+#    version line (agy-атк P1; fail direction was fail-closed: all hook
+#    writes silently blocked on CRLF repos).
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+printf -- '---\r\nwiki_version: "4.0"\r\n---\r\n\r\n# Schema\r\n' >"$wiki/schema.md"
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: CRLF schema.md, current version -> true" "0" "$r"
+printf -- '---\r\nwiki_version: "3.0"\r\n---\r\n' >"$wiki/schema.md"
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: CRLF schema.md, old version -> still false" "1" "$r"
 
 # ---- summary ----
 echo "" >&2

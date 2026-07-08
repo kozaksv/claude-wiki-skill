@@ -5,10 +5,12 @@
 # find the nearest resident `## Wiki` pointer walking up from <start_dir>
 # to the git-root boundary, falling back to docs/wiki/ when no pointer
 # resolves. In each directory ALL agent instruction files (CLAUDE.md,
-# AGENTS.md, GEMINI.md) are consulted and the FIRST that carries a valid
-# `## Wiki` pointer wins — agent-neutral discovery, so a stale/broken
-# CLAUDE.md can never mask a valid AGENTS.md/GEMINI.md pointer in the same
-# directory. Discovery is FAIL-CLOSED without git: with no git toplevel we
+# AGENTS.md, GEMINI.md) are consulted and the first pointer that actually
+# VALIDATES (resolved index.md inside the boundary) wins — agent-neutral
+# discovery. A stale/broken pointer never stops the search: the remaining
+# files of the same directory are still tried, and the walk-up continues
+# to higher directories, so a stale nested CLAUDE.md can mask neither a
+# valid AGENTS.md/GEMINI.md pointer beside it nor a valid root-level one. Discovery is FAIL-CLOSED without git: with no git toplevel we
 # refuse to establish a boundary and resolve nothing (Session-Start
 # Contract requires a git marker; an orphan / non-git tree must not resolve
 # or mutate a wiki). Every candidate is boundary-guarded on its RESOLVED
@@ -78,25 +80,22 @@ _wiki_disc_extract_pointer() {
   printf '%s' "$out"
 }
 
-_wiki_disc_dir_pointer() {
+_wiki_disc_dir_pointers() {
   # $1 = directory. Agent-neutral pointer lookup: consult ALL instruction
-  # files in priority order (CLAUDE.md, AGENTS.md, GEMINI.md) and print the
-  # first VALID `## Wiki` backtick pointer found in ANY of them. A file that
-  # exists but has no pointer (stale / broken / no "## Wiki" section) does
-  # NOT stop the search — the next file in the same dir is still tried
-  # (codex-атк P1: previously only the first existing file was read, so a
-  # stale CLAUDE.md masked a valid AGENTS.md/GEMINI.md pointer). Empty
-  # output + return 1 when no file in the dir yields a pointer.
+  # files in priority order (CLAUDE.md, AGENTS.md, GEMINI.md) and print
+  # EVERY `## Wiki` backtick pointer found, one per line, in that order.
+  # A file with no pointer contributes nothing but does NOT stop the scan
+  # (codex-атк P1). Printing ALL pointers (not just the first) lets the
+  # caller validate each one, so a stale-but-present CLAUDE.md pointer
+  # cannot mask a valid AGENTS.md/GEMINI.md pointer in the same directory
+  # (agy-атк P1 follow-up). Always exits 0; empty output = no pointers.
   local dir="$1" name raw
   for name in CLAUDE.md AGENTS.md GEMINI.md; do
     [ -f "$dir/$name" ] || continue
     raw="$(_wiki_disc_extract_pointer "$dir/$name")"
-    if [ -n "$raw" ]; then
-      printf '%s\n' "$raw"
-      return 0
-    fi
+    [ -n "$raw" ] && printf '%s\n' "$raw"
   done
-  return 1
+  return 0
 }
 
 _wiki_disc_candidate() {
@@ -141,18 +140,32 @@ discover_wiki() {
   start_real="$(_wiki_disc_realpath "$start")"
   [ -n "$boundary_real" ] && [ -n "$start_real" ] || return 0
 
-  # Phase 1: walk from start_real up to boundary_real (inclusive) looking
-  # for the nearest config file with a "## Wiki" pointer.
-  local dir="$start_real" found_config_dir="" pointer_candidate=""
+  # Phase 1: walk from start_real up to boundary_real (inclusive). In each
+  # directory validate EVERY pointer found there immediately; the first
+  # pointer whose resolved index.md passes the boundary guard wins. A
+  # stale/broken/out-of-bounds pointer never stops the search — remaining
+  # pointers in the same directory are tried, then the walk continues
+  # upward (agy-атк P1: a stale nested pointer must not mask a valid
+  # root-level custom-path pointer). found_config_dir remembers the
+  # NEAREST directory that carried any pointer at all — Phase 2 uses it
+  # as the first fallback anchor regardless of pointer validity.
+  local dir="$start_real" found_config_dir="" wiki_dir="" raws raw candidate
   while :; do
-    local raw
-    if raw="$(_wiki_disc_dir_pointer "$dir")" && [ -n "$raw" ]; then
-      found_config_dir="$dir"
-      case "$raw" in
-        /*) pointer_candidate="$raw" ;;
-        *) pointer_candidate="$dir/$raw" ;;
-      esac
-      break
+    raws="$(_wiki_disc_dir_pointers "$dir")"
+    if [ -n "$raws" ]; then
+      [ -n "$found_config_dir" ] || found_config_dir="$dir"
+      while IFS= read -r raw; do
+        [ -n "$raw" ] || continue
+        case "$raw" in
+          /*) candidate="$raw" ;;
+          *) candidate="$dir/$raw" ;;
+        esac
+        if wiki_dir="$(_wiki_disc_candidate "$candidate" "$boundary_real")"; then
+          printf '%s\n' "$wiki_dir"
+          return 0
+        fi
+        # broken / out-of-bounds pointer -> try the next one / keep walking
+      done <<<"$raws"
     fi
     [ "$dir" = "$boundary_real" ] && break
     local parent
@@ -160,15 +173,6 @@ discover_wiki() {
     [ "$parent" != "$dir" ] || break
     dir="$parent"
   done
-
-  if [ -n "$pointer_candidate" ]; then
-    local wiki_dir
-    if wiki_dir="$(_wiki_disc_candidate "$pointer_candidate" "$boundary_real")"; then
-      printf '%s\n' "$wiki_dir"
-      return 0
-    fi
-    # broken / out-of-bounds pointer -> fall through to fallback phase
-  fi
 
   # Phase 2: fallback docs/wiki/index.md, tried at (in order, de-duped):
   # the found config file's dir, start_real, boundary_real. Same guard.

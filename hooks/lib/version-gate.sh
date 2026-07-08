@@ -19,8 +19,14 @@ _wiki_ver_frontmatter() {
   # lines strictly between the first "---" line and the next "---"
   # line). Fails (empty output, non-zero exit) if line 1 isn't "---" or
   # no closing "---" is ever found.
+  # CRLF-safe: every line is stripped of a trailing \r BEFORE any
+  # comparison/print, so a CRLF-checked-out schema.md (agy-атк P1) still
+  # matches the "---" delimiters and the caller's anchored version grep —
+  # otherwise the gate would silently fail-closed and block all hook
+  # writes on such repos.
   local file="$1"
   awk '
+    { sub(/\r$/, "") }
     NR == 1 {
       if ($0 != "---") { exit 1 }
       next
