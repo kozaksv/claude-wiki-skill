@@ -24,10 +24,15 @@ _wiki_disc_realpath() {
 }
 
 _wiki_disc_boundary_ok() {
-  # $1 = already-realpath'd absolute path
+  # $1 = already-realpath'd absolute path (in practice always a resolved
+  #      index.md FILE, never the boundary dir itself)
   # $2 = already-realpath'd absolute boundary root
+  # Must be STRICTLY inside $2, never equal to it. An exact match means
+  # index.md resolved (e.g. via a symlink) to the boundary root itself;
+  # the caller then does `dirname` on that, which yields the boundary's
+  # PARENT — an escape outside the project. See
+  # references/discovery-versioning.md Step 0 symlink-escape note.
   case "$1" in
-    "$2") return 0 ;;
     "$2"/*) return 0 ;;
     *) return 1 ;;
   esac

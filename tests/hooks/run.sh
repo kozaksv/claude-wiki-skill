@@ -266,6 +266,24 @@ ln -s "$outside" "$fixture/docs/wiki"
 out="$(discover_wiki "$fixture" 2>/dev/null)"
 assert_eq "symlink-escape via fallback dir (docs/wiki -> outside): empty stdout" "" "$out"
 
+# 8b. symlink-escape via index.md resolving to the boundary root itself:
+#     docs/wiki/index.md is a symlink whose resolved path IS boundary_real
+#     (not merely outside it). A naive exact-match boundary check would
+#     accept this, then dirname() on boundary_real yields the boundary's
+#     PARENT, escaping outside the project entirely. The guard must
+#     require the resolved index.md to be STRICTLY inside the boundary,
+#     never equal to it.
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+boundary_real="$(real "$fixture")"
+mkdir -p "$fixture/docs/wiki"
+ln -s "$boundary_real" "$fixture/docs/wiki/index.md"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "symlink-escape via index.md == boundary root itself: empty stdout" "" "$out"
+parent_of_boundary="$(dirname "$boundary_real")"
+assert_not_contains "symlink-escape via index.md == boundary root: no boundary-parent leak" "$out" "$parent_of_boundary"
+
 # 9. relative pointer + subdir: pointer resolves against the config
 #    file's directory, not against start_dir or the git root.
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"

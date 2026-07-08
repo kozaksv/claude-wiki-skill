@@ -180,8 +180,14 @@ Propose installation only when **all** of these hold, checked in order:
    ask again.
 4. `~/.claude/wiki-hooks-optout` does not exist.
 5. The proposal has not already been shown once this session.
+6. `hooks/install-hooks.sh` exists (resolved relative to this skill's own
+   directory) and is executable. This installer ships in a later increment;
+   until that file lands, this whole branch has no target to run — silently
+   skip the proposal (do not ask, do not mention hooks, do not error). Once
+   the script ships, condition 6 becomes true automatically and no other
+   change is needed here.
 
-When all five hold, show a DECIDE prompt (once per session, never repeated
+When all six hold, show a DECIDE prompt (once per session, never repeated
 after the first decline/accept in the same session):
 
 ```
