@@ -49,6 +49,7 @@ SKILL_DIR="$HOME/claude-wiki-skill"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
 
 SKIPPED=0
+HOOKS_FAILED=0
 
 remove_symlink_entry() {
   local path="$1" expected_target="$2"
@@ -106,7 +107,13 @@ echo "=== Wiki Skill — uninstall ==="
 SKILL_LINK="$SKILLS_ROOT/wiki"
 if [ -x "$SKILL_LINK/hooks/uninstall-hooks.sh" ]; then
   if ! bash "$SKILL_LINK/hooks/uninstall-hooks.sh"; then
-    echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$SKILL_LINK/hooks/uninstall-hooks.sh\""
+    # Point the recovery command at the real clone-dir path, NOT through
+    # $SKILL_LINK — the symlink removal below (remove_symlink_entry
+    # "$SKILLS_ROOT/wiki") makes $SKILL_LINK dangling before the user can
+    # ever retry, which would otherwise strand the orphaned hook entries in
+    # settings.json with no working recovery command (agy-атк P1).
+    echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$SKILL_DIR/hooks/uninstall-hooks.sh\""
+    HOOKS_FAILED=1
   fi
 fi
 
@@ -126,7 +133,16 @@ rmdir "$SKILLS_ROOT" 2>/dev/null || true
 if [ "$REMOVE_CLONES" -eq 1 ]; then
   echo ""
   echo "Real clone directories:"
-  remove_clone_dir "$SKILL_DIR"
+  if [ "$HOOKS_FAILED" -eq 1 ]; then
+    # Keep the clone dir that hosts uninstall-hooks.sh so the recovery
+    # command printed above still exists to run. Removing it here would
+    # delete the only remaining path that can ever clean up the orphaned
+    # hook entries left in settings.json (agy-атк P1).
+    echo "$SKILL_DIR — skipped (git hooks removal failed; run the command above first, then re-run --remove-clones)"
+    SKIPPED=1
+  else
+    remove_clone_dir "$SKILL_DIR"
+  fi
   remove_clone_dir "$DOC_EXTRACT_DIR"
 else
   echo ""
