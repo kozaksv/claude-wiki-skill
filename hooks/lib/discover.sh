@@ -98,6 +98,28 @@ _wiki_disc_dir_pointers() {
   return 0
 }
 
+_wiki_disc_normalize_pointer() {
+  # $1 = raw pointer string extracted from a "## Wiki" section. The
+  # documented OLD one-line pointer format points directly AT the wiki's
+  # schema or index file (e.g. `knowledge/wiki/schema.md`), not at its
+  # containing directory. Downstream code (_wiki_disc_candidate) always
+  # appends "/index.md" to build the file it validates, so a pointer that
+  # already ends in schema.md/index.md must first be stripped down to its
+  # containing dir — otherwise the appended index.md lands under
+  # .../schema.md/index.md (schema.md treated as a directory) and the
+  # pointer never resolves, silently masking a valid non-default/custom
+  # wiki (fixwave0-4). Only the TRAILING filename is stripped so a
+  # directory that merely contains "schema.md"/"index.md" as a path
+  # segment elsewhere is left untouched.
+  local p="$1"
+  case "$p" in
+    */schema.md) printf '%s' "${p%/schema.md}" ;;
+    */index.md) printf '%s' "${p%/index.md}" ;;
+    schema.md | index.md) printf '%s' "." ;;
+    *) printf '%s' "$p" ;;
+  esac
+}
+
 _wiki_disc_candidate() {
   # $1 = candidate wiki-dir (unvalidated, may be relative-looking or
   #      contain .. segments; not yet realpath'd)
@@ -156,6 +178,7 @@ discover_wiki() {
       [ -n "$found_config_dir" ] || found_config_dir="$dir"
       while IFS= read -r raw; do
         [ -n "$raw" ] || continue
+        raw="$(_wiki_disc_normalize_pointer "$raw")"
         case "$raw" in
           /*) candidate="$raw" ;;
           *) candidate="$dir/$raw" ;;

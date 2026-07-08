@@ -421,6 +421,43 @@ expected="$(real "$fixture/knowledge/wiki")"
 out="$(discover_wiki "$fixture/sub" 2>/dev/null)"
 assert_eq "stale nested pointer does not mask valid root custom-path pointer" "$expected" "$out"
 
+# 12d. old one-line pointer format that points directly AT schema.md (the
+#      documented old pointer shape, e.g. `knowledge/wiki/schema.md`) must
+#      still resolve the containing wiki dir, not be treated as a
+#      directory itself (which would look for
+#      knowledge/wiki/schema.md/index.md and silently fail, masking a
+#      valid non-default/custom wiki — fixwave0-4).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/knowledge/wiki"
+printf 'custom wiki index' >"$fixture/knowledge/wiki/index.md"
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki schema at `knowledge/wiki/schema.md`.
+EOF
+expected="$(real "$fixture/knowledge/wiki")"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "old schema.md pointer resolves to its containing wiki dir" "$expected" "$out"
+
+# 12e. same, but the old one-line pointer points directly AT index.md
+#      instead of schema.md (e.g. `knowledge/wiki/index.md`) — must also
+#      normalize down to the containing dir before appending index.md.
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/knowledge/wiki"
+printf 'custom wiki index' >"$fixture/knowledge/wiki/index.md"
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki index at `knowledge/wiki/index.md`.
+EOF
+expected="$(real "$fixture/knowledge/wiki")"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "old index.md pointer resolves to its containing wiki dir" "$expected" "$out"
+
 # 13. set -euo pipefail safety: a "## Wiki" section that exists but has NO
 #     backtick token makes the awk|grep|head|sed pipe exit non-zero. Sourced
 #     under `set -euo pipefail`, discover_wiki must NOT abort the caller on
