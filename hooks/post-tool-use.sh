@@ -25,6 +25,17 @@
 # silently break the guard below and drop telemetry with no signal
 # (plan Task 3 point 3 + wave4 P1).
 #
+# MultiEdit shape (fixwave0-3 P1): MultiEdit's tool_input does not
+# reliably carry a single top-level `file_path` the way Edit/Write do — it
+# can instead (or additionally) carry a per-edit `file_path` on each entry
+# of `tool_input.edits[]`. Reading only the top-level field silently
+# skipped telemetry for every MultiEdit call. The stdin parser below
+# therefore collects the UNION of the top-level `tool_input.file_path`
+# (if any) and every distinct `tool_input.edits[].file_path` (if any), and
+# main() bumps telemetry once per distinct resolved path — covering both
+# the single-file-path shape and the per-edit-array shape without double
+# counting a path that appears in both places.
+#
 # Boundary guard: resolved realpath(file_path) must land strictly inside
 # realpath({wiki})/ — mirrors hooks/lib/discover.sh's own boundary-guard
 # posture so a wiki-external Read/Edit/Write can never mutate the
@@ -208,13 +219,33 @@ main() {
   local input
   input="$(cat)" || exit 0
 
-  # Single python3 pass over the raw stdin JSON: print tool_name on line 1,
-  # tool_input.file_path on line 2, the documented stdin `cwd` on line 3.
-  # Malformed JSON / non-object / missing keys all degrade to empty strings
-  # rather than raising — this hook must never fail loudly on an unexpected
-  # stdin shape.
-  local meta tool_name file_path stdin_cwd
-  meta="$(printf '%s' "$input" | python3 -c '
+  # Single python3 pass over the raw stdin JSON: NUL-separated fields —
+  # tool_name, then the documented stdin `cwd`, then every distinct
+  # candidate file path. Candidates are the UNION of the top-level
+  # `tool_input.file_path` (Edit/Write shape, and any MultiEdit that also
+  # sets it) and each `tool_input.edits[].file_path` (MultiEdit's per-edit
+  # array shape) — order-preserving de-dup so a path present in both
+  # places is only bumped once. Malformed JSON / non-object / missing keys
+  # all degrade to empty output rather than raising — this hook must never
+  # fail loudly on an unexpected stdin shape. NUL-separated (not
+  # newline-separated) so a pathological file_path containing a newline
+  # can never be mis-split into a bogus extra field, AND piped straight
+  # into the read loop via process substitution below rather than ever
+  # being captured into a plain bash variable — a bash variable cannot
+  # hold an embedded NUL byte (command substitution silently truncates at
+  # the first one), so an intermediate `meta="$(...)"` capture would drop
+  # every field after the first NUL.
+  local tool_name stdin_cwd
+  local tool_idx=0 field
+  local -a file_paths=()
+  while IFS= read -r -d '' field; do
+    case "$tool_idx" in
+      0) tool_name="$field" ;;
+      1) stdin_cwd="$field" ;;
+      *) file_paths+=("$field") ;;
+    esac
+    tool_idx=$((tool_idx + 1))
+  done < <(printf '%s' "$input" | python3 -c '
 import json, sys
 
 try:
@@ -225,21 +256,37 @@ if not isinstance(d, dict):
     d = {}
 
 tool_name = d.get("tool_name", "")
+if not isinstance(tool_name, str):
+    tool_name = ""
 tool_input = d.get("tool_input", {})
 if not isinstance(tool_input, dict):
     tool_input = {}
-file_path = tool_input.get("file_path", "")
 cwd = d.get("cwd", "")
+if not isinstance(cwd, str):
+    cwd = ""
 
-print(tool_name if isinstance(tool_name, str) else "")
-print(file_path if isinstance(file_path, str) else "")
-print(cwd if isinstance(cwd, str) else "")
-' 2>/dev/null)"
-  tool_name="$(printf '%s\n' "$meta" | sed -n '1p')"
-  file_path="$(printf '%s\n' "$meta" | sed -n '2p')"
-  stdin_cwd="$(printf '%s\n' "$meta" | sed -n '3p')"
+paths = []
+seen = set()
 
-  [ -n "$file_path" ] || exit 0
+
+def add(p):
+    if isinstance(p, str) and p and p not in seen:
+        seen.add(p)
+        paths.append(p)
+
+
+add(tool_input.get("file_path", ""))
+
+edits = tool_input.get("edits", [])
+if isinstance(edits, list):
+    for item in edits:
+        if isinstance(item, dict):
+            add(item.get("file_path", ""))
+
+sys.stdout.write("\0".join([tool_name, cwd] + paths) + "\0")
+' 2>/dev/null)
+
+  [ "${#file_paths[@]}" -gt 0 ] || exit 0
 
   local action
   case "$tool_name" in
@@ -266,60 +313,61 @@ print(cwd if isinstance(cwd, str) else "")
   wiki_real="$(realpath "$wiki" 2>/dev/null || true)"
   [ -n "$wiki_real" ] || exit 0
 
-  # file_path resolution: project-anchor-relative, never hook-cwd-relative.
-  local project_dir resolved_input file_real
-  project_dir="$anchor"
-  case "$file_path" in
-    /*) resolved_input="$file_path" ;;
-    *) resolved_input="$project_dir/$file_path" ;;
-  esac
-  file_real="$(realpath "$resolved_input" 2>/dev/null || true)"
-  [ -n "$file_real" ] || exit 0
-
-  # Boundary guard: resolved file must be strictly inside {wiki}/.
-  case "$file_real" in
-    "$wiki_real"/*) ;;
-    *) exit 0 ;;
-  esac
-
-  # Filters: only *.md, excluding the service-navigation pages and the
-  # entire {wiki}/log/ subtree (archived log shards — see the log/ guard
-  # below).
-  case "$file_real" in
-    *.md) ;;
-    *) exit 0 ;;
-  esac
-  local base
-  base="$(basename "$file_real")"
-  case "$base" in
-    index.md|schema.md|log.md) exit 0 ;;
-  esac
-
-  # Exclude the entire {wiki}/log/ subtree (archived log shards, e.g.
-  # {wiki}/log/2026-01-01_to_2026-01-02.md): wiki-structure.md's log-rotation
-  # "Out of scope" is explicit — "Shards are not tracked in
-  # {wiki}/.usage.json. Telemetry tracks knowledge pages, not the log
-  # substrate." A shard's basename passes the *.md filter above and is
-  # never index.md/schema.md/log.md, so without this guard every Read/Edit
-  # of a rotated shard would create a phantom page record that pollutes
-  # status/lint/doctor with fake page activity.
-  case "$file_real" in
-    "$wiki_real"/log/*) exit 0 ;;
-  esac
-
   # Version gate BEFORE any write: legacy/unrecognized schema -> untouched.
+  # Computed once for the whole invocation (same wiki for every candidate
+  # path in this tool call).
+  local gated=0
   if wiki_writable "$wiki_real" 2>/dev/null; then
     :
   elif wiki_bootstrappable "$wiki_real" 2>/dev/null; then
     :
   else
-    exit 0
+    gated=1
   fi
+  [ "$gated" -eq 0 ] || exit 0
 
-  local key
-  key="${file_real#"$wiki_real"/}"
+  local project_dir="$anchor"
+  local file_path resolved_input file_real base key
+  for file_path in "${file_paths[@]}"; do
+    # file_path resolution: project-anchor-relative, never hook-cwd-relative.
+    case "$file_path" in
+      /*) resolved_input="$file_path" ;;
+      *) resolved_input="$project_dir/$file_path" ;;
+    esac
+    file_real="$(realpath "$resolved_input" 2>/dev/null || true)"
+    [ -n "$file_real" ] || continue
 
-  _wiki_ptu_bump "$wiki_real" "$key" "$action"
+    # Boundary guard: resolved file must be strictly inside {wiki}/.
+    case "$file_real" in
+      "$wiki_real"/*) ;;
+      *) continue ;;
+    esac
+
+    # Filters: only *.md, excluding the service-navigation pages.
+    case "$file_real" in
+      *.md) ;;
+      *) continue ;;
+    esac
+    base="$(basename "$file_real")"
+    case "$base" in
+      index.md|schema.md|log.md) continue ;;
+    esac
+
+    # Exclude the entire {wiki}/log/ subtree (archived log shards, e.g.
+    # {wiki}/log/2026-01-01_to_2026-01-02.md — fixwave0-5): wiki-structure's
+    # log-rotation "Out of scope" is explicit — shards are not tracked in
+    # .usage.json; telemetry tracks knowledge pages, not the log substrate.
+    # A shard passes the *.md filter and is never index/schema/log.md, so
+    # without this guard every Read/Edit of a rotated shard would create a
+    # phantom page record polluting status/lint/doctor.
+    case "$file_real" in
+      "$wiki_real"/log/*) continue ;;
+    esac
+
+    key="${file_real#"$wiki_real"/}"
+    _wiki_ptu_bump "$wiki_real" "$key" "$action"
+  done
+
   exit 0
 }
 

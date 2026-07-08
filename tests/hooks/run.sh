@@ -1145,7 +1145,54 @@ echo '{"tool_name":"Read","cwd":"'"$fixture"'","tool_input":{"file_path":"docs/w
 assert_eq "post-tool-use: relative file_path resolves against stdin cwd when CLAUDE_PROJECT_DIR unset" \
   "1" "$(_ptu_field "$u" "foo.md" "view_count")"
 
-# 11. Regression: post-tool-use.sh MUST be committed executable. install
+# 11. MultiEdit with a top-level tool_input.file_path (the Edit/Write-like
+#     shape) bumps patch_count same as Edit/Write — this shape already
+#     worked before fixwave0-3, kept as a guard against regressing it.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+_ptu_stdin "MultiEdit" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: MultiEdit (top-level file_path) bumps patch_count to 1" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+
+# 12. fixwave0-3 P1: MultiEdit whose tool_input carries NO top-level
+#     file_path at all, only a `edits[]` array where each entry carries its
+#     own `file_path` — telemetry must still be bumped (this is the shape
+#     that used to be silently skipped entirely).
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+printf '{"tool_name":"MultiEdit","tool_input":{"edits":[{"file_path":"%s","old_string":"a","new_string":"b"}]}}' \
+  "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: MultiEdit edits[].file_path (no top-level file_path) exits 0" "0" "$rc"
+assert_eq "post-tool-use: MultiEdit edits[].file_path bumps patch_count to 1" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+
+# 13. fixwave0-3 P1: a single MultiEdit call whose edits[] touches TWO
+#     distinct wiki pages must bump BOTH records — no edit target is
+#     dropped just because it isn't the (possibly absent) top-level
+#     file_path.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+printf 'body\n' >"$fixture/docs/wiki/bar.md"
+printf '{"tool_name":"MultiEdit","tool_input":{"edits":[{"file_path":"%s","old_string":"a","new_string":"b"},{"file_path":"%s","old_string":"c","new_string":"d"}]}}' \
+  "$fixture/docs/wiki/foo.md" "$fixture/docs/wiki/bar.md" \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: MultiEdit multi-file edits[] bumps first file" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+assert_eq "post-tool-use: MultiEdit multi-file edits[] bumps second file" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "bar.md" "patch_count")"
+
+# 14. fixwave0-3: a path present as BOTH the top-level file_path AND (again)
+#     inside edits[] must only be bumped ONCE (de-dup, not double-counted).
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+printf '{"tool_name":"MultiEdit","tool_input":{"file_path":"%s","edits":[{"file_path":"%s","old_string":"a","new_string":"b"},{"old_string":"c","new_string":"d"}]}}' \
+  "$fixture/docs/wiki/foo.md" "$fixture/docs/wiki/foo.md" \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: MultiEdit same path in file_path + edits[] bumps once (no double count)" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+
+# 15. Regression: post-tool-use.sh MUST be committed executable. install
 #     registers `test -x <canonical> && <canonical> || exit 0`, so a
 #     non-executable file (git mode 100644) makes the installed hook a silent
 #     no-op — PostToolUse telemetry never fires (codex-атк P1). The blocks
