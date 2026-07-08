@@ -204,4 +204,22 @@ PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones
 expect_exists "$TMP/real-hook-ran"
 expect_missing "$HOME_DIR/claude-wiki-skill"
 
+# A verified clone (real .git dir) whose uninstall-hooks.sh has LOST its
+# executable bit (Windows clone, zip/copy) must still run the cleanup script
+# via `bash`, not fall back to the orphaned-hooks warning path.
+setup_installed_tree
+mkdir -p "$HOME_DIR/claude-wiki-skill/hooks"
+cat >"$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh" <<HOOK
+#!/usr/bin/env bash
+touch "$TMP/noexec-hook-ran"
+HOOK
+chmod -x "$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-noexec-hook.log" 2>&1
+expect_exists "$TMP/noexec-hook-ran"
+expect_missing "$HOME_DIR/claude-wiki-skill"
+grep -q "записи hooks лишились" "$TMP/uninstall-noexec-hook.log" && {
+  echo "expected non-executable-but-present uninstaller to still run cleanup, not warn about orphaned hooks"
+  exit 1
+}
+
 echo "uninstall: ok"

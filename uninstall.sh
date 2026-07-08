@@ -122,7 +122,7 @@ echo "=== Wiki Skill — uninstall ==="
 HOOK_UNINSTALLER="$SKILL_DIR/hooks/uninstall-hooks.sh"
 HOOK_MARKER="/skills/wiki/hooks/"
 SETTINGS_JSON="$HOME/.claude/settings.json"
-if [ -d "$SKILL_DIR/.git" ] && [ -x "$HOOK_UNINSTALLER" ]; then
+if [ -d "$SKILL_DIR/.git" ] && [ -f "$HOOK_UNINSTALLER" ]; then
   if ! bash "$HOOK_UNINSTALLER"; then
     echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$HOOK_UNINSTALLER\""
     HOOKS_FAILED=1
