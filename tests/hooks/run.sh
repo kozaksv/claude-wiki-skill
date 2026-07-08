@@ -620,6 +620,98 @@ if wiki_bootstrappable "$wiki"; then r=0; else r=1; fi
 assert_eq "wiki_bootstrappable: .usage.json dangling symlink -> false" "1" "$r"
 rm -f "$wiki/.usage.json"
 
+# k. frontmatter wiki_version "4.1" (a MINOR bump within the current
+#    MAJOR) -> writable true. Only an exact-string "4.0" match used to
+#    pass; a v4.5-skill-valid "4.1" wiki must gate open the same as
+#    "4.0" (fixwave0-3: schema major gate).
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+cat >"$wiki/schema.md" <<'EOF'
+---
+wiki_version: "4.1"
+---
+
+# Schema
+EOF
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: version 4.1 (major 4) -> true" "0" "$r"
+if wiki_bootstrappable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_bootstrappable: version 4.1, .usage.json present -> false" "1" "$r"
+
+# k2. same, but .usage.json absent -> bootstrappable true, mirroring the
+#     "4.0" behavior in test b for a "4.1" wiki.
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+cat >"$wiki/schema.md" <<'EOF'
+---
+wiki_version: "4.1"
+---
+
+# Schema
+EOF
+rm -f "$wiki/.usage.json"
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: version 4.1, .usage.json absent -> false" "1" "$r"
+if wiki_bootstrappable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_bootstrappable: version 4.1, .usage.json absent -> true" "0" "$r"
+
+# l. frontmatter wiki_version "4.5" -> also writable true (any 4.x is
+#    current per the v4.5 skill's versioning contract).
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+cat >"$wiki/schema.md" <<'EOF'
+---
+wiki_version: "4.5"
+---
+
+# Schema
+EOF
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: version 4.5 (major 4) -> true" "0" "$r"
+
+# m. frontmatter wiki_version "4" (bare major, no dot at all) -> also
+#    accepted, per "keep it robust to values like '4', '4.1', '4.5'".
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+cat >"$wiki/schema.md" <<'EOF'
+---
+wiki_version: "4"
+---
+
+# Schema
+EOF
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: bare version 4 (no dot) -> true" "0" "$r"
+
+# n. frontmatter wiki_version "40" -> major-only compare must NOT treat
+#    this as major 4 via a loose prefix match; "40" is a different major
+#    entirely and must stay rejected.
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+cat >"$wiki/schema.md" <<'EOF'
+---
+wiki_version: "40"
+---
+
+# Schema
+EOF
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: version 40 -> false (not major 4 via prefix match)" "1" "$r"
+
+# o. frontmatter wiki_version "5.0" (a genuinely newer major) -> still
+#    rejected — the major gate is 4, not "4 or newer".
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+cat >"$wiki/schema.md" <<'EOF'
+---
+wiki_version: "5.0"
+---
+
+# Schema
+EOF
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: version 5.0 -> false (major 5 != current major 4)" "1" "$r"
+
 echo "=== session-start.sh ===" >&2
 
 # session-start.sh is a standalone hook process (it calls `exit` on every

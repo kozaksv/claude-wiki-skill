@@ -14,6 +14,14 @@
 # here only.
 WIKI_HOOK_CURRENT_SCHEMA_VERSION="4.0"
 
+# The gate accepts ANY schema MAJOR matching this value (e.g. "4.0",
+# "4.1", "4.5" all pass when this is "4") — the v4.5 skill's versioning
+# contract treats any 4.x wiki as current, not just the literal "4.0"
+# that shipped first (fixwave0-3). Derived from
+# WIKI_HOOK_CURRENT_SCHEMA_VERSION's leading integer so there is still a
+# single place to bump on a genuine major bump (e.g. to "5.0").
+WIKI_HOOK_CURRENT_SCHEMA_MAJOR="${WIKI_HOOK_CURRENT_SCHEMA_VERSION%%.*}"
+
 _wiki_ver_frontmatter() {
   # $1 = file. Prints the body of the FIRST YAML frontmatter block (the
   # lines strictly between the first "---" line and the next "---"
@@ -39,7 +47,17 @@ _wiki_ver_frontmatter() {
 
 _wiki_ver_schema_ok() {
   # $1 = wiki dir. 0 iff {wiki}/schema.md's frontmatter contains an
-  # anchored `wiki_version: "<current>"` line.
+  # anchored `wiki_version: "<N>"` or `wiki_version: "<N>.<...>"` line
+  # whose leading integer (the MAJOR component, before the first dot)
+  # equals WIKI_HOOK_CURRENT_SCHEMA_MAJOR. Compared by MAJOR only, NOT an
+  # exact-string match against WIKI_HOOK_CURRENT_SCHEMA_VERSION — a valid
+  # v4 wiki with `wiki_version: "4.1"` (or "4", "4.5", ...) must gate
+  # open exactly like "4.0" does, since the v4.5 skill's versioning
+  # contract treats any 4.x schema as current (fixwave0-3). A bare
+  # numeric prefix with no dot ("4") is also accepted; a value whose
+  # leading integer merely starts with the major digit but is a longer
+  # number (e.g. "40") is rejected because %%.*  strips only up to the
+  # first dot, leaving "40" != "4".
   local wiki_dir="$1"
   local schema="$wiki_dir/schema.md"
   [ -f "$schema" ] || return 1
@@ -48,9 +66,14 @@ _wiki_ver_schema_ok() {
   fm="$(_wiki_ver_frontmatter "$schema")" || return 1
   [ -n "$fm" ] || return 1
 
-  local ver_re
-  ver_re="$(printf '%s' "$WIKI_HOOK_CURRENT_SCHEMA_VERSION" | sed 's/\./\\./g')"
-  printf '%s\n' "$fm" | grep -qE '^wiki_version:[[:space:]]*"'"$ver_re"'"[[:space:]]*$'
+  local ver_line ver_value major
+  ver_line="$(printf '%s\n' "$fm" | grep -E '^wiki_version:[[:space:]]*"[0-9]+(\.[0-9]+)*"[[:space:]]*$' | head -n1)"
+  [ -n "$ver_line" ] || return 1
+
+  ver_value="$(printf '%s\n' "$ver_line" | sed -E 's/^wiki_version:[[:space:]]*"([0-9]+(\.[0-9]+)*)".*/\1/')"
+  major="${ver_value%%.*}"
+
+  [ "$major" = "$WIKI_HOOK_CURRENT_SCHEMA_MAJOR" ]
 }
 
 wiki_writable() {
