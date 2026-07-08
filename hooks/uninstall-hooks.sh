@@ -16,10 +16,17 @@
 # empty; an event array (`SessionStart`/`PostToolUse`) is dropped once it
 # holds no entries. Everything else in settings.json is untouched.
 #
-# Exits 0 when there is nothing to do (no python3, or settings.json does
-# not exist). Any real failure (unreadable/corrupt settings.json, lock
-# timeout, write failure) exits non-zero with a message on stderr and
-# leaves settings.json untouched.
+# Exits 0 only when there is verifiably nothing to do: settings.json does
+# not exist, OR python3 is unavailable but settings.json carries no hook
+# marker anyway. Any real failure — including python3 being unavailable
+# WHILE the marker is still present, since removal can then never be
+# verified — (unreadable/corrupt settings.json, lock timeout, write
+# failure) exits non-zero with a message on stderr and leaves settings.json
+# untouched. This matters because uninstall.sh checks this script's exit
+# code before deciding whether it is safe to delete the clone that hosts
+# this recovery script (fixwave0-4 P2): a false "0 = cleaned up" here would
+# let --remove-clones destroy the only remaining way to clean up orphaned
+# global hook entries.
 
 set -uo pipefail
 
@@ -27,11 +34,6 @@ fail() {
   echo "uninstall-hooks: $*" >&2
   exit 1
 }
-
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "uninstall-hooks: python3 not found — skipping hook removal" >&2
-  exit 0
-fi
 
 : "${HOME:?uninstall-hooks: HOME is not set}"
 HOME_DIR="$HOME"
@@ -45,6 +47,21 @@ MARKER="/skills/wiki/hooks/"
 
 if [ ! -f "$SETTINGS_FILE" ]; then
   # Nothing installed, nothing to remove.
+  exit 0
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  # python3 is required to safely parse/rewrite settings.json. If the file
+  # still carries our hook marker we cannot perform (or verify) removal, so
+  # this is a REAL failure, not a no-op — see the exit-code contract above.
+  # grep is a best-effort substring check (not JSON-aware) but that is
+  # exactly the same "marker in command string" test the python merge step
+  # below uses, so it is precise enough to distinguish "nothing to do" from
+  # "removal needed but impossible".
+  if grep -Fq "$MARKER" "$SETTINGS_FILE" 2>/dev/null; then
+    fail "python3 not found — cannot remove hook entries from $SETTINGS_FILE (marker still present)"
+  fi
+  echo "uninstall-hooks: python3 not found — no hook markers present in $SETTINGS_FILE, nothing to remove" >&2
   exit 0
 fi
 

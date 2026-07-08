@@ -1502,6 +1502,49 @@ env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
 assert_eq "wiki-only entry: uninstall removes matcher-entry entirely, no empty leftovers" "False" \
   "$(json_get "$f" "'SessionStart' in d.get('hooks', {})")"
 
+# 6c. fixwave0-4 P2: no python3 on PATH at uninstall time.
+#     6c1: settings.json still carries the wiki hook marker -> removal can
+#     neither be performed NOR verified, so this MUST be a non-zero exit
+#     (not the old "skip and exit 0"), and settings.json must be left
+#     byte-identical — a caller (uninstall.sh) that gates --remove-clones on
+#     this exit code must refuse to delete the clone hosting the recovery
+#     script. Curated PATH mirrors the "no python3" technique used for
+#     post-tool-use.sh above: symlink every OTHER tool uninstall-hooks.sh's
+#     early-exit path needs (bash, grep) but omit python3, so the failure is
+#     provably the script's own python3 guard and not a missing-tool 127.
+curated_path_dir="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-nopython-uninstall.XXXXXX")"
+track_tmp "$curated_path_dir"
+for _tool in bash grep; do
+  _tool_src="$(command -v "$_tool" 2>/dev/null)"
+  [ -n "$_tool_src" ] && ln -s "$_tool_src" "$curated_path_dir/$_tool"
+done
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+env "${WH_ENV[@]}" HOME="$home" PATH="$curated_path_dir:$PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+sha_before="$(_sha "$f")"
+err="$(env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" PATH="$curated_path_dir" bash "$UNINSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "uninstall: no python3 + marker present -> non-zero exit" "1" "$rc"
+assert_file_unchanged "uninstall: no python3 + marker present -> settings.json byte-identical" "$f" "$sha_before"
+assert_contains "uninstall: no python3 + marker present -> stderr mentions python3" "$err" "python3"
+
+#     6c2: no python3 AND no wiki marker present (nothing installed) ->
+#     genuinely nothing to do, must still exit 0.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+cat >"$f" <<'EOF'
+{
+  "hooks": {
+    "Stop": [{"matcher": "*", "hooks": [{"type": "command", "command": "/foreign/stop.sh"}]}]
+  }
+}
+EOF
+sha_before="$(_sha "$f")"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" PATH="$curated_path_dir" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+rc=$?
+assert_eq "uninstall: no python3 + no marker -> exit 0 (nothing to do)" "0" "$rc"
+assert_file_unchanged "uninstall: no python3 + no marker -> settings.json untouched" "$f" "$sha_before"
+
 # 7. Fail-open: the registered command wraps the canonical script in
 #    `test -x ... && ... || exit 0`. Once that script is missing (as it
 #    always is under a throwaway fake HOME with no real skill clone),
