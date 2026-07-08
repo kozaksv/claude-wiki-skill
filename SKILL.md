@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.3.0"
+version: "4.4.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
@@ -106,7 +106,7 @@ Load the smallest set of references that covers the user's request:
 | Run lint / verify wiki health | `references/discovery-versioning.md`, `references/operation-lint.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
 | Split a large page | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-split.md`, `references/telemetry.md`, `references/reflection.md` |
 | Cleanup / resolve lint/status actions | `references/discovery-versioning.md`, `references/operation-cleanup.md`, `references/operation-lint.md`, `references/cleanup-flow.md`, `references/maintenance-and-mistakes.md` |
-| Reflection / crystallization / new skill creation | `references/reflection.md`, `references/crystallization.md`, `references/cleanup-flow.md`, `references/self-improvement.md` |
+| Reflection / crystallization | `references/reflection.md`, `references/crystallization.md`, `references/cleanup-flow.md`, `references/self-improvement.md` |
 | Telemetry sidecar details | `references/telemetry.md` |
 | Wiki layer and navigation conventions | `references/wiki-structure.md` |
 

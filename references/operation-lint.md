@@ -385,6 +385,6 @@ When ALL buckets (🟢 / 🟡 / 🔵) are empty (clean wiki, nothing applied, no
 
 Lint, `wiki status`, and cleanup-flow never emit a separate РЕФЛЕКСІЯ block. The lint report itself is the visible reasoning layer: it shows what was verified, what was auto-applied, what needs a decision, and how to revert. Adding reflection after that is recursive noise.
 
-If AUTO fixes were applied, the report's 🟢 / ВІДКАТ sections carry the explanation and rollback handles. If the user later says `відкат` / `відкат N`, perform the revert and print a short confirmation («Відкатив N правок. Файли повернуто.»), but still do not append a РЕФЛЕКСІЯ block or cleanup-prompt.
+If AUTO fixes were applied, the report's 🟢 / ВІДКАТ sections carry the explanation and rollback handles. If the user later says `відкат` / `відкат N`, perform the revert and print a short confirmation («Відкатив N правок. Файли повернуто.»), but still do not append a РЕФЛЕКСІЯ block.
 
 ---
