@@ -16,12 +16,14 @@
 # swallowed. This hook NEVER writes anything else and NEVER blocks tool
 # execution: every path ends in `exit 0`.
 #
-# file_path resolution: `tool_input.file_path` is resolved against the
-# ABSOLUTE `$CLAUDE_PROJECT_DIR` (falling back to `pwd` only when that var
-# is unset), never against the hook process's own cwd — Claude Code hands
-# hooks a project-root-relative file_path while the hook's cwd can be any
-# subdirectory, so resolving against cwd would silently break the guard
-# below and drop telemetry with no signal (plan Task 3 point 3).
+# file_path resolution: `tool_input.file_path` is resolved against a
+# project anchor with strict precedence `$CLAUDE_PROJECT_DIR` -> stdin
+# `cwd` (documented hook-input field) -> `pwd`, never against the hook
+# process's own cwd alone — Claude Code hands hooks a project-root-relative
+# file_path while the hook's cwd can be any subdirectory, and
+# CLAUDE_PROJECT_DIR is not guaranteed to be exported; missing both would
+# silently break the guard below and drop telemetry with no signal
+# (plan Task 3 point 3 + wave4 P1).
 #
 # Boundary guard: resolved realpath(file_path) must land strictly inside
 # realpath({wiki})/ — mirrors hooks/lib/discover.sh's own boundary-guard
@@ -56,6 +58,7 @@ _wiki_ptu_bump() {
   local wiki_dir="$1" key="$2" action="$3"
   command -v python3 >/dev/null 2>&1 || return 0
   python3 - "$wiki_dir" "$key" "$action" 2>/dev/null <<'PYEOF'
+import fcntl
 import json
 import os
 import stat
@@ -65,6 +68,36 @@ import time
 
 wiki_dir, key, action = sys.argv[1], sys.argv[2], sys.argv[3]
 usage_path = os.path.join(wiki_dir, ".usage.json")
+
+# Serialize the whole read-modify-write against concurrent hook writers
+# (agy-атк P1, wave3: two overlapping tool hooks clobbered each other's
+# records — last rename wins, the other invocation's bumps vanish). The
+# advisory flock lives on the WIKI DIRECTORY fd: the dir inode is stable,
+# whereas locking the usage file itself would race with the atomic rename
+# below that replaces it; and no lockfile litters the wiki tree. Shared
+# invariant with hooks/session-start.sh's heartbeat writer. Non-blocking
+# with a short retry — a contender holds it for milliseconds; if the lock
+# still cannot be taken, we skip this bump entirely (tolerance: one lost
+# increment beats blocking tool execution or losing ANOTHER file's records).
+lock_fd = None
+try:
+    lock_fd = os.open(wiki_dir, os.O_RDONLY)
+except OSError:
+    sys.exit(0)
+locked = False
+for _ in range(10):
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        locked = True
+        break
+    except OSError:
+        time.sleep(0.03)
+if not locked:
+    try:
+        os.close(lock_fd)
+    except Exception:
+        pass
+    sys.exit(0)
 
 # Read the sidecar defensively (codex-атк P1). The version-gate already
 # rejects a symlink / FIFO / char-device .usage.json, but this open() is
@@ -176,10 +209,11 @@ main() {
   input="$(cat)" || exit 0
 
   # Single python3 pass over the raw stdin JSON: print tool_name on line 1,
-  # tool_input.file_path on line 2. Malformed JSON / non-object / missing
-  # keys all degrade to empty strings rather than raising — this hook must
-  # never fail loudly on an unexpected stdin shape.
-  local meta tool_name file_path
+  # tool_input.file_path on line 2, the documented stdin `cwd` on line 3.
+  # Malformed JSON / non-object / missing keys all degrade to empty strings
+  # rather than raising — this hook must never fail loudly on an unexpected
+  # stdin shape.
+  local meta tool_name file_path stdin_cwd
   meta="$(printf '%s' "$input" | python3 -c '
 import json, sys
 
@@ -195,12 +229,15 @@ tool_input = d.get("tool_input", {})
 if not isinstance(tool_input, dict):
     tool_input = {}
 file_path = tool_input.get("file_path", "")
+cwd = d.get("cwd", "")
 
 print(tool_name if isinstance(tool_name, str) else "")
 print(file_path if isinstance(file_path, str) else "")
+print(cwd if isinstance(cwd, str) else "")
 ' 2>/dev/null)"
   tool_name="$(printf '%s\n' "$meta" | sed -n '1p')"
   file_path="$(printf '%s\n' "$meta" | sed -n '2p')"
+  stdin_cwd="$(printf '%s\n' "$meta" | sed -n '3p')"
 
   [ -n "$file_path" ] || exit 0
 
@@ -211,16 +248,27 @@ print(file_path if isinstance(file_path, str) else "")
     *) exit 0 ;;
   esac
 
+  # Project anchor with strict precedence CLAUDE_PROJECT_DIR -> stdin cwd
+  # -> pwd (wave4 P1: Claude Code does not always export
+  # CLAUDE_PROJECT_DIR, but the hook stdin carries the documented `cwd`;
+  # anchoring at the hook process's own pwd alone mis-resolves relative
+  # file_path when the session sits in a subdirectory and silently drops
+  # telemetry). The same anchor seeds discovery.
+  local anchor
+  anchor="${CLAUDE_PROJECT_DIR:-}"
+  [ -n "$anchor" ] || anchor="$stdin_cwd"
+  [ -n "$anchor" ] || anchor="$(pwd)"
+
   local wiki
-  wiki="$(discover_wiki 2>/dev/null)"
+  wiki="$(discover_wiki "$anchor" 2>/dev/null)"
   [ -n "$wiki" ] || exit 0
   local wiki_real
   wiki_real="$(realpath "$wiki" 2>/dev/null || true)"
   [ -n "$wiki_real" ] || exit 0
 
-  # file_path resolution: project-root-relative, never hook-cwd-relative.
+  # file_path resolution: project-anchor-relative, never hook-cwd-relative.
   local project_dir resolved_input file_real
-  project_dir="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+  project_dir="$anchor"
   case "$file_path" in
     /*) resolved_input="$file_path" ;;
     *) resolved_input="$project_dir/$file_path" ;;

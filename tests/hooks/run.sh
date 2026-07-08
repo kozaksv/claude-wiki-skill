@@ -679,6 +679,25 @@ rc=$?
 assert_eq "session-start: no wiki -> empty stdout" "" "$out"
 assert_eq "session-start: no wiki -> exit 0" "0" "$rc"
 
+# FIFO .usage.json must NEVER hang Claude Code startup (agy-атк P0, wave3):
+# the read is O_NONBLOCK + S_ISREG-guarded, so the hook returns promptly,
+# still exits 0, and the read-only index injection still happens.
+fixture="$(make_fixture)"
+rm -f "$fixture/docs/wiki/.usage.json"
+mkfifo "$fixture/docs/wiki/.usage.json"
+if command -v timeout >/dev/null 2>&1; then
+  _timeout="timeout 10"
+elif command -v gtimeout >/dev/null 2>&1; then
+  _timeout="gtimeout 10"
+else
+  _timeout=""
+fi
+out="$(CLAUDE_PROJECT_DIR="$fixture" $_timeout bash "$SESSION_START_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start: FIFO .usage.json -> returns promptly, exit 0 (never blocks startup)" "0" "$rc"
+assert_contains "session-start: FIFO .usage.json -> index still injected (read-only degrade)" "$out" "=== WIKI INDEX (hook-injected) ==="
+rm -f "$fixture/docs/wiki/.usage.json"
+
 echo "=== post-tool-use.sh ===" >&2
 
 # post-tool-use.sh is a standalone hook process (it calls `exit` on every
@@ -1025,6 +1044,24 @@ rc=$?
 assert_eq "post-tool-use: FIFO .usage.json -> returns promptly, exit 0 (never blocks)" "0" "$rc"
 rm -f "$fixture/docs/wiki/.usage.json"
 
+# 9b. Concurrent bumps are serialized by the wiki-dir flock (agy-атк P1,
+#     wave3): N overlapping hook invocations on the SAME page must all
+#     survive — before the lock, overlapping read-modify-write lost
+#     increments (last rename wins). Deterministic with the lock: exactly N.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+_ptu_n=6
+_ptu_pids=()
+for _ in $(seq 1 "$_ptu_n"); do
+  _ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1 &
+  _ptu_pids+=("$!")
+done
+for _p in "${_ptu_pids[@]}"; do
+  wait "$_p" 2>/dev/null || true
+done
+assert_eq "post-tool-use: $_ptu_n concurrent bumps all survive (flock serializes RMW)" \
+  "$_ptu_n" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
 # 10. Relative file_path resolves against the documented stdin `cwd` when
 #     $CLAUDE_PROJECT_DIR is UNSET and the hook runs from a subdir. Without
 #     parsing stdin cwd the anchor falls back to pwd (the subdir), the
@@ -1038,7 +1075,7 @@ mkdir -p "$fixture/some/other/subdir"
 echo '{"tool_name":"Read","cwd":"'"$fixture"'","tool_input":{"file_path":"docs/wiki/foo.md"}}' \
   | ( cd "$fixture/some/other/subdir" && env -u CLAUDE_PROJECT_DIR bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1 )
 assert_eq "post-tool-use: relative file_path resolves against stdin cwd when CLAUDE_PROJECT_DIR unset" \
-  "1" "$(ptu_field "$u" "d['foo.md']['view_count']")"
+  "1" "$(_ptu_field "$u" "foo.md" "view_count")"
 
 # 11. Regression: post-tool-use.sh MUST be committed executable. install
 #     registers `test -x <canonical> && <canonical> || exit 0`, so a

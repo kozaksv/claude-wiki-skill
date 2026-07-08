@@ -52,18 +52,19 @@ LOCK_ACQUIRED_MKDIR=0
 on_exit() {
   local ec=$? owner=""
   if [ "$LOCK_ACQUIRED_MKDIR" = "1" ]; then
-    # Tear down the lock ONLY if we still own it. A slow/suspended holder
-    # can be force-cleared and have the lock re-acquired by another process
-    # (dead-pid or mtime-age reclaim in acquire_mkdir); that new owner has
-    # written its OWN, different pid into $LOCK_DIR/pid. Blindly rm/rmdir-ing
-    # here would delete the LIVE owner's lock and expose settings.json to a
-    # concurrent unguarded write (agy-атк P1). So remove only when the pid
-    # file still names us ($$), or is empty/absent — the empty/absent case
-    # is our own mid-acquire window (mkdir done, pid not yet written), which
-    # the mtime fallback in acquire_mkdir protects from steals, so it is
-    # unambiguously ours to clean up.
+    # Tear down the lock ONLY when the pid file names us ($$) — NEVER on an
+    # empty/absent pid (agy-атк P0, wave4). An empty pid here is ambiguous:
+    # it can be our own mid-acquire window, but it can just as well be a NEW
+    # owner's mid-acquire window after an mtime-age reclaim of our stalled
+    # lock (we slept between mkdir and echo, B reclaimed and mkdir'ed, B has
+    # not written its pid yet, we wake up and exit). Deleting on empty pid
+    # would destroy B's live lock and let a third process corrupt
+    # settings.json concurrently. The trade-off of never deleting an
+    # empty-pid lock: if we crash in our own mkdir→echo window, our lock dir
+    # lingers until the next client's mtime-age fallback reclaims it
+    # (self-healing, bounded by LOCK_TIMEOUT) — correctness over speed.
     owner="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
-    if [ -z "$owner" ] || [ "$owner" = "$$" ]; then
+    if [ "$owner" = "$$" ]; then
       rm -f "$LOCK_DIR/pid" 2>/dev/null
       rmdir "$LOCK_DIR" 2>/dev/null
     fi

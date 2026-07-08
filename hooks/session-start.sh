@@ -62,8 +62,10 @@ _wiki_ss_telemetry() {
   command -v python3 >/dev/null 2>&1 || return 0
   python3 - "$wiki_dir" "$writable" "$WIKI_SS_LINT_REMINDER_SECS" 2>/dev/null <<'PYEOF'
 import calendar
+import fcntl
 import json
 import os
+import stat
 import sys
 import tempfile
 import time
@@ -73,17 +75,65 @@ writable = sys.argv[2] == "1"
 reminder_secs = int(sys.argv[3])
 usage_path = os.path.join(wiki_dir, ".usage.json")
 
-data = {}
-parse_ok = False
-if os.path.exists(usage_path):
+
+def read_usage():
+    # Defensive read — same shared invariant as hooks/post-tool-use.sh
+    # (agy-атк P0, wave3: this hook runs on Claude Code STARTUP, so a
+    # blocking open here is a full startup denial of service):
+    #   * O_NOFOLLOW  -> a .usage.json symlink raises ELOOP instead of
+    #     slurping external JSON into the injected-session flow;
+    #   * O_NONBLOCK  -> a FIFO / char-device opens immediately instead of
+    #     hanging forever; the fstat/S_ISREG check then rejects it before
+    #     any read. Anything not a plain regular file -> ({}, False).
+    d, ok, fd = {}, False, None
     try:
-        with open(usage_path, "r", encoding="utf-8") as f:
-            loaded = json.load(f)
-        if isinstance(loaded, dict):
-            data = loaded
-            parse_ok = True
+        fd = os.open(usage_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            f = os.fdopen(fd, "r", encoding="utf-8")
+            fd = None  # ownership passed to f
+            with f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                d, ok = loaded, True
     except Exception:
         pass
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+    return d, ok
+
+
+def try_lock():
+    # Serialize .usage.json read-modify-write across session-start and
+    # post-tool-use (agy-атк P1, wave3: unserialized RMW loses records)
+    # via an advisory flock on the WIKI DIRECTORY fd: the dir inode is
+    # stable (locking the usage file itself would race with the atomic
+    # rename that replaces it) and no lockfile litters the wiki tree.
+    # Non-blocking with a short retry — a contender holds the lock for
+    # milliseconds; if it cannot be taken, the caller skips the write
+    # (tolerance: a lost heartbeat beats a blocked startup).
+    try:
+        lfd = os.open(wiki_dir, os.O_RDONLY)
+    except OSError:
+        return None
+    for _ in range(10):
+        try:
+            fcntl.flock(lfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return lfd
+        except OSError:
+            time.sleep(0.03)
+    try:
+        os.close(lfd)
+    except Exception:
+        pass
+    return None
+
+
+lock_fd = try_lock()
+data, parse_ok = read_usage()
 
 hooks_meta = data.get("_hooks")
 if not isinstance(hooks_meta, dict):
@@ -101,7 +151,10 @@ if isinstance(last_lint_at, str) and last_lint_at:
 
 print("REMINDER=1" if reminder_needed else "REMINDER=0")
 
-if writable and parse_ok:
+# Heartbeat write: only for a current-schema wiki (writable), only when the
+# sidecar parsed as an object, and only UNDER the lock — without it a
+# concurrent post-tool-use bump between our read and rename would be lost.
+if writable and parse_ok and lock_fd is not None:
     try:
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         hooks_meta["session_start_at"] = now
@@ -119,6 +172,12 @@ if writable and parse_ok:
                 os.unlink(tmp_path)
             except Exception:
                 pass
+    except Exception:
+        pass
+
+if lock_fd is not None:
+    try:
+        os.close(lock_fd)
     except Exception:
         pass
 PYEOF
