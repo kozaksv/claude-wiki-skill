@@ -50,10 +50,18 @@ instruction file exists — repair routes to the existing Step 0
 pointer-repair/cross-agent-sync flow (`references/discovery-versioning.md`).
 
 **(2) Schema version.** Read `wiki_version` from `{wiki}/schema.md`
-frontmatter and compare against this SKILL.md's `version`. ✅ state is
-`current`. ⚠️ state is `legacy`/`older`/`newer` per the Versioning &
-Migration table — repair routes to the existing migration flow, never an
-auto-migration from doctor itself.
+frontmatter and compare its **major** component against this SKILL.md's
+`version` major — an **equal-major** comparison, never exact full-version
+string equality. Per the Versioning & Migration table: schema major `4`
+(from `wiki_version: "4.0"`, `"4.1"`, …) matches skill major `4` (from
+`version: "4.5.0"`, `"4.4.0"`, …). v4.x releases change agent/installer
+behavior, not the on-disk wiki schema, so a fresh v4.x skill still writes
+(and reads back) `wiki_version: "4.0"` and that is `current` — comparing the
+full version strings for equality would wrongly flag every healthy v4 wiki
+as legacy/older. ✅ state is `current` (schema major == skill major). ⚠️
+state is `legacy`/`older`/`newer` per the Versioning & Migration table —
+repair routes to the existing migration flow, never an auto-migration from
+doctor itself.
 
 **(3) `.usage.json`.** Parse the sidecar. ✅ parses as JSON, and every
 non-`_`-prefixed record carries all ten fields (`view_count`, `use_count`,

@@ -557,6 +557,18 @@ grep -q '_hooks' "$ROOT/references/telemetry.md" ||
 grep -q 'post_tool_use_at' "$ROOT/references/telemetry.md" ||
   fail "telemetry.md must define the _hooks.post_tool_use_at field and dual-signal rule"
 
+# fixwave0-7: Doctor's schema-version check must compare the schema MAJOR
+# against the skill major (per the Versioning & Migration table), never a
+# literal full-version equality — an exact-equality reading would misreport
+# every healthy v4 wiki (on-disk wiki_version "4.0" vs a v4.5 skill) as
+# legacy/older and wrongly route it into migration.
+if grep -qE "compare against this SKILL\.md's \`version\`\.[[:space:]]*✅" "$ROOT/references/operation-doctor.md"; then
+  fail "operation-doctor.md schema-version check reads as exact full-version equality (misreports healthy v4 wikis as legacy) — must compare schema MAJOR vs skill major"
+fi
+
+grep -qE 'schema major.*skill major|skill major.*schema major' "$ROOT/references/operation-doctor.md" ||
+  fail "operation-doctor.md schema-version check must explicitly compare schema major against skill major (per the Versioning & Migration table)"
+
 grep -q 'last_lint_at' "$ROOT/references/operation-lint.md" ||
   fail "operation-lint.md must write _hooks.last_lint_at at the end of a lint run"
 
