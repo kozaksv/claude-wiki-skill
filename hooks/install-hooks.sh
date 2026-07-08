@@ -104,9 +104,22 @@ is_pid_alive() {
 
 dir_age_seconds() {
   local d="$1" mtime now
+  # BSD `stat -f %m` (macOS) vs GNU `stat -c %Y` (Linux) are mutually
+  # rejected by each other's stat — EXCEPT GNU stat also accepts `-f`
+  # (its own, unrelated --file-system flag) without erroring, so
+  # `stat -f %m "$d"` on Linux does not fail cleanly: it silently emits
+  # non-numeric filesystem-status text instead of an mtime. Validate each
+  # candidate's output is a plain integer before trusting it, rather than
+  # trusting "non-empty" as if it meant "correct".
   mtime="$(stat -f %m "$d" 2>/dev/null)"
+  case "$mtime" in
+    ''|*[!0-9]*) mtime="" ;;
+  esac
   if [ -z "$mtime" ]; then
     mtime="$(stat -c %Y "$d" 2>/dev/null)"
+    case "$mtime" in
+      ''|*[!0-9]*) mtime="" ;;
+    esac
   fi
   [ -z "$mtime" ] && return 1
   now="$(date +%s)"

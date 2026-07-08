@@ -1399,6 +1399,59 @@ env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL
 assert_eq "stale-lock recovery (no pid file, old mtime): install still succeeds" "0" "$rc"
 assert_eq "stale-lock recovery (no pid file, old mtime): SessionStart has 1 entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
 
+# 11c. dir_age_seconds portability (P2): on GNU/Linux, `stat -f %m "$d"`
+#      doesn't mean "print mtime" — `-f` is GNU stat's unrelated
+#      --file-system flag — so it emits non-numeric filesystem-status
+#      text instead of failing cleanly. A fake `stat` shim ahead of PATH
+#      reproduces exactly that: `-f` yields non-numeric non-empty
+#      output, `-c %Y` yields the real mtime (GNU-only path). Without
+#      validating the `-f` output is numeric before trusting it, the
+#      stale mkdir-fallback lock (no pid file, old mtime) is never
+#      detected as stale and the competing install hangs to its own
+#      timeout instead of reclaiming it.
+fake_stat_dir="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-fakestat.XXXXXX")"
+track_tmp "$fake_stat_dir"
+cat >"$fake_stat_dir/stat" <<'FAKESTAT'
+#!/usr/bin/env bash
+# Simulates GNU coreutils stat's behavior for `-f %m FILE`: -f is the
+# unrelated --file-system flag, so it does NOT print an mtime and does
+# NOT fail cleanly — it prints non-numeric filesystem-status text and
+# exits 0. `-c %Y FILE` behaves like the real GNU stat mtime query.
+if [ "$1" = "-f" ]; then
+  echo "not-a-number-filesystem-status"
+  exit 0
+elif [ "$1" = "-c" ]; then
+  fmt="$2"; file="$3"
+  if command /usr/bin/stat -f %m "$file" >/dev/null 2>&1; then
+    command /usr/bin/stat -f %m "$file"
+  else
+    command /usr/bin/stat -c %Y "$file"
+  fi
+  exit 0
+fi
+exit 1
+FAKESTAT
+chmod +x "$fake_stat_dir/stat"
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+lockdir="$home/.claude/settings.json.lockdir"
+mkdir -p "$lockdir"
+python3 -c "import os,time; os.utime('$lockdir', (time.time()-300, time.time()-300))"
+rc=0
+env PATH="$fake_stat_dir:$PATH" WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "dir_age_seconds portability: GNU-style non-numeric 'stat -f' still reclaims stale lock (install)" "0" "$rc"
+assert_eq "dir_age_seconds portability: install succeeded despite fake stat" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+lockdir="$home/.claude/settings.json.lockdir"
+env PATH="$fake_stat_dir:$PATH" WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+mkdir -p "$lockdir"
+python3 -c "import os,time; os.utime('$lockdir', (time.time()-300, time.time()-300))"
+rc=0
+env PATH="$fake_stat_dir:$PATH" WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "dir_age_seconds portability: GNU-style non-numeric 'stat -f' still reclaims stale lock (uninstall)" "0" "$rc"
+
 # 12. Interrupt while holding the mkdir-fallback lock: the EXIT/INT/TERM
 #     trap must remove the lock dir completely, never leaving a deadlock
 #     for the next run. WIKI_HOOKS_TEST_SLEEP_AFTER_LOCK holds the lock
