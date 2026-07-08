@@ -156,6 +156,27 @@ ln -s "$TMP/evil" "$HOME_DIR/.claude/skills/wiki"
 PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" >"$TMP/uninstall-foreign-hook.log" 2>&1
 expect_missing "$TMP/evil-ran"
 
+# An UNVERIFIED $SKILL_DIR (exists, carries an executable
+# hooks/uninstall-hooks.sh, but is NOT a git clone — stale/unrelated/
+# attacker-planted dir at the fixed path) must never have its script run;
+# with a lingering hook marker it falls into the orphaned-hooks branch
+# instead (codex-кор P1, wave5).
+setup_installed_tree
+rm -rf "$HOME_DIR/claude-wiki-skill/.git"
+mkdir -p "$HOME_DIR/claude-wiki-skill/hooks" "$HOME_DIR/.claude"
+cat >"$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh" <<PLANTED
+#!/usr/bin/env bash
+touch "$TMP/planted-ran"
+PLANTED
+chmod +x "$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"command":"x /skills/wiki/hooks/session-start.sh"}]}]}}\n' >"$HOME_DIR/.claude/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" >"$TMP/uninstall-unverified-clone.log" 2>&1
+expect_missing "$TMP/planted-ran"
+grep -q "записи hooks лишились" "$TMP/uninstall-unverified-clone.log" || {
+  echo "expected unverified-clone case to fall into the orphaned-hooks branch"
+  exit 1
+}
+
 # Missing clone uninstaller + orphaned hook marker in settings.json: the
 # clone that hosts the recovery script must be preserved under --remove-clones
 # (agy-кор / codex-атк P1 — the "symlink absent / script missing" case).

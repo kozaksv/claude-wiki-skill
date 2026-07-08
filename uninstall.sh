@@ -112,10 +112,17 @@ echo "=== Wiki Skill — uninstall ==="
 # legitimate coverage: when $SKILLS_ROOT/wiki correctly points at $SKILL_DIR,
 # "$SKILLS_ROOT/wiki/hooks/uninstall-hooks.sh" IS "$SKILL_DIR/hooks/
 # uninstall-hooks.sh" — the same file.
+#
+# The call is additionally gated on $SKILL_DIR being a VERIFIED clone
+# (same `.git` check --remove-clones uses below): the path is fixed, so a
+# stale, unrelated, or attacker-planted ~/claude-wiki-skill carrying an
+# executable hooks/uninstall-hooks.sh must never be executed just because
+# it exists (codex-кор P1, wave5). An unverified dir with a lingering hook
+# marker falls into the orphaned-hooks branch below instead.
 HOOK_UNINSTALLER="$SKILL_DIR/hooks/uninstall-hooks.sh"
 HOOK_MARKER="/skills/wiki/hooks/"
 SETTINGS_JSON="$HOME/.claude/settings.json"
-if [ -x "$HOOK_UNINSTALLER" ]; then
+if [ -d "$SKILL_DIR/.git" ] && [ -x "$HOOK_UNINSTALLER" ]; then
   if ! bash "$HOOK_UNINSTALLER"; then
     echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$HOOK_UNINSTALLER\""
     HOOKS_FAILED=1
