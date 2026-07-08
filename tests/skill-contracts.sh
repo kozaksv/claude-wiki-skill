@@ -529,6 +529,21 @@ if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
   fail "no-code project detection must not invent people/documents categories"
 fi
 
+grep -q 'version: "4.5.0"' "$ROOT/SKILL.md" ||
+  fail "SKILL.md frontmatter must be bumped to 4.5.0"
+
+[ -f "$ROOT/references/operation-doctor.md" ] ||
+  fail "references/operation-doctor.md must exist (wiki doctor operation)"
+
+grep -q 'operation-doctor.md' "$ROOT/SKILL.md" ||
+  fail "SKILL.md must route to references/operation-doctor.md"
+
+grep -q 'wiki-hooks-optout' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery-versioning.md must define the wiki-hooks-optout marker"
+
+grep -q '### 4.5.0' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery-versioning.md Migration Log must have a ### 4.5.0 entry"
+
 skill_version="$(sed -n 's/^version: "\([0-9][0-9]*\)\..*/\1/p' "$ROOT/SKILL.md" | head -1)"
 init_schema_major="$(grep -E 'wiki_version: "[0-9]+\.' "$ROOT/references/operation-init.md" | sed -n 's/.*wiki_version: "\([0-9][0-9]*\)\..*/\1/p' | head -1)"
 [ -n "$skill_version" ] || fail "could not parse SKILL.md major version"

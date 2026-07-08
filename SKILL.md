@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.4.0"
+version: "4.5.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
@@ -60,7 +60,11 @@ migration. Never create a second wiki if a valid existing wiki can be found.
 
 1. **READ FIRST.** До першої project-specific відповіді в сесії — прочитай
    `{wiki}/index.md` та сторінки, на які він вказує по темі питання. Не
-   після відповіді, не «пізніше», не «коли буде час» — спочатку.
+   після відповіді, не «пізніше», не «коли буде час» — спочатку. Якщо на
+   старті сесії хук уже інжектнув блок `WIKI INDEX (hook-injected)` у
+   контекст — це виконаний READ FIRST лише для `index.md`. Тематичні
+   сторінки, на які index вказує по темі питання, все одно треба прочитати
+   й процитувати окремо — інжект їх не підміняє.
 2. **CITE OR FAIL.** Кожна project-specific claim, recipe, path, config,
    setup-step, «як ми робимо X», «де лежить Y», «як працює Z» МАЄ нести
    `[[wikilink]]` на сторінку вікі, що це підтверджує. Відповідь без
@@ -86,6 +90,8 @@ migration. Never create a second wiki if a valid existing wiki can be found.
 | «Це не project-specific»             | Якщо торкаєшся paths/configs/decisions цього проєкту — є.        |
 | «Цитата зайва, бо очевидно»          | Цитата дешева. Її відсутність = баг за контрактом.               |
 | «Я вже читав вікі в попередній сесії»| Resident-контекст не зберігся між сесіями. Читай знову.          |
+| «Хук інжектнув index → усе прочитано»| Ні, інжект = лише `index.md`. Тематичні сторінки читай і цитуй сам. |
+| «Інжект-блок є → хук веде телеметрію, ручні bump не потрібні»| Ні, інжект доводить лише живий SessionStart-хук. Супресію ручних `bump_view`/`bump_patch` дозволяє ЛИШЕ свіжий `_hooks.post_tool_use_at`, інакше bump вручну (`references/telemetry.md`). |
 
 Контракт не залежить від типу операції — він діє завжди, коли є валідна
 вікі для поточного проєкту. Operation Query (`references/operation-query.md`)
@@ -104,6 +110,7 @@ Load the smallest set of references that covers the user's request:
 | Ask project-specific questions / recipes / setup details | `references/discovery-versioning.md`, `references/operation-query.md`, `references/telemetry.md` |
 | Print wiki status | `references/discovery-versioning.md`, `references/operation-wiki-status.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
 | Run lint / verify wiki health | `references/discovery-versioning.md`, `references/operation-lint.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
+| Diagnose/repair wiki+hooks health (`wiki doctor`, `полікуй вікі`, `перевір здоров'я вікі`, `онови вікі`) | `references/discovery-versioning.md`, `references/operation-doctor.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
 | Split a large page | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-split.md`, `references/telemetry.md`, `references/reflection.md` |
 | Cleanup / resolve lint/status actions | `references/discovery-versioning.md`, `references/operation-cleanup.md`, `references/operation-lint.md`, `references/cleanup-flow.md`, `references/maintenance-and-mistakes.md` |
 | Reflection / crystallization | `references/reflection.md`, `references/crystallization.md`, `references/cleanup-flow.md`, `references/self-improvement.md` |
@@ -162,6 +169,7 @@ All operation bodies live in references:
 - `references/operation-lint.md`
 - `references/operation-split.md`
 - `references/operation-cleanup.md`
+- `references/operation-doctor.md`
 
 The supporting contracts are:
 

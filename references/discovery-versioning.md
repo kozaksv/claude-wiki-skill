@@ -163,6 +163,58 @@
 
 All paths below use `{wiki}` as placeholder for the discovered wiki directory (e.g., `docs/wiki/`). Replace mentally with the actual path.
 
+### Hook provisioning (Claude Code only)
+
+After Step 0 resolves a valid wiki, and only when the active agent is Claude
+Code, offer to install the global session hooks that auto-inject
+`{wiki}/index.md` at session start and keep `.usage.json` heartbeats warm.
+This is a host-side, cross-project install — it never touches project files
+or the wiki itself.
+
+Propose installation only when **all** of these hold, checked in order:
+
+1. The active agent is Claude Code (not Codex, not Gemini CLI).
+2. Step 0 found a valid wiki for this project.
+3. The current session context contains **no** `WIKI INDEX (hook-injected)`
+   block — if the block is already present, hooks are already active; do not
+   ask again.
+4. `~/.claude/wiki-hooks-optout` does not exist.
+5. The proposal has not already been shown once this session.
+
+When all five hold, show a DECIDE prompt (once per session, never repeated
+after the first decline/accept in the same session):
+
+```
+Хочеш поставити глобальні session-хуки для wiki (Claude Code)? Вони
+автоінжектять {wiki}/index.md на старті сесії і оновлюють телеметрію
+використання сторінок. Хости — глобальні, per-machine, не per-project.
+
+[y] встановити   [n] не зараз   [не питай більше] більше не пропонувати
+```
+
+- **`y`** — if no canonical hook marker exists yet in
+  `~/.claude/settings.json`, run `install-hooks.sh`. Tell the user hooks
+  activate from the *next* session (Claude Code limitation — the current
+  session's context was already assembled before install).
+- **`y`, but a canonical marker already exists** — this is the "marker
+  present but no inject" branch: a hook entry is registered yet no
+  `WIKI INDEX (hook-injected)` block appeared this session, meaning hooks
+  are broken (stale script path, lost executable bit, missing `python3`,
+  etc.), not simply un-installed. Do **not** blindly reinstall/overwrite —
+  route to `references/operation-doctor.md` (`wiki doctor`) to diagnose the
+  actual cause first.
+- **`n`** — continue the originally requested operation; do not ask again
+  this session (condition 5 already prevents that), but a future session may
+  ask again.
+- **`не питай більше`** — create (touch) `~/.claude/wiki-hooks-optout` as an
+  empty marker file. Its mere existence is the opt-out signal (condition 4);
+  no content is read from it. Future sessions skip the proposal entirely
+  until the user deletes that file themselves.
+
+This proposal is provisioning only — it never runs without the conditions
+above, never fires more than once per session, and never overrides an
+explicit prior opt-out.
+
 ### Cross-agent instruction-file sync
 
 After Step 0 resolves a valid wiki, keep the project-local resident hints in
@@ -386,6 +438,23 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.5.0 (2026-07-08)
+- No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki
+  migrations required for existing wikis. All new artifacts are host-side:
+  optional global Claude Code session hooks
+  (`~/.claude/skills/wiki/hooks/…`, registered via canonical symlink path in
+  `~/.claude/settings.json`) that auto-inject `{wiki}/index.md` at session
+  start and heartbeat `.usage.json` telemetry, plus the `hooks/` directory
+  shipped inside this skill's own repo. Session-Start Contract clarified:
+  a hook-injected index block satisfies READ FIRST for `index.md` only,
+  never a substitute for reading/citing topic pages, and never proof by
+  itself that PostToolUse telemetry is alive (see `references/telemetry.md`
+  dual-signal rule). New `## Operation: Wiki Doctor`
+  (`references/operation-doctor.md`) diagnoses wiki *and* hook health
+  read-only. New Hook provisioning subsection (this file) offers one-time
+  per-session opt-in installation, gated on Claude Code + a found wiki + no
+  existing inject-block + no `~/.claude/wiki-hooks-optout` marker.
 
 ### 4.4.0 (2026-07-07)
 - No schema migration (`wiki_version` stays `"4.0"`); zero migrations required
