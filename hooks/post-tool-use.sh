@@ -45,10 +45,13 @@ source "$HOOK_DIR/lib/version-gate.sh"
 # $2 = record key (path relative to {wiki}/), $3 = action ("view"|"patch").
 # Reads {wiki}/.usage.json (corrupt/non-object -> treated as `{}`, per
 # telemetry.md Tolerance rules), creates the 10-field-default record if the
-# key is absent, bumps the relevant counters + timestamp, stamps
-# `_hooks.post_tool_use_at`, and writes back atomically (tmp file in the
-# same dir + rename). No python3 on PATH, or any read/write error: swallowed
-# silently — this function never raises the caller's attention.
+# key is absent. For a record that already exists, migrates a legacy
+# `pinned` field to `protected` and backfills any other missing v4 fields
+# with defaults (telemetry.md "Field-rename compat" / "Backfill missing
+# keys silently") before bumping. Bumps the relevant counters + timestamp,
+# stamps `_hooks.post_tool_use_at`, and writes back atomically (tmp file in
+# the same dir + rename). No python3 on PATH, or any read/write error:
+# swallowed silently — this function never raises the caller's attention.
 _wiki_ptu_bump() {
   local wiki_dir="$1" key="$2" action="$3"
   command -v python3 >/dev/null 2>&1 || return 0
@@ -74,20 +77,33 @@ if os.path.exists(usage_path):
 
 now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+DEFAULTS = {
+    "view_count": 0,
+    "use_count": 0,
+    "patch_count": 0,
+    "last_viewed_at": None,
+    "last_used_at": None,
+    "last_patched_at": None,
+    "created_at": now,
+    "state": "active",
+    "protected": False,
+    "archived_at": None,
+}
+
 rec = data.get(key)
 if not isinstance(rec, dict):
-    rec = {
-        "view_count": 0,
-        "use_count": 0,
-        "patch_count": 0,
-        "last_viewed_at": None,
-        "last_used_at": None,
-        "last_patched_at": None,
-        "created_at": now,
-        "state": "active",
-        "protected": False,
-        "archived_at": None,
-    }
+    rec = dict(DEFAULTS)
+else:
+    # telemetry.md "Field-rename compat": on the first write to a record
+    # still carrying the legacy `pinned` key, silently migrate its value
+    # to `protected` and drop `pinned`.
+    if "pinned" in rec:
+        rec["protected"] = rec.pop("pinned")
+    # telemetry.md "Backfill missing keys silently": a record that already
+    # exists but predates newer fields gets those fields filled with
+    # defaults, without touching any field it already has.
+    for _field, _default in DEFAULTS.items():
+        rec.setdefault(_field, _default)
 
 if action == "view":
     rec["view_count"] = int(rec.get("view_count") or 0) + 1

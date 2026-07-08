@@ -822,6 +822,62 @@ _ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" ba
 if [ -f "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
 assert_eq "post-tool-use: legacy schema + missing .usage.json -> sidecar NOT created" "1" "$r"
 
+# 11. Legacy `pinned` field -> migrated to `protected` on write, old key
+#     dropped (telemetry.md "Field-rename compat", v4.0.0 -> v4.0.x).
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+python3 -c "
+import json
+d = {'foo.md': {
+    'view_count': 3, 'use_count': 0, 'patch_count': 1,
+    'last_viewed_at': None, 'last_used_at': None, 'last_patched_at': None,
+    'created_at': '2026-01-01T00:00:00Z', 'state': 'active',
+    'pinned': True, 'archived_at': None,
+}}
+json.dump(d, open('$fixture/docs/wiki/.usage.json', 'w'))
+"
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+prot="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "protected")"
+assert_eq "post-tool-use: legacy pinned:true migrated to protected" "True" "$prot"
+has_pinned="$(python3 -c "
+import json
+d = json.load(open('$fixture/docs/wiki/.usage.json'))
+print('pinned' in d.get('foo.md', {}))
+")"
+assert_eq "post-tool-use: legacy pinned key dropped after migration" "False" "$has_pinned"
+vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: pinned-migration write still bumps view_count" "4" "$vc"
+
+# 12. Existing record missing newer v4 fields (state/protected/archived_at)
+#     -> backfilled with defaults on write, existing fields left untouched
+#     (telemetry.md "Backfill missing keys silently").
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+python3 -c "
+import json
+d = {'foo.md': {'view_count': 2, 'use_count': 0, 'patch_count': 0,
+    'last_viewed_at': None, 'last_used_at': None, 'last_patched_at': None,
+    'created_at': '2026-01-01T00:00:00Z'}}
+json.dump(d, open('$fixture/docs/wiki/.usage.json', 'w'))
+"
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+field_count="$(python3 -c "
+import json
+d = json.load(open('$fixture/docs/wiki/.usage.json'))
+print(len(d.get('foo.md', {})))
+")"
+assert_eq "post-tool-use: legacy record backfilled to 10 fields" "10" "$field_count"
+state="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "state")"
+assert_eq "post-tool-use: backfilled state defaults to active" "active" "$state"
+created="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "created_at")"
+assert_eq "post-tool-use: backfill leaves existing created_at untouched" "2026-01-01T00:00:00Z" "$created"
+vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: backfill write bumps pre-existing view_count" "3" "$vc"
+
 # ---- summary ----
 echo "" >&2
 echo "pass: $PASS  fail: $FAIL" >&2
