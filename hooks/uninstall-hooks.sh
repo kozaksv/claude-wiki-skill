@@ -40,6 +40,7 @@ SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 LOCK_DIR="$SETTINGS_FILE.lockdir"
 LOCK_TIMEOUT="${WIKI_HOOKS_LOCK_TIMEOUT:-10}"
 LOCK_POLL="${WIKI_HOOKS_LOCK_POLL:-0.2}"
+LOCK_MAX_AGE="${WIKI_HOOKS_LOCK_MAX_AGE:-3600}"
 MARKER="/skills/wiki/hooks/"
 
 if [ ! -f "$SETTINGS_FILE" ]; then
@@ -101,6 +102,17 @@ dir_age_seconds() {
   echo $((now - mtime))
 }
 
+reclaim_lock() {
+  # Atomically CLAIM the stale lock before destroying it (fixwave0-1 P0,
+  # TOCTOU) — mirrors install-hooks.sh reclaim_lock exactly: rename(2) lets
+  # exactly ONE of several same-verdict claimers win; losers re-loop
+  # instead of tearing down the winner's freshly re-acquired live lock.
+  local claim="$LOCK_DIR.claim.$$"
+  if mv "$LOCK_DIR" "$claim" 2>/dev/null; then
+    rm -rf "$claim" 2>/dev/null
+  fi
+}
+
 # mkdir-based fallback lock: same contract as install-hooks.sh
 # acquire_mkdir — pid file written first, directory removed second (see
 # on_exit above), so a bare `rmdir` on a nonempty dir never hangs cleanup.
@@ -122,14 +134,24 @@ acquire_mkdir() {
     else
       pid=""
     fi
-    if [ -n "$pid" ] && is_pid_alive "$pid"; then
-      : # live owner — never steal, just wait.
-    elif [ -n "$pid" ]; then
-      # Non-empty pid naming a dead/unreadable process -> genuinely stale
-      # lock; force-clear and retry.
-      rm -f "$LOCK_DIR/pid" 2>/dev/null
-      rmdir "$LOCK_DIR" 2>/dev/null
-      continue
+    if [ -n "$pid" ]; then
+      # PID-recycle deadlock guard (P1, fixwave0-2) — mirrors
+      # install-hooks.sh: liveness of a stored pid is never, on its own,
+      # grounds to wait forever (the OS may have recycled a crashed
+      # holder's pid onto an unrelated long-running process). Age is
+      # checked FIRST and wins unconditionally past LOCK_MAX_AGE.
+      age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
+      if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_MAX_AGE" ]; then
+        reclaim_lock
+        continue
+      elif is_pid_alive "$pid"; then
+        : # live owner within the max-age bound — never steal, just wait.
+      else
+        # Non-empty pid naming a dead/unreadable process -> genuinely
+        # stale lock; atomically claim + destroy and retry immediately.
+        reclaim_lock
+        continue
+      fi
     else
       # Empty OR absent pid file. An empty pid file is NOT a dead owner: it
       # is the winner's mid-acquire race window — `mkdir` has succeeded and
@@ -137,13 +159,11 @@ acquire_mkdir() {
       # here would steal a lock whose owner is a live process about to run
       # under it, defeating mutual exclusion (agy-атк P1). Treat empty
       # EXACTLY like absent: fall back to mtime age as the ONLY reclaim
-      # signal, so only a genuinely abandoned lock is ever reclaimed. Remove
-      # the (possibly-present, possibly-empty) pid file before rmdir, since
-      # rmdir fails on a non-empty directory.
+      # signal, so only a genuinely abandoned lock is ever reclaimed
+      # (atomic claim-then-destroy — see reclaim_lock).
       age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
       if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_TIMEOUT" ]; then
-        rm -f "$LOCK_DIR/pid" 2>/dev/null
-        rmdir "$LOCK_DIR" 2>/dev/null
+        reclaim_lock
         continue
       fi
     fi

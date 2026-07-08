@@ -143,6 +143,20 @@ dir_age_seconds() {
   echo $((now - mtime))
 }
 
+reclaim_lock() {
+  # Atomically CLAIM the stale lock before destroying it (fixwave0-1 P0,
+  # TOCTOU): with a naive `rm pid; rmdir`, two contenders that BOTH judged
+  # the lock stale race each other — A clears and re-mkdirs, then B (acting
+  # on its own earlier staleness verdict) clears A's freshly acquired live
+  # lock, and a third process enters concurrently. rename(2) is atomic:
+  # exactly ONE claimer wins the `mv`; losers fail and simply re-loop. The
+  # claimed dir is then destroyed under a private name nobody else races.
+  local claim="$LOCK_DIR.claim.$$"
+  if mv "$LOCK_DIR" "$claim" 2>/dev/null; then
+    rm -rf "$claim" 2>/dev/null
+  fi
+}
+
 # mkdir-based fallback lock: atomic `mkdir` as the mutex. Crash/interrupt
 # recovery relies on the EXIT/INT/TERM trap above (installed before this
 # ever runs) — the pid file is written FIRST, the directory removed
@@ -176,17 +190,15 @@ acquire_mkdir() {
       # force-cleared no matter what kill -0 says.
       age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
       if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_MAX_AGE" ]; then
-        rm -f "$LOCK_DIR/pid" 2>/dev/null
-        rmdir "$LOCK_DIR" 2>/dev/null
+        reclaim_lock
         continue
       elif is_pid_alive "$pid"; then
         : # live owner within the max-age bound — never steal, just wait.
       else
         # Non-empty pid naming a dead/unreadable process -> genuinely
-        # stale lock; force-clear and retry immediately (no need to wait
-        # out LOCK_MAX_AGE when the pid is verifiably not running).
-        rm -f "$LOCK_DIR/pid" 2>/dev/null
-        rmdir "$LOCK_DIR" 2>/dev/null
+        # stale lock; atomically claim + destroy and retry immediately (no
+        # need to wait out LOCK_MAX_AGE when the pid is verifiably dead).
+        reclaim_lock
         continue
       fi
     else
@@ -196,13 +208,11 @@ acquire_mkdir() {
       # here would steal a lock whose owner is a live process about to run
       # under it, defeating mutual exclusion (agy-атк P1). Treat empty
       # EXACTLY like absent: fall back to mtime age as the ONLY reclaim
-      # signal, so only a genuinely abandoned lock is ever reclaimed. Remove
-      # the (possibly-present, possibly-empty) pid file before rmdir, since
-      # rmdir fails on a non-empty directory.
+      # signal, so only a genuinely abandoned lock is ever reclaimed
+      # (atomic claim-then-destroy — see reclaim_lock).
       age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
       if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_TIMEOUT" ]; then
-        rm -f "$LOCK_DIR/pid" 2>/dev/null
-        rmdir "$LOCK_DIR" 2>/dev/null
+        reclaim_lock
         continue
       fi
     fi

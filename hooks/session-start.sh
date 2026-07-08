@@ -78,13 +78,21 @@ _wiki_ss_telemetry() {
   command -v python3 >/dev/null 2>&1 || return 0
   python3 - "$wiki_dir" "$writable" "$WIKI_SS_LINT_REMINDER_SECS" 2>/dev/null <<'PYEOF'
 import calendar
-import fcntl
 import json
 import os
 import stat
 import sys
 import tempfile
 import time
+
+try:
+    import fcntl
+except ImportError:
+    # Windows python3 ships no fcntl (agy-атк P1, wave8): a bare import
+    # would crash the whole helper and silently kill BOTH the heartbeat
+    # and the lint-reminder. Degrade to unlocked writes instead — on a
+    # platform without flock, last-writer-wins beats dead telemetry.
+    fcntl = None
 
 wiki_dir = sys.argv[1]
 writable = sys.argv[2] == "1"
@@ -139,7 +147,11 @@ def try_lock():
     # rename that replaces it) and no lockfile litters the wiki tree.
     # Non-blocking with a short retry — a contender holds the lock for
     # milliseconds; if it cannot be taken, the caller skips the write
-    # (tolerance: a lost heartbeat beats a blocked startup).
+    # (tolerance: a lost heartbeat beats a blocked startup). On platforms
+    # without fcntl (Windows) returns the -1 sentinel: "no locking here,
+    # proceed unlocked" — distinct from None ("lock contended, skip write").
+    if fcntl is None:
+        return -1
     try:
         lfd = os.open(wiki_dir, os.O_RDONLY)
     except OSError:
@@ -204,7 +216,7 @@ if writable and parse_ok and lock_fd is not None:
     except Exception:
         pass
 
-if lock_fd is not None:
+if isinstance(lock_fd, int) and lock_fd >= 0:
     try:
         os.close(lock_fd)
     except Exception:

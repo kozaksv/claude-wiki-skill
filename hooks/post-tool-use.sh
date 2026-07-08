@@ -69,13 +69,21 @@ _wiki_ptu_bump() {
   local wiki_dir="$1" key="$2" action="$3"
   command -v python3 >/dev/null 2>&1 || return 0
   python3 - "$wiki_dir" "$key" "$action" 2>/dev/null <<'PYEOF'
-import fcntl
 import json
 import os
 import stat
 import sys
 import tempfile
 import time
+
+try:
+    import fcntl
+except ImportError:
+    # Windows python3 ships no fcntl (agy-атк P1, wave8): a bare import
+    # would crash the helper and silently kill ALL telemetry there.
+    # Degrade to unlocked read-modify-write instead — on a platform
+    # without flock, last-writer-wins beats dead telemetry.
+    fcntl = None
 
 wiki_dir, key, action = sys.argv[1], sys.argv[2], sys.argv[3]
 usage_path = os.path.join(wiki_dir, ".usage.json")
@@ -91,24 +99,25 @@ usage_path = os.path.join(wiki_dir, ".usage.json")
 # still cannot be taken, we skip this bump entirely (tolerance: one lost
 # increment beats blocking tool execution or losing ANOTHER file's records).
 lock_fd = None
-try:
-    lock_fd = os.open(wiki_dir, os.O_RDONLY)
-except OSError:
-    sys.exit(0)
-locked = False
-for _ in range(10):
+if fcntl is not None:
     try:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        locked = True
-        break
+        lock_fd = os.open(wiki_dir, os.O_RDONLY)
     except OSError:
-        time.sleep(0.03)
-if not locked:
-    try:
-        os.close(lock_fd)
-    except Exception:
-        pass
-    sys.exit(0)
+        sys.exit(0)
+    locked = False
+    for _ in range(10):
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+            break
+        except OSError:
+            time.sleep(0.03)
+    if not locked:
+        try:
+            os.close(lock_fd)
+        except Exception:
+            pass
+        sys.exit(0)
 
 # Read the sidecar defensively (codex-атк P1). The version-gate already
 # rejects a symlink / FIFO / char-device .usage.json, but this open() is
