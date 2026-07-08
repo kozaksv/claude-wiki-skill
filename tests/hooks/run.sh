@@ -20,6 +20,8 @@ DISCOVER_LIB="$ROOT/hooks/lib/discover.sh"
 VERSION_GATE_LIB="$ROOT/hooks/lib/version-gate.sh"
 SESSION_START_HOOK="$ROOT/hooks/session-start.sh"
 POST_TOOL_USE_HOOK="$ROOT/hooks/post-tool-use.sh"
+INSTALL_HOOKS_SCRIPT="$ROOT/hooks/install-hooks.sh"
+UNINSTALL_HOOKS_SCRIPT="$ROOT/hooks/uninstall-hooks.sh"
 
 # shellcheck source=../../hooks/lib/discover.sh
 source "$DISCOVER_LIB"
@@ -1022,6 +1024,306 @@ _ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" $_
 rc=$?
 assert_eq "post-tool-use: FIFO .usage.json -> returns promptly, exit 0 (never blocks)" "0" "$rc"
 rm -f "$fixture/docs/wiki/.usage.json"
+
+echo "=== install-hooks.sh / uninstall-hooks.sh ===" >&2
+
+# install-hooks.sh / uninstall-hooks.sh are standalone processes (they
+# `exit` on every path) and mutate a GLOBAL-shaped ~/.claude/settings.json
+# — every invocation below points HOME at a throwaway tmp dir so the real
+# ~/.claude is never touched (plan Task 4 test-fixture requirement).
+#
+# WIKI_HOOKS_FORCE_MKDIR_LOCK=1 pins every call to the mkdir-fallback lock
+# path so these tests are deterministic regardless of whether the host
+# happens to have `flock` installed (stock macOS does not; some Linux CI
+# images do) — the plan's crash/interrupt-recovery and stale-lock
+# requirements are specifically about that fallback. WIKI_HOOKS_LOCK_TIMEOUT
+# / WIKI_HOOKS_LOCK_POLL are kept small so the deliberately-slow scenarios
+# below stay fast.
+
+make_fake_home() {
+  local dir
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-home.XXXXXX")"
+  track_tmp "$dir"
+  mkdir -p "$dir/.claude"
+  printf '%s' "$dir"
+}
+
+# json_get <file> <python-expr-on-loaded-dict-d> -> prints repr(eval(expr))
+# or __ERR__ if the file is missing/invalid or the expr raises.
+#
+# eval() here is safe: <python-expr> is always a literal string hardcoded
+# in THIS test file below (e.g. "len(d['hooks']['SessionStart'])"), never
+# data read from the JSON fixture or any other untrusted source — `d` is
+# the only external input and it only flows in via json.load(), not eval.
+json_get() {
+  python3 -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(eval(sys.argv[2]))
+except Exception:
+    print('__ERR__')
+" "$1" "$2" 2>/dev/null
+}
+
+WH_ENV=(WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1)
+
+# 1. Empty settings.json (no file at all) -> install adds exactly 2 records
+#    (one SessionStart entry, one PostToolUse entry), valid JSON, exit 0.
+home="$(make_fake_home)"
+out="$(env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" 2>&1)"
+rc=$?
+assert_eq "install: empty settings -> exit 0" "0" "$rc"
+f="$home/.claude/settings.json"
+assert_eq "install: empty settings -> SessionStart has 1 entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+assert_eq "install: empty settings -> PostToolUse has 1 entry" "1" "$(json_get "$f" "len(d['hooks']['PostToolUse'])")"
+assert_eq "install: registered SessionStart matcher" "startup|clear|compact" "$(json_get "$f" "d['hooks']['SessionStart'][0]['matcher']")"
+assert_eq "install: registered PostToolUse matcher" "Read|Edit|Write|MultiEdit" "$(json_get "$f" "d['hooks']['PostToolUse'][0]['matcher']")"
+assert_contains "install: SessionStart command carries canonical marker" \
+  "$(json_get "$f" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")" "/skills/wiki/hooks/"
+
+# 2. Foreign hooks/keys are preserved unchanged (structurally, value-for-
+#    value — the only mutation allowed is inside the wiki-owned entries).
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+cat >"$f" <<'EOF'
+{
+  "otherTopLevelKey": {"nested": true, "n": 3},
+  "hooks": {
+    "Stop": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "/foreign/stop.sh"}]}
+    ],
+    "SessionStart": [
+      {"matcher": "custom-matcher", "hooks": [{"type": "command", "command": "/foreign/session.sh"}]}
+    ]
+  }
+}
+EOF
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "install: foreign top-level key preserved" "{'nested': True, 'n': 3}" "$(json_get "$f" "d['otherTopLevelKey']")"
+assert_eq "install: foreign Stop event untouched" "/foreign/stop.sh" "$(json_get "$f" "d['hooks']['Stop'][0]['hooks'][0]['command']")"
+assert_eq "install: foreign SessionStart matcher-entry untouched" "/foreign/session.sh" "$(json_get "$f" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
+assert_eq "install: foreign SessionStart entry count unchanged + 1 wiki entry" "2" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+
+# 3. Repeated install -> idempotent, no duplicate wiki entries.
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "install: repeat runs stay idempotent (still 1 foreign + 1 wiki)" "2" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+assert_eq "install: repeat runs -> PostToolUse still exactly 1 entry" "1" "$(json_get "$f" "len(d['hooks']['PostToolUse'])")"
+
+# 4. Corrupt JSON -> refuse, file left byte-identical, non-zero exit.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+printf '{ this is not valid json' >"$f"
+sha_before="$(_sha "$f")"
+err="$(env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "install: corrupt JSON -> non-zero exit" "1" "$rc"
+assert_file_unchanged "install: corrupt JSON -> settings.json byte-identical" "$f" "$sha_before"
+assert_contains "install: corrupt JSON -> stderr mentions failure" "$err" "install-hooks"
+
+# 5. uninstall removes wiki entries, leaves foreign hooks intact.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+cat >"$f" <<'EOF'
+{
+  "hooks": {
+    "Stop": [{"matcher": "*", "hooks": [{"type": "command", "command": "/foreign/stop.sh"}]}]
+  }
+}
+EOF
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "uninstall-fixture: install left foreign Stop hook alone" "/foreign/stop.sh" "$(json_get "$f" "d['hooks']['Stop'][0]['hooks'][0]['command']")"
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+rc=$?
+assert_eq "uninstall: exit 0" "0" "$rc"
+assert_eq "uninstall: SessionStart event removed entirely (empty after strip)" "False" "$(json_get "$f" "'SessionStart' in d.get('hooks', {})")"
+assert_eq "uninstall: PostToolUse event removed entirely (empty after strip)" "False" "$(json_get "$f" "'PostToolUse' in d.get('hooks', {})")"
+assert_eq "uninstall: foreign Stop hook survives" "/foreign/stop.sh" "$(json_get "$f" "d['hooks']['Stop'][0]['hooks'][0]['command']")"
+
+# 6. Mixed-entry granular removal: one matcher-entry's nested hooks[] holds
+#    BOTH a wiki command (bearing the marker) and an unrelated user
+#    command. install/uninstall must strip only the wiki command, keep the
+#    user command, and must NOT delete the parent matcher-entry (its
+#    hooks[] is not empty).
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+cat >"$f" <<'EOF'
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {"type": "command", "command": "test -x \"/old/clone/.claude/skills/wiki/hooks/session-start.sh\" && \"/old/clone/.claude/skills/wiki/hooks/session-start.sh\" || exit 0"},
+          {"type": "command", "command": "/my/custom-hook.sh"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "mixed-entry install: old wiki command replaced (marker still present exactly once per event)" \
+  "1" "$(json_get "$f" "sum(1 for e in d['hooks']['SessionStart'] for h in e['hooks'] if '/skills/wiki/hooks/' in h['command'])")"
+assert_eq "mixed-entry install: user command survives" "True" \
+  "$(json_get "$f" "any(h['command'] == '/my/custom-hook.sh' for e in d['hooks']['SessionStart'] for h in e['hooks'])")"
+# NOTE: deliberately compares fields rather than a `[{'k': 'v', ...}]`
+# dict-literal expression here — bash 3.2 (stock macOS /bin/bash)
+# misparses a comma-separated `{a,b}`-shaped literal as brace expansion
+# when it's nested two levels of double-quoting deep inside `$(...)`,
+# even though it is fully quoted at the shell level (harmless in this
+# specific nesting shape, but avoided outright to keep the assertion
+# portable across bash versions).
+assert_eq "mixed-entry install: user-only matcher-entry not deleted (hooks[] non-empty)" "True" \
+  "$(json_get "$f" "any(len(e['hooks']) == 1 and e['hooks'][0]['command'] == '/my/custom-hook.sh' for e in d['hooks']['SessionStart'])")"
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "mixed-entry uninstall: wiki command gone" "0" \
+  "$(json_get "$f" "sum(1 for e in d['hooks'].get('SessionStart', []) for h in e['hooks'] if '/skills/wiki/hooks/' in h['command'])")"
+assert_eq "mixed-entry uninstall: user command still present" "True" \
+  "$(json_get "$f" "any(h['command'] == '/my/custom-hook.sh' for e in d['hooks']['SessionStart'] for h in e['hooks'])")"
+assert_eq "mixed-entry uninstall: user-only matcher-entry NOT removed" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+
+# 6b. Entry containing ONLY the wiki command -> after uninstall the entry
+#     itself is removed entirely (not left behind as an empty hooks[]).
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "wiki-only entry: install produced exactly 1 SessionStart entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "wiki-only entry: uninstall removes matcher-entry entirely, no empty leftovers" "False" \
+  "$(json_get "$f" "'SessionStart' in d.get('hooks', {})")"
+
+# 7. Fail-open: the registered command wraps the canonical script in
+#    `test -x ... && ... || exit 0`. Once that script is missing (as it
+#    always is under a throwaway fake HOME with no real skill clone),
+#    running the command must exit 0 with no stderr noise.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+cmd="$(json_get "$f" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
+assert_contains "fail-open: registered command uses test -x guard" "$cmd" "test -x"
+fo_err="$(bash -c "$cmd" 2>&1 >/dev/null)"
+fo_rc=$?
+assert_eq "fail-open: missing canonical script -> exit 0" "0" "$fo_rc"
+assert_eq "fail-open: missing canonical script -> no stderr" "" "$fo_err"
+
+# 8. Canonical path: the registered command always targets
+#    $HOME/.claude/skills/wiki/hooks/*.sh literally — never the physical
+#    location install-hooks.sh itself was run from. Copy the script to two
+#    different fake "clone" locations and confirm both produce the exact
+#    same command, and a rerun from the second clone does not duplicate.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+clone_a="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-clone.XXXXXX")"
+track_tmp "$clone_a"
+clone_b="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-clone.XXXXXX")"
+track_tmp "$clone_b"
+cp "$INSTALL_HOOKS_SCRIPT" "$clone_a/install-hooks.sh"
+cp "$INSTALL_HOOKS_SCRIPT" "$clone_b/install-hooks.sh"
+env "${WH_ENV[@]}" HOME="$home" bash "$clone_a/install-hooks.sh" >/dev/null 2>&1
+cmd_a="$(json_get "$f" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
+expected_canon="$home/.claude/skills/wiki/hooks/session-start.sh"
+assert_contains "canonical path: command targets \$HOME/.claude/skills/wiki/hooks/ literally" "$cmd_a" "$expected_canon"
+env "${WH_ENV[@]}" HOME="$home" bash "$clone_b/install-hooks.sh" >/dev/null 2>&1
+cmd_b="$(json_get "$f" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
+assert_eq "canonical path: identical command from a different clone location" "$cmd_a" "$cmd_b"
+assert_eq "canonical path: rerun from different clone -> still no duplicate SessionStart entries" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+
+# 9. Serialized read-modify-write: two installs racing on the same
+#    settings.json must both land, no lost update, valid JSON at the end.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
+p1=$!
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
+p2=$!
+rc1=0; rc2=0
+wait "$p1" || rc1=$?
+wait "$p2" || rc2=$?
+assert_eq "serialized RMW: first parallel install exit 0" "0" "$rc1"
+assert_eq "serialized RMW: second parallel install exit 0" "0" "$rc2"
+assert_eq "serialized RMW: settings.json still valid JSON" "dict" "$(json_get "$f" "type(d).__name__")"
+assert_eq "serialized RMW: SessionStart has exactly 1 entry (no lost update, no duplicate)" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+assert_eq "serialized RMW: PostToolUse has exactly 1 entry" "1" "$(json_get "$f" "len(d['hooks']['PostToolUse'])")"
+
+# 10. Stale-lock, LIVE owner: a leftover lock dir owned by a genuinely
+#     alive process, with an mtime well past the timeout, must NOT be
+#     stolen. The competing install waits and then fails by its own
+#     overall timeout; the settings.json from the prior successful install
+#     above must be completely untouched by the failed attempt.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+sha_before="$(_sha "$f")"
+( sleep 30 ) &
+live_pid=$!
+lockdir="$home/.claude/settings.json.lockdir"
+mkdir -p "$lockdir"
+echo "$live_pid" >"$lockdir/pid"
+python3 -c "import os,time; os.utime('$lockdir', (time.time()-300, time.time()-300))"
+rc=0
+err="$(env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=1 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)" || rc=$?
+assert_eq "stale-lock live-owner: competing install fails by overall timeout (does not steal)" "1" "$rc"
+assert_file_unchanged "stale-lock live-owner: settings.json untouched by the failed attempt" "$f" "$sha_before"
+kill "$live_pid" 2>/dev/null || true
+wait "$live_pid" 2>/dev/null || true
+rm -rf "$lockdir"
+
+# 11. Stale-lock recovery, mkdir-fallback, DEAD pid: a leftover lock dir
+#     whose pid file names a process that no longer exists must be forced
+#     clear immediately (no deadlock), and the install proceeds to
+#     completion.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+lockdir="$home/.claude/settings.json.lockdir"
+mkdir -p "$lockdir"
+echo 999999 >"$lockdir/pid" # astronomically unlikely to be a live pid
+rc=0
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>err.$$ || rc=$?
+dead_pid_err="$(cat "err.$$" 2>/dev/null)"; rm -f "err.$$"
+assert_eq "stale-lock recovery (dead pid): install still succeeds" "0" "$rc"
+assert_eq "stale-lock recovery (dead pid): SessionStart has 1 entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+[ -d "$lockdir" ] && FAIL=$((FAIL + 1)) && echo "FAIL: stale-lock recovery (dead pid): lock dir cleaned up" >&2 || PASS=$((PASS + 1))
+
+# 11b. Stale-lock recovery, mkdir-fallback, NO pid file at all (crash
+#      between mkdir and pid write) + mtime older than timeout -> forced
+#      clear, install proceeds.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+lockdir="$home/.claude/settings.json.lockdir"
+mkdir -p "$lockdir"
+python3 -c "import os,time; os.utime('$lockdir', (time.time()-300, time.time()-300))"
+rc=0
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "stale-lock recovery (no pid file, old mtime): install still succeeds" "0" "$rc"
+assert_eq "stale-lock recovery (no pid file, old mtime): SessionStart has 1 entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+
+# 12. Interrupt while holding the mkdir-fallback lock: the EXIT/INT/TERM
+#     trap must remove the lock dir completely, never leaving a deadlock
+#     for the next run. WIKI_HOOKS_TEST_SLEEP_AFTER_LOCK holds the lock
+#     open long enough to reliably deliver SIGTERM mid-critical-section.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+lockdir="$home/.claude/settings.json.lockdir"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_TEST_SLEEP_AFTER_LOCK=5 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
+interrupted_pid=$!
+# Poll for the lock dir to appear instead of a fixed sleep, so this isn't
+# racy under slow/loaded CI.
+wait_start="$(date +%s)"
+while [ ! -d "$lockdir" ]; do
+  now="$(date +%s)"
+  if [ $((now - wait_start)) -ge 5 ]; then
+    break
+  fi
+done
+kill -TERM "$interrupted_pid" 2>/dev/null || true
+wait "$interrupted_pid" 2>/dev/null || true
+assert_eq "interrupt-under-lock: trap removes lock dir, no deadlock leftover" "" "$([ -d "$lockdir" ] && echo present)"
+rc=0
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "interrupt-under-lock: next install proceeds normally (not deadlocked)" "0" "$rc"
+assert_eq "interrupt-under-lock: settings.json ends up valid with 1 SessionStart entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
 
 # ---- summary ----
 echo "" >&2
