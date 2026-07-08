@@ -1452,6 +1452,54 @@ rc=0
 env PATH="$fake_stat_dir:$PATH" WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
 assert_eq "dir_age_seconds portability: GNU-style non-numeric 'stat -f' still reclaims stale lock (uninstall)" "0" "$rc"
 
+# 11c. PID-recycle deadlock guard (P1, fixwave0-2): a lock dir whose pid
+#      file names a process that IS currently alive (simulating an OS
+#      having recycled the crashed original holder's pid onto some
+#      unrelated long-running process) must still be force-reclaimed once
+#      its mtime exceeds WIKI_HOOKS_LOCK_MAX_AGE — liveness of a recycled
+#      pid can never be trusted to gate reclamation forever, or every
+#      future install/uninstall would deadlock permanently. A small
+#      WIKI_HOOKS_LOCK_MAX_AGE keeps this deterministic and fast without
+#      waiting a real hour.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+lockdir="$home/.claude/settings.json.lockdir"
+mkdir -p "$lockdir"
+( sleep 30 ) &
+recycled_pid=$!
+echo "$recycled_pid" >"$lockdir/pid"
+# Age the lock well past WIKI_HOOKS_LOCK_MAX_AGE below, but still safely
+# inside the overall LOCK_TIMEOUT wait budget so a passing run is fast.
+python3 -c "import os,time; os.utime('$lockdir', (time.time()-100, time.time()-100))"
+rc=0
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=5 WIKI_HOOKS_LOCK_POLL=0.1 WIKI_HOOKS_LOCK_MAX_AGE=10 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "pid-recycle guard: install succeeds despite recorded pid being alive" "0" "$rc"
+assert_eq "pid-recycle guard: SessionStart has 1 entry" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+[ -d "$lockdir" ] && FAIL=$((FAIL + 1)) && echo "FAIL: pid-recycle guard: lock dir cleaned up" >&2 || PASS=$((PASS + 1))
+kill "$recycled_pid" 2>/dev/null || true
+wait "$recycled_pid" 2>/dev/null || true
+
+# 11d. PID-recycle guard must NOT weaken normal live-owner protection: a
+#      lock whose mtime is old but still WELL WITHIN WIKI_HOOKS_LOCK_MAX_AGE
+#      (default far larger than any single install run) must still block a
+#      competing install exactly like test 10 above — the age ceiling is a
+#      last-resort safety net, not a general license to steal live locks.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+sha_before="$(_sha "$f" 2>/dev/null || true)"
+lockdir="$home/.claude/settings.json.lockdir"
+mkdir -p "$lockdir"
+( sleep 30 ) &
+live_pid=$!
+echo "$live_pid" >"$lockdir/pid"
+python3 -c "import os,time; os.utime('$lockdir', (time.time()-5, time.time()-5))"
+rc=0
+err="$(env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=1 WIKI_HOOKS_LOCK_POLL=0.1 WIKI_HOOKS_LOCK_MAX_AGE=3600 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)" || rc=$?
+assert_eq "pid-recycle guard: age well within LOCK_MAX_AGE -> still does not steal a live lock" "1" "$rc"
+kill "$live_pid" 2>/dev/null || true
+wait "$live_pid" 2>/dev/null || true
+rm -rf "$lockdir"
+
 # 12. Interrupt while holding the mkdir-fallback lock: the EXIT/INT/TERM
 #     trap must remove the lock dir completely, never leaving a deadlock
 #     for the next run. WIKI_HOOKS_TEST_SLEEP_AFTER_LOCK holds the lock

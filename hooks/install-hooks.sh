@@ -17,7 +17,16 @@
 #      PID inside the lock dir and installs an EXIT/INT/TERM trap plus
 #      pid-liveness + mtime-age reclaim, so a crash or interrupt while
 #      holding the lock can never deadlock a future run — nothing is lost by
-#      not using flock.
+#      not using flock. PID liveness is NEVER trusted on its own: an
+#      operating system recycles PIDs, so if the original lock holder
+#      crashed and its PID was later reassigned to an unrelated
+#      long-running process, `kill -0 $pid` would report "alive" forever
+#      and a liveness-only check would deadlock every future install/
+#      uninstall permanently. To close that hole, lock age is the ultimate
+#      authority: a lock older than LOCK_MAX_AGE is ALWAYS force-reclaimed
+#      regardless of what kill -0 says about the recorded pid (P1,
+#      fixwave0-2) — liveness only ever extends the wait, it never blocks
+#      reclamation forever.
 #   2. settings.json is read fresh, under the lock, immediately before the
 #      merge — never a cached/earlier snapshot.
 #   3. A timestamped backup is written before any merge (only once the
@@ -66,6 +75,14 @@ SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 LOCK_DIR="$SETTINGS_FILE.lockdir"
 LOCK_TIMEOUT="${WIKI_HOOKS_LOCK_TIMEOUT:-10}"
 LOCK_POLL="${WIKI_HOOKS_LOCK_POLL:-0.2}"
+# Absolute ceiling on lock age (P1, fixwave0-2 — PID-recycle deadlock
+# guard): once a lock dir is older than this, it is ALWAYS force-reclaimed
+# regardless of whether the recorded pid currently looks alive. This is
+# deliberately much larger than LOCK_TIMEOUT (which only governs how long
+# a *waiting* invocation blocks on a live-looking owner) — it exists
+# purely so a crashed holder whose pid gets reassigned to some unrelated
+# long-running process can never wedge the lock forever.
+LOCK_MAX_AGE="${WIKI_HOOKS_LOCK_MAX_AGE:-3600}"
 MARKER="/skills/wiki/hooks/"
 CANON_SESSION_START="$CLAUDE_DIR/skills/wiki/hooks/session-start.sh"
 CANON_POST_TOOL_USE="$CLAUDE_DIR/skills/wiki/hooks/post-tool-use.sh"
@@ -148,14 +165,30 @@ acquire_mkdir() {
     else
       pid=""
     fi
-    if [ -n "$pid" ] && is_pid_alive "$pid"; then
-      : # live owner — never steal, just wait.
-    elif [ -n "$pid" ]; then
-      # Non-empty pid naming a dead/unreadable process -> genuinely stale
-      # lock; force-clear and retry.
-      rm -f "$LOCK_DIR/pid" 2>/dev/null
-      rmdir "$LOCK_DIR" 2>/dev/null
-      continue
+    if [ -n "$pid" ]; then
+      # PID-recycle deadlock guard (P1, fixwave0-2): liveness of a stored
+      # pid is NEVER, on its own, sufficient grounds to keep waiting
+      # forever. If the original holder crashed and the OS later recycled
+      # its pid onto an unrelated long-running process, `kill -0 $pid`
+      # would report "alive" indefinitely and this lock could never be
+      # reclaimed by liveness alone. So age is checked FIRST and wins
+      # unconditionally: once the lock is older than LOCK_MAX_AGE it is
+      # force-cleared no matter what kill -0 says.
+      age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
+      if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_MAX_AGE" ]; then
+        rm -f "$LOCK_DIR/pid" 2>/dev/null
+        rmdir "$LOCK_DIR" 2>/dev/null
+        continue
+      elif is_pid_alive "$pid"; then
+        : # live owner within the max-age bound — never steal, just wait.
+      else
+        # Non-empty pid naming a dead/unreadable process -> genuinely
+        # stale lock; force-clear and retry immediately (no need to wait
+        # out LOCK_MAX_AGE when the pid is verifiably not running).
+        rm -f "$LOCK_DIR/pid" 2>/dev/null
+        rmdir "$LOCK_DIR" 2>/dev/null
+        continue
+      fi
     else
       # Empty OR absent pid file. An empty pid file is NOT a dead owner: it
       # is the winner's mid-acquire race window — `mkdir` has succeeded and
