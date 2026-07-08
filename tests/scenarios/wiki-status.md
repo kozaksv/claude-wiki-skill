@@ -220,11 +220,11 @@ For each menu choice, the next user reply routes to the documented operation:
 
 | Reply | Expected next-turn behavior |
 |---|---|
-| `a` | Delegate to `## Operation: Lint` content-verification with `[[course-builder]], [[intake-stock]], [[dose-dimensions]], [[purchase-flow]], [[old-auth-middleware]]` (top 5 by patch_count desc) |
-| `b` | Delegate to `## Operation: Lint` content-verification with the 5 pages whose `last_patched_at` is oldest among `state == "active"` and `protected == false` — i.e. `[[old-service]]` (Jan 5), `[[purchase-flow]]` (Mar 15), `[[auth-service]]` (Apr 20)... (`secret-rotation-recipe` skipped because protected) |
-| `c [[purchase-flow]]` | Delegate to Lint content-verification with that exact page set |
-| `1` | Apply passive fix: edit `concepts/old-auth-middleware.md`, remove or replace the broken `[[middleware-rules]]` link. Bumps `patch_count` for `old-auth-middleware.md` (this is a real edit, not a meta-op). |
-| `2` | Apply passive fix: either move `entities/legacy/old-service.md` into a valid category, or propose adding `legacy` to `schema.md` `## Document Types`. Bumps `patch_count` for whichever file ends up modified. |
+| `a` | Run lint on the subset `[[course-builder]], [[intake-stock]], [[dose-dimensions]], [[purchase-flow]], [[old-auth-middleware]]` (top 5 by patch_count desc). Findings classify Two-Tier: AUTO findings snapshot (`chore(wiki): snapshot before lint auto-fixes`) and auto-apply, each as its own `auto-fix(wiki): #N ...` commit, revertible via `відкат` / `відкат N`; DECIDE/INFO findings wait for `<N> <verb>`. |
+| `b` | Run lint on the subset of 5 pages whose `last_patched_at` is oldest among `state == "active"` and `protected == false` — i.e. `[[old-service]]` (Jan 5), `[[purchase-flow]]` (Mar 15), `[[auth-service]]` (Apr 20)... (`secret-rotation-recipe` skipped because protected). Same AUTO auto-apply / DECIDE-waits machinery as `[a]`. |
+| `c [[purchase-flow]]` | Run lint on that exact page set. Same AUTO auto-apply / DECIDE-waits machinery. |
+| `1` | The cross-ref drift finding routes into `## Operation: Lint`'s AUTO/DECIDE machinery — not a direct inline edit. It's disk-grounded (`[[middleware-rules]]` verified absent from the wiki tree), reversible, and has no genuinely competing alternative, so it classifies AUTO: skill snapshots (`chore(wiki): snapshot before lint auto-fixes`), removes/replaces the broken `[[middleware-rules]]` link in `concepts/old-auth-middleware.md` as its own `auto-fix(wiki): #N ...` commit, bumps `patch_count` for `old-auth-middleware.md`, and the report offers `відкат` / `відкат N`. |
+| `2` | The schema-drift finding routes the same way. If the correct fix is unambiguous (e.g. `schema.md` clearly should declare `legacy`, or the target category is obvious), it classifies AUTO and auto-applies with its own snapshot-scoped `auto-fix(wiki): #N ...` commit, bumping `patch_count` for whichever file is modified, with a `відкат` / `відкат N` hint. If the correct category is genuinely ambiguous, it surfaces as a DECIDE finding awaiting `<N> <verb>` instead. |
 | `n` | Print "OK, нічого не зроблено" and end the operation. No further state change. |
 
 ### Page protection

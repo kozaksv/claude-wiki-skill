@@ -54,11 +54,6 @@ run `git commit`.
   ✅ index.md — entries для двох сторінок не змінились (були вже актуальні)
   ✅ log.md — додано "## [2026-05-01] ingest | pricing-spec"
   ✅ .usage.json — bump_patch для двох сторінок, bump_use для нових wikilinks
-
-──────────────────────────────────────────
-🧹 Показати список того, що в wiki могло застаріти?
-   Я лише покажу — нічого не змінюватиму без твого слова.
-   [y] показати  /  [n] продовжуємо
 ```
 
 ### Manual verification
@@ -67,6 +62,10 @@ run `git commit`.
 - The `trigger:` line says `pre-commit`.
 - The `Перевірив:` section is present (because `index.md` / `log.md` / `.usage.json`
   were structural files touched).
+- The block ends on `Перевірив:` — no trailing interrogation, no embedded
+  confirm-prompt emoji, no `[y]/[n]` menu. Since this session has no passive
+  drift signal (see Sub-scenario 4 for the drift-present variant), no `⚠️`
+  pointer line follows either.
 
 ---
 
@@ -100,11 +99,6 @@ follows — the user just wants to stop here.
 Перевірив:
   ✅ index.md — оновлено опис [[purchase-flow]]
   ✅ log.md — додано запис
-
-──────────────────────────────────────────
-🧹 Показати список того, що в wiki могло застаріти?
-   Я лише покажу — нічого не змінюватиму без твого слова.
-   [y] показати  /  [n] продовжуємо
 ```
 
 ### Manual verification
@@ -113,6 +107,10 @@ follows — the user just wants to stop here.
 - "Чому це краще" line is **omitted** — because "Дізнався" reported no new insight,
   the field rule says drop the explanation line entirely.
 - The `Перевірив:` section appears because `index.md` and `log.md` were touched.
+- The block ends on `Перевірив:` — no trailing interrogation, no embedded
+  confirm-prompt emoji, no `[y]/[n]` menu. The passive drift notice
+  (`⚠️ Вікі: ...`) never appears here either, regardless of drift state — it is
+  reserved for `trigger: pre-commit` only (see Sub-scenario 4).
 
 ### Deduplication note
 
@@ -163,49 +161,59 @@ the same turn is already covered by a stronger hard event such as
 
 ---
 
-## Sub-scenario 4: Cleanup-prompt embedded
+## Sub-scenario 4: Pre-commit trigger with passive drift notice
 
 ### Setup
 
-Same as Sub-scenario 1 (pre-commit trigger fires, РЕФЛЕКСІЯ block emitted).
+Same as Sub-scenario 1 (pre-commit trigger fires, РЕФЛЕКСІЯ block emitted),
+plus one passive drift signal already present in the mock wiki: the body of
+`docs/wiki/concepts/intake-stock.md` contains `[[old-discount-model]]`, and
+`docs/wiki/concepts/old-discount-model.md` does not exist on disk (a dead
+cross-ref — the same cheap, no-LLM-read signal `wiki status` computes).
 
 ### Trigger
 
 The agent is at the end of an Ingest-Source, about to commit, and emits the
-РЕФЛЕКСІЯ block.
+РЕФЛЕКСІЯ block. This is a `trigger: pre-commit` turn, and a passive drift
+signal exists.
 
 ### Expected skill behavior
 
-The block ends with the embedded cleanup-prompt:
+Because this is `trigger: pre-commit` AND a passive drift signal is present,
+the block gets a single non-interactive pointer line appended after
+`Автоматизував:` (or `Перевірив:` when present):
 
 ```
-──────────────────────────────────────────
-🧹 Показати список того, що в wiki могло застаріти?
-   Я лише покажу — нічого не змінюватиму без твого слова.
-   [y] показати  /  [n] продовжуємо
+📚 РЕФЛЕКСІЯ — 2026-05-01 14:32 — trigger: pre-commit
+
+Дізнався: knowing prices live as a separate variant attribute clarifies why receive-flow doesn't recompute discounts.
+Чому це краще: discount logic stays inside the purchase document, variants stay clean — fewer cross-cutting concerns.
+Зберіг у wiki: [[purchase-flow]], [[intake-stock]]
+Автоматизував: нічого — операція разова
+
+Перевірив:
+  ✅ index.md — entries для двох сторінок не змінились (були вже актуальні)
+  ✅ log.md — додано "## [2026-05-01] ingest | pricing-spec"
+  ✅ .usage.json — bump_patch для двох сторінок, bump_use для нових wikilinks
+⚠️ Вікі: 1 пасивних дрифт-сигналів — запусти `wiki status` для деталей
 ```
-
-### Expected agent behavior on each user response
-
-| User reply | Agent action |
-|---|---|
-| `y` | Show a list of candidates (top-N by drift signal from `.usage.json`, plus passive findings like cross-ref drift). **No** edits, deletions, or modifications applied. Each candidate is informational; user must explicitly request action on any of them in a follow-up message. |
-| `n` | Continue the conversation normally; reflection block is closed. |
-| (no reply within the turn) | Treat as `n`. Do not block waiting; do not re-prompt. |
 
 ### Manual verification
 
-- The horizontal-rule line (`──────────────────────────────────────────`) appears
-  immediately above the cleanup-prompt — the prompt is part of the same block, not
-  a separate utterance.
-- On `y`, the next turn shows ONLY a list — no `Edit` / `Write` tool calls fire.
-- On `n` or silence, the conversation moves on; no further reflection-related
-  output appears until the next trigger event.
-
-### Safety contract
-
-The cleanup-prompt is the wiki skill's only place where a single keypress (`y`)
-might lead toward destructive action — and even then, it stops at "show a list".
-Actual `видали` / `merge` / `розбий` actions still require explicit, separate
-instructions from the user. This is the safety boundary: reflection observes,
-the user directs.
+- The `⚠️` line is the **only** possible tail on a reflection block — it is
+  non-interactive: no `[y]/[n]`, no menu, nothing awaiting a reply. It names
+  `wiki status` as the place to act; it does not itself show a list, apply a
+  fix, or mutate anything.
+- Search the block for the old interactive confirm-prompt emoji → must return
+  zero matches. That interactive `[y]/[n]` tail no longer exists anywhere in
+  the skill's output.
+- The `⚠️` line fires **only** when both conditions hold: `trigger: pre-commit`
+  AND at least one passive drift signal exists. Contrast with:
+  - Sub-scenario 1 (`trigger: pre-commit`, no drift signal in that setup) →
+    no `⚠️` line, block ends on `Перевірив:`.
+  - Sub-scenario 2 (`trigger: todo-completion`) → no `⚠️` line ever, even if
+    the same drift signal were present — non-pre-commit triggers never show
+    it.
+- The `⚠️` line MUST NOT appear at the end of a Lint run, a `wiki status` run,
+  or any cleanup-flow run — those already end on their own report (see
+  `references/cleanup-flow.md` → "Anti-recursion rule (hard), re-scoped").

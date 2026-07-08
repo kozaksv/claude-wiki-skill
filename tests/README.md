@@ -17,7 +17,7 @@ Manual pre-release pass order for the current prose scenarios:
 2. `v3-to-v4-migration.md` — include the partial-failure sub-scenario before any mass release.
 3. `cleanup-flow.md` — verify destructive double-confirmation and protected-page behavior.
 4. `reflection-triggers.md` — verify reflection fires after mutating operations and does not fire after read-only/report-only operations.
-5. `crystallization-tiers.md` — verify Codex/Gemini-only direct-create uses the shared canonical topology.
+5. `crystallization.md` — verify the skill proposes only the single `wiki` artifact type and never a script or skill tier.
 6. `wiki-status.md` and `staleness-content-verification.md` — verify anti-recursion after status/lint-style reports.
 
 If an automated eval harness is added later, start with the highest-risk scenarios:
@@ -25,4 +25,4 @@ If an automated eval harness is added later, start with the highest-risk scenari
 - Step 0 discovery across `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md`
 - destructive cleanup double-confirmation
 - anti-recursion after lint/status/cleanup
-- Codex/Gemini-only skill crystallization into the shared canonical topology
+- crystallization proposing only the single `wiki` artifact type (never a script or skill tier)

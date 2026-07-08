@@ -96,7 +96,7 @@ User: `wiki lint швидко`.
      • Скажи `відкат 1` — поверну лише №1
    ```
 
-5. No extra РЕФЛЕКСІЯ block or cleanup-prompt appears after the lint report.
+5. No extra РЕФЛЕКСІЯ block appears after the lint report.
 
 ### Manual verification
 

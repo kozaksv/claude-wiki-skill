@@ -57,7 +57,7 @@ Read `SKILL.md` as the routing contract, then read each operation reference it p
 ### Lint
 
 - ✅ Telemetry: check #1 says ".usage.json is read here for prioritization only" — anti-flagging stance is explicit.
-- ✅ Reflection: `### After completion` explicitly says Lint/report/revert output is the visible reasoning layer; no extra РЕФЛЕКСІЯ block or cleanup-prompt after lint/status/cleanup-flow.
+- ✅ Reflection: `### After completion` explicitly says Lint/report/revert output is the visible reasoning layer; no extra РЕФЛЕКСІЯ block after lint/status/cleanup-flow.
 - ✅ Page protection: dedicated `### Page protection during Lint` subsection. Full, `швидко`, path scope, and topic scope skip `protected: true`; explicit verification requires `wiki unprotect` first.
 - ✅ Karpathy staleness: check #1 IS the canonical Karpathy reformulation — long paragraph banning timestamp/heuristic flagging.
 - ✅ Anti-noise: lint/status/cleanup reports are terminal; applied fixes are explained in the report rather than followed by reflection.
@@ -121,8 +121,7 @@ Read `SKILL.md` as the routing contract, then read each operation reference it p
 
 ### Crystallization (proposal, not silent write)
 
-- ✅ `references/crystallization.md` — two artifact types (wiki / skill) and proposal format.
-- ✅ Skill type delegates to `superpowers:writing-skills` when available, and direct-create fallback uses the shared canonical + symlink export topology with installer-style conflict safety.
+- ✅ `references/crystallization.md` — single artifact type (wiki page) and proposal format.
 - ✅ Script tier (`scripts/*.sh` / `*.py`) deliberately absent — Division of Labor reasoning in the table's "Why no `scripts/` tier" callout.
 - ✅ Common Mistakes rows "Creating crystallization artifact silently" + "Proposing `scripts/*.sh` or `scripts/*.py` as crystallization" reinforce.
 
@@ -140,14 +139,12 @@ Read `SKILL.md` as the routing contract, then read each operation reference it p
 
 ## Gaps fixed inline during this pass
 
-1. **Lint/status/cleanup reflection contract tightened.** The report is now the visible reasoning layer; no extra РЕФЛЕКСІЯ or cleanup-prompt follows these operations, including after AUTO fixes or natural-language revert.
-
-2. **Cross-agent direct skill creation clarified.** Codex/Gemini-only crystallization can create a new user skill directly, but must use the shared canonical topology and skip/report conflicting exports instead of duplicating files.
+1. **Lint/status/cleanup reflection contract tightened.** The report is now the visible reasoning layer; no extra РЕФЛЕКСІЯ follows these operations, including after AUTO fixes or natural-language revert.
 
 No other gaps required instruction edits — the v4.2 surface area is consistent.
 
 ## Conclusion
 
-After this dogfood pass and the Lint fix, all eight operations consistently route through the five cross-cutting concerns. The split entrypoint/reference layout is internally coherent; downstream entry points (РЕФЛЕКСІЯ embedded prompt, `wiki status`) converge on the same cleanup-flow mechanics.
+After this dogfood pass and the Lint fix, all eight operations consistently route through the five cross-cutting concerns. The split entrypoint/reference layout is internally coherent; the single downstream entry point (`wiki status`) converges on the same cleanup-flow mechanics.
 
 Ready for v4.2.0 release tag after the final verification pass.

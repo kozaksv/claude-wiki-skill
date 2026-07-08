@@ -1,10 +1,10 @@
 # Scenario: Crystallization proposals
 
-Six sub-scenarios that exercise the proposal flow defined in
+Five sub-scenarios that exercise the proposal flow defined in
 `references/crystallization.md`. Each runs against a
 v4-shaped test wiki and asserts whether the skill emitted a `🔁 Помічаю патерн:`
-proposal (or correctly suppressed one), at which artifact type (`wiki` or
-`skill`), and what landed in the reflection's `Автоматизував:` field.
+proposal (or correctly suppressed one) and what landed in the reflection's
+`Автоматизував:` field.
 
 ## Common setup
 
@@ -21,12 +21,11 @@ check) unless noted otherwise. The `Автоматизував:` field cited in 
 appears in the РЕФЛЕКСІЯ block at the close of the relevant turn — see
 `reflection-triggers.md` for the surrounding block format.
 
-The skill recognizes only **two artifact types**: `wiki` (a concept page the
-active agent reads back) and `skill` (delegated to a skill-authoring helper when
-available, otherwise direct-created in the shared canonical topology). User-runnable
+The skill recognizes only **one artifact type**: `wiki` (a concept page the
+active agent reads back). User-runnable
 `scripts/*.sh` and `scripts/*.py` were intentionally removed as a crystallization
 target — see "Why no `scripts/` tier" in `references/crystallization.md`.
-Sub-scenarios 3 and 4 below
+Sub-scenarios 2 and 3 below
 assert that script-shaped proposals are correctly suppressed.
 
 ---
@@ -89,109 +88,7 @@ passes the on-disk assertions.
 
 ---
 
-## Sub-scenario 2: Skill (full skill via writing-skills delegation)
-
-### Setup
-
-During the session the agent has executed a 5-step flow with clear trigger
-conditions ("user pastes a screenshot of a store order → extract order data →
-match line items to wiki entities → create Purchase record → run a verification
-query"). The flow has been repeated twice in this session and three times in
-prior sessions (per log evidence).
-
-The flow is reusable across projects (it's not Health-specific — any project
-with order screenshots and a Purchase entity could use it).
-
-### Trigger
-
-The 15-iteration nudge fires.
-
-### Expected skill behavior
-
-1. Agent recognizes a multi-step flow with explicit triggers, reusable across
-   projects → skill territory.
-2. Agent checks whether the active agent has a skill-authoring helper
-   (`superpowers:writing-skills` in Claude, or a native equivalent in
-   Codex/Gemini).
-3. Agent emits a skill proposal whose wording matches the path that will be
-   taken on `y`:
-   - **Helper available** (path A) — propose to *delegate* to the helper.
-   - **Helper unavailable** (path B, common in Codex/Gemini sessions) —
-     propose to *create directly* in the shared canonical topology
-     (`~/.claude/skills/{name}/SKILL.md` + `.agents` and `.gemini` symlink
-     exports pointing at it).
-
-### Expected output (proposal block — path A, helper available)
-
-```
-🔁 Цей flow підходить для повноцінного скіла: 5 кроків, чіткі тригери, реюзабельно між проєктами.
-   skill: передати у superpowers:writing-skills для оформлення?
-
-   [y] делегуй  /  [n] не зараз  /  [пізніше]
-```
-
-### Expected output (proposal block — path B, helper unavailable)
-
-```
-🔁 Цей flow підходить для повноцінного скіла: 5 кроків, чіткі тригери, реюзабельно між проєктами.
-   skill: оформити як user-level skill (helper недоступний — створю напряму у ~/.claude/skills/{name} + symlink exports для Codex/Gemini)?
-
-   [y] створи  /  [n] не зараз  /  [пізніше]
-```
-
-### Expected agent behavior on `y`
-
-- **Path A (delegate).** Hand off to `superpowers:writing-skills` with a
-  one-paragraph brief describing the flow, its triggers, and intended scope.
-  The hand-off itself is what creates the skill files; this skill does not
-  write SKILL.md. Reflection's `Автоматизував:` field records
-  `skill — delegated to writing-skills (subject: {brief})`.
-- **Path B (direct create).** Create the skill in the shared canonical
-  topology: `~/.claude/skills/{name}/SKILL.md` plus
-  `~/.agents/skills/{name}` and `~/.gemini/skills/{name}` symlinks pointing
-  at the canonical entrypoint. Mirror the safety behavior of `install.sh`
-  (`set_skill_link` / `export_skill_link`) when handling broken symlinks,
-  foreign targets, files, and directories. Keep SKILL.md minimal: frontmatter
-  with `name` and trigger-only `description`, concise instructions, no extra
-  README unless the target skill format explicitly requires it. Reflection's
-  `Автоматизував:` field records `skill — created at {path}`.
-
-### Manual verification
-
-- **Path A:** the next turn shows `superpowers:writing-skills` as the active
-  skill, not `wiki`. No `Write` tool call from the wiki skill targets
-  `~/.claude/skills/...`. Reflection's `Автоматизував:` field cites the
-  delegation, not a direct creation.
-- **Path B:** `~/.claude/skills/{name}/SKILL.md` exists, and both
-  `~/.agents/skills/{name}` and `~/.gemini/skills/{name}` resolve to the
-  canonical entrypoint. Reflection's `Автоматизував:` field cites the direct
-  creation path, never the delegation it did not perform.
-- **Path B conflict safety:** if `~/.claude/skills/{name}` is a symlink to a
-  different target, a plain file, or a non-empty real directory with an existing
-  `SKILL.md`, the agent stops and asks the user to resolve/rename it. It does
-  not overwrite. Broken export symlinks are replaced; foreign/plain-file
-  exports are skipped and reported with their real current target/state.
-
-### Separation-of-concerns check
-
-The wiki skill knows wiki conventions only. Skill conventions (frontmatter,
-naming, ecosystem placement) live in `superpowers:writing-skills` — prefer that
-helper whenever it is available. Path B exists so the cross-agent topology is
-not stranded behind a single-agent helper dependency when the user runs Codex or
-Gemini; it is not a shortcut around skill conventions. A path-B SKILL.md that
-ships without frontmatter, without a trigger-only `description`, or with
-multi-paragraph noise is still a bug regardless of which path fired.
-
-### wiki-vs-skill discrimination check
-
-If the same content had been a single-step recipe (a paste-able PowerShell
-block, a static cURL command, a config snippet), the agent should have
-proposed wiki, not skill. Skill is reserved for multi-step flows with explicit
-triggers and cross-project reuse.
-
----
-
-## Sub-scenario 3: Anti-pattern — recurring command does NOT yield a script proposal
+## Sub-scenario 2: Anti-pattern — recurring command does NOT yield a script proposal
 
 ### Setup
 
@@ -218,17 +115,19 @@ the periodic nudge.
 ### Expected skill behavior
 
 1. Agent reviews recent tool history, recognizes the repeating shape.
-2. Agent considers crystallization. Two options remain: `wiki` or `skill`.
-3. Agent evaluates:
-   - **wiki**: only if there's a recurring lookup value (the cookie format has
-     gotchas worth documenting once, the endpoint shape is part of a conceptual
-     auth flow that gets re-explained, etc.). If the curl is just a tool for
-     inspecting the API and the value is purely runtime, no wiki page is
-     warranted.
-   - **skill**: rejected — single-shape command isn't a multi-step flow.
+2. Agent considers crystallization. The only artifact type is `wiki` — neither
+   a script nor a skill is a valid crystallization target.
+3. Agent evaluates whether there's a recurring lookup value (the cookie format
+   has gotchas worth documenting once, the endpoint shape is part of a
+   conceptual auth flow that gets re-explained, etc.). If the curl is just a
+   tool for inspecting the API and the value is purely runtime, no wiki page
+   is warranted.
 4. Agent emits **either** a wiki proposal (if the cURL pattern reflects a
    recurring concept) **or** no proposal at all (runtime-only inspection).
-   Agent does **not** propose `scripts/auth-curl.sh`.
+   Agent does **not** propose `scripts/auth-curl.sh` and does **not** propose
+   any kind of skill artifact — a single-shape command isn't a multi-step flow,
+   and the skill has no skill-shaped crystallization tier to propose into
+   regardless.
 
 ### Expected output
 
@@ -249,6 +148,7 @@ The skill **must NOT** emit any of:
 - `tier 1 (bash one-liner): scripts/auth-curl.sh`
 - `tier 2 (Python script): scripts/anything.py`
 - A proposal whose proposed-path begins with `scripts/`
+- A proposal offering to delegate to (or directly create) a skill artifact
 
 ### Manual verification
 
@@ -267,7 +167,7 @@ a future change restores them, this sub-scenario must catch it.
 
 ---
 
-## Sub-scenario 4: Anti-pattern — explicit "save as bash" trigger
+## Sub-scenario 3: Anti-pattern — explicit "save as bash" trigger
 
 ### Setup
 
@@ -306,7 +206,7 @@ bash», «create a script for this».
 
 ---
 
-## Sub-scenario 5: Anti-noise — refused pattern not re-proposed
+## Sub-scenario 4: Anti-noise — refused pattern not re-proposed
 
 ### Setup
 
@@ -343,7 +243,7 @@ fresh proposal).
 
 ---
 
-## Sub-scenario 6: Anti-noise — ambient commands ignored
+## Sub-scenario 5: Anti-noise — ambient commands ignored
 
 ### Setup
 
@@ -367,7 +267,7 @@ The 15-iteration periodic nudge fires.
 
 1. Agent reviews recent tool history.
 2. Agent recognizes the candidates as ambient commands per anti-noise rules.
-3. Agent **does not** propose any wiki page or skill wrapping `ls`, `git
+3. Agent **does not** propose any wiki page wrapping `ls`, `git
    status`, `cat`, etc.
 
 ### Expected output

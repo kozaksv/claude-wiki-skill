@@ -2,16 +2,17 @@
 
 Four sub-scenarios that exercise the unified cleanup-flow inside
 `references/cleanup-flow.md`. The flow
-has two entry points (РЕФЛЕКСІЯ embedded `[y]` prompt and `wiki status`
-`[a/b/c]`) that funnel into the same downstream mechanics: subset
-selection → content-verification → per-page action menu.
+has a single entry point — `wiki status` `[a]/[b]/[c]` — that funnels into
+the same downstream mechanics: subset selection → content-verification →
+Two-Tier classification (AUTO auto-applied, DECIDE/INFO via the per-finding
+action menu).
 
 The four sub-scenarios cover:
 
-1. **РЕФЛЕКСІЯ entry point** — `[y]` → subset → verification → user picks
-   `глянь і онови`
-2. **`wiki status` entry point** — `[a]` → top-5 most edited → user picks
-   `видали` → double-confirmation flow
+1. **AUTO-applied fix** — `wiki status` → `[a]` → top-5 most edited → a
+   disk-grounded, unambiguous finding auto-applies (revertible via `відкат`)
+2. **DECIDE finding → `видали`** — `wiki status` → `[a]` → top-5 most edited →
+   user picks `видали` → double-confirmation flow
 3. **Page protection** — user attempts `видали` on a `protected: true` page;
    skill refuses with helpful message
 4. **Snapshot rollback** — destructive op completes, user regrets, runs
@@ -19,10 +20,11 @@ The four sub-scenarios cover:
 
 ---
 
-## Sub-scenario 1: РЕФЛЕКСІЯ → `глянь і онови`
+## Sub-scenario 1: `wiki status` → AUTO-applied fix
 
-User just finished a feature; reflection fires; embedded cleanup prompt
-appears; user accepts; one finding surfaces; user picks `глянь і онови`.
+User runs `wiki status` directly; picks `[a]` top-5 most edited; the one
+finding that surfaces is disk-grounded and unambiguous, so it auto-applies
+under Two-Tier Autonomy instead of waiting on a user-picked verb.
 
 ### Setup
 
@@ -53,22 +55,15 @@ claim drifted, one holds.
 
 ### Trigger
 
-User completes a TodoWrite list. Reflection fires. The trailing prompt:
-
-```
-🧹 Показати список того, що в wiki могло застаріти?
-   [y] показати  /  [n] продовжуємо
-```
-
-User: `y`.
+User: `wiki status`.
 
 ### Expected skill behavior
 
-1. Enter subset selection. Show menu `[a] / [b] / [c]`. User picks `[a]`
-   Top-5 most edited.
-2. Sort `report()` by `patch_count desc, last_patched_at asc`. Filter
-   `state == "active"` and `protected == false`. Top entry:
-   `template-course-flow.md`.
+1. Skill prints status (no `view_count` bumps for surveyed pages — `wiki
+   status` is a meta-operation). User picks `[a]` Top-5 most edited.
+2. Delegates to `## Operation: Lint` content-verification. Sort `report()` by
+   `patch_count desc, last_patched_at asc`. Filter `state == "active"` and
+   `protected == false`. Top entry: `template-course-flow.md`.
 3. **Read** `concepts/template-course-flow.md` in full → bumps
    `view_count` to its prior value + 1.
 4. Verify each claim:
@@ -76,37 +71,43 @@ User: `y`.
    - Body claim about `cancelCourse()` → grep
      `apps/api/src/routes/courses.ts` for `cancelCourse` → not found.
      Function `markCourseCancelled` exists. **Claim drifted.**
-5. Present finding with the action menu:
+5. Classify the finding per Two-Tier Autonomy: disk-grounded evidence (the
+   `grep` confirmed the rename), reversible (`git revert` cleanly undoes an
+   `Edit`), and no genuinely competing alternative (leaving the stale function
+   name in place is strictly worse than fixing it) → **AUTO**, not DECIDE. This
+   is the same shape as the reference's "Source path corrections" AUTO pattern
+   — an unambiguous fix, disk-grounded, nothing to litigate.
+6. Skill snapshots before applying (`git commit -m "chore(wiki): snapshot
+   before lint auto-fixes"`), then applies the fix as its own commit
+   (`auto-fix(wiki): #1 correct cancelCourse() rename in
+   template-course-flow.md`): replaces `cancelCourse()` →
+   `markCourseCancelled()` in the relevant sentence, writes the file, and
+   calls `bump_patch(template-course-flow.md)` in `.usage.json`
+   (`patch_count: 6 → 7`, `last_patched_at` updated).
+7. Skill presents the lint report with the fix already applied:
 
    ```
-   🔍 concepts/template-course-flow.md
-       Claim: «exports cancelCourse() which sets cancelledAt»
-       Disk:  function is markCourseCancelled() (cancelledAt unchanged)
+   ## Звіт лінта вікі — 2026-05-01
 
-       1 — глянь і онови   (прочитаю + поправлю claim синхронно)
-       2 — видали          (потребує double-confirm)
-       3 — захисти
-       4 — merge
-       5 — розбий
-       (глянь обидві — недоступно, пара сторінок не виявлена)
+   Перевірено: топ-5 найбільш редагованих активних сторінок.
 
-       Вибір [1/2/3/4/5]:
+   🟢 Авто-застосовано (знімок створено перед)
+
+     1. `concepts/template-course-flow.md` — виправлено назву функції в claim
+        (grep: `cancelCourse` не знайдено, `markCourseCancelled` існує)
+
+     ↩️  Відкат:
+     • Скажи `відкат` — поверну всі (знімок готовий)
+     • Скажи `відкат 1` — поверну лише №1
    ```
 
-6. User: `1`.
-7. Skill:
-   - Edits the page: replace `cancelCourse()` → `markCourseCancelled()`
-     in the relevant sentence.
-   - Shows the diff inline before saving.
-   - On confirm, writes the file and calls `bump_patch(template-course-flow.md)`
-     in `.usage.json` (`patch_count: 6 → 7`, `last_patched_at` updated).
-   - **Does NOT** snapshot before — `глянь і онови` is non-destructive
-     (Edit, not delete/merge). Snapshot is reserved for `видали` /
-     `merge` / `розбий`.
-8. No extra РЕФЛЕКСІЯ block appears after this cleanup-flow edit. The
-   content-verification finding, chosen action, diff, and confirmation are the
-   visible reasoning for the cleanup pass; adding the embedded cleanup prompt
-   again would be recursive.
+   No per-finding action menu (`1 — глянь і онови` / `2 — видали` / ...) is
+   shown for this finding — that six-verb menu is reserved for DECIDE /
+   elevated-INFO findings (see Sub-scenario 2). The user's only lever here is
+   `відкат` / `відкат 1`.
+8. No extra РЕФЛЕКСІЯ block appears after this lint report. The report's 🟢 /
+   ↩️ sections are the visible reasoning for the auto-applied fix; adding a
+   separate reflection block on top would be recursive.
 
 ### Telemetry effect
 
@@ -182,8 +183,7 @@ User: `wiki status`.
 10. Skill confirms with rollback hint: «Якщо передумаєш — `git revert
     HEAD` поверне до знімка».
 11. The lint-driven flow ends with its own confirmation and rollback hint. No
-    extra РЕФЛЕКСІЯ block or cleanup-prompt appears after `wiki status` /
-    cleanup-flow.
+    extra РЕФЛЕКСІЯ block appears after `wiki status` / cleanup-flow.
 
 ### Cancellation variant
 
@@ -216,12 +216,9 @@ Mock wiki state:
 
 ### Trigger
 
-Either path is valid:
-
-- (a) `wiki status` → `[c]` → user types `concepts/security-recovery.md`
-  → action menu → user picks `2` (видали).
-- (b) From a РЕФЛЕКСІЯ `[y]` → `[c]` flow with the same explicit listing
-  (per spec, `[c]` does NOT bypass page protection).
+`wiki status` → `[c]` → user types `concepts/security-recovery.md` → action
+menu → user picks `2` (видали). (Per spec, `[c]` does NOT bypass page
+protection.)
 
 ### Expected skill behavior
 
