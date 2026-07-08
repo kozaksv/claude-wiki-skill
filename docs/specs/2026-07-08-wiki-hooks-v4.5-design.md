@@ -457,3 +457,24 @@ pointer-блоком + `docs/wiki/{index.md,schema.md}` + `.usage.json`;
 5. **Real-shape acceptance gate:** перед «done» — крос-чек matcher-імен і
    stdin-полів проти офіційної документації Claude Code hooks (фікстури тестів
    мусять дзеркалити живу поведінку, не припущення).
+
+## Постскриптум №2 (2026-07-08, whole-feature рев'ю — фінал)
+
+Два повних кола whole-feature рев'ю (8 + 6 знахідок), усі закриті. Відхилення
+від цього дизайну, прийняті при ручній інтеграції:
+
+1. **Version gate по major, не по exact "4.0"** (спека вимагала точний збіг):
+   узгоджено з рештою системи — state detection і doctor порівнюють major;
+   вікі 4.x залишається hook-writable.
+2. **Пропозицію «замінити mkdir-lock на python-flock» відкинуто** (вона ж
+   породила б Windows-регресію): натомість reclaim stale-лока зроблено
+   атомарним mv-claim (rename(2)) — закриває той самий TOCTOU без зміни
+   протоколу; uninstall вирівняно з install (LOCK_MAX_AGE pid-recycle guard).
+3. **Windows-деградації**: fcntl — try/except (unlocked RMW замість мертвої
+   телеметрії); O_NOFOLLOW/O_NONBLOCK — через getattr(os, …, 0); інсталяційні
+   гейти -x → -f (втрачений exec-bit не вимикає хуки тихо).
+4. **Нове понад дизайн**: MultiEdit-телеметрія збирає union file_path +
+   edits[].file_path; {wiki}/log/ шарди виключені з телеметрії; session-start
+   bootstrap'ить відсутній .usage.json (свіжий чекаут отримує heartbeat);
+   uninstall-hooks повертає non-zero, коли маркер лишився, а python3 нема
+   (--remove-clones не зносить клон з recovery-скриптом).
