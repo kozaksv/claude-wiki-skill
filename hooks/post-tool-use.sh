@@ -58,6 +58,7 @@ _wiki_ptu_bump() {
   python3 - "$wiki_dir" "$key" "$action" 2>/dev/null <<'PYEOF'
 import json
 import os
+import stat
 import sys
 import tempfile
 import time
@@ -65,14 +66,38 @@ import time
 wiki_dir, key, action = sys.argv[1], sys.argv[2], sys.argv[3]
 usage_path = os.path.join(wiki_dir, ".usage.json")
 
+# Read the sidecar defensively (codex-атк P1). The version-gate already
+# rejects a symlink / FIFO / char-device .usage.json, but this open() is
+# the second, TOCTOU-proof line of the same shared invariant:
+#   * O_NOFOLLOW  -> a .usage.json that is a symlink raises ELOOP here
+#     instead of being followed, so external JSON can never be slurped in
+#     and then copied into the repo sidecar by the atomic rename below.
+#   * O_NONBLOCK  -> opening a FIFO / char-device (e.g. /dev/zero) returns
+#     immediately instead of blocking the hook forever ("never blocks"
+#     invariant); the fstat/S_ISREG check then rejects it before any read.
+# Anything that isn't a plain regular file leaves `data == {}`, i.e. the
+# hook proceeds exactly as if the sidecar were absent-but-bootstrappable,
+# and the atomic tmp+rename below replaces the offending path with a real
+# regular file (rename never follows a symlink at the target path).
 data = {}
-if os.path.exists(usage_path):
+try:
+    fd = os.open(usage_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+except OSError:
+    fd = None
+if fd is not None:
     try:
-        with open(usage_path, "r", encoding="utf-8") as f:
-            loaded = json.load(f)
-        if isinstance(loaded, dict):
-            data = loaded
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            with os.fdopen(fd, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                data = loaded
+        else:
+            os.close(fd)
     except Exception:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
         data = {}
 
 now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -94,11 +119,17 @@ rec = data.get(key)
 if not isinstance(rec, dict):
     rec = dict(DEFAULTS)
 else:
-    # telemetry.md "Field-rename compat": on the first write to a record
-    # still carrying the legacy `pinned` key, silently migrate its value
-    # to `protected` and drop `pinned`.
+    # telemetry.md "Field-rename compat" + "accept either name as truthy":
+    # on the first write to a record still carrying the legacy `pinned`
+    # key, migrate to `protected` and drop `pinned`. The migrated value is
+    # the UNION of both names' truthiness, never a blind overwrite
+    # (codex-атк P1): a record like {"protected": true, "pinned": false}
+    # must stay protected — clobbering `protected` with `pinned` would
+    # silently un-protect a page and expose it to cleanup, contradicting
+    # the documented read-side "either name truthy" contract.
     if "pinned" in rec:
-        rec["protected"] = rec.pop("pinned")
+        pinned_val = rec.pop("pinned")
+        rec["protected"] = bool(rec.get("protected")) or bool(pinned_val)
     # telemetry.md "Backfill missing keys silently": a record that already
     # exists but predates newer fields gets those fields filled with
     # defaults, without touching any field it already has.

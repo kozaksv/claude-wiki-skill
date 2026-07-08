@@ -55,21 +55,44 @@ _wiki_ver_schema_ok() {
 
 wiki_writable() {
   # $1 = wiki dir. exit 0 only if frontmatter version is current AND
-  # .usage.json already exists (so the sidecar is only ever mutated, not
-  # silently created out of a version-gate write path).
+  # .usage.json already exists as a REGULAR, NON-SYMLINK file (so the
+  # sidecar is only ever mutated, not silently created out of a
+  # version-gate write path).
+  #
+  # The regular-non-symlink requirement is a security invariant shared
+  # with hooks/post-tool-use.sh's python read/write path (codex-атк P1):
+  # a malicious repo that plants docs/wiki/.usage.json as a SYMLINK (to a
+  # valid JSON file elsewhere) or a FIFO / char-device (e.g. /dev/zero)
+  # must never be treated as writable — following such a link would
+  # exfiltrate outside JSON into the repo sidecar on the next atomic
+  # rename, and open()ing a FIFO/char-device would block the hook,
+  # violating the "never blocks" invariant. `-L` is checked BEFORE `-f`
+  # because `-f` follows symlinks (a symlink-to-regular-file passes `-f`).
   local wiki_dir="$1"
+  local usage="$wiki_dir/.usage.json"
   _wiki_ver_schema_ok "$wiki_dir" || return 1
-  [ -f "$wiki_dir/.usage.json" ] || return 1
+  [ ! -L "$usage" ] || return 1
+  [ -f "$usage" ] || return 1
   return 0
 }
 
 wiki_bootstrappable() {
-  # $1 = wiki dir. true when the schema version is current but
-  # .usage.json does not exist yet (fresh-current wiki, sidecar may be
-  # created from scratch).
+  # $1 = wiki dir. true when the schema version is current AND nothing at
+  # all sits at the .usage.json path yet — no regular file, no symlink
+  # (dangling or not), no FIFO/char-device/directory (fresh-current wiki,
+  # sidecar may be created from scratch).
+  #
+  # "Bootstrappable" means `! -e` AND `! -L`, NOT merely `! -f`
+  # (codex-атк P1). A bare `! -f` test is true for a symlink to a
+  # char-device, a FIFO, or a dangling symlink — all of which the old
+  # code would have declared bootstrappable, letting post-tool-use.sh
+  # open() a blocking/exfiltrating sidecar. `! -L` additionally rejects a
+  # dangling symlink, for which `-e` is false but `-L` is true.
   local wiki_dir="$1"
+  local usage="$wiki_dir/.usage.json"
   _wiki_ver_schema_ok "$wiki_dir" || return 1
-  [ ! -f "$wiki_dir/.usage.json" ] || return 1
+  [ ! -e "$usage" ] || return 1
+  [ ! -L "$usage" ] || return 1
   return 0
 }
 

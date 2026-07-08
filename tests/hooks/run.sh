@@ -536,6 +536,51 @@ printf -- '---\r\nwiki_version: "3.0"\r\n---\r\n' >"$wiki/schema.md"
 if wiki_writable "$wiki"; then r=0; else r=1; fi
 assert_eq "wiki_writable: CRLF schema.md, old version -> still false" "1" "$r"
 
+# h. .usage.json is a SYMLINK (to a valid external JSON file) -> neither
+#    writable nor bootstrappable (codex-атк P1). Following it on write
+#    would slurp external JSON into the repo sidecar via the atomic
+#    rename. `-f` alone would pass (it follows the link to a regular
+#    file); the `! -L` guard must reject it.
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+outside_json="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-outside.XXXXXX")/external.json"
+mkdir -p "$(dirname "$outside_json")"
+track_tmp "$(dirname "$outside_json")"
+printf '{"secret.md": {"view_count": 999}}' >"$outside_json"
+rm -f "$wiki/.usage.json"
+ln -s "$outside_json" "$wiki/.usage.json"
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: .usage.json symlink -> false (no follow/exfil)" "1" "$r"
+if wiki_bootstrappable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_bootstrappable: .usage.json symlink -> false" "1" "$r"
+
+# i. .usage.json is a FIFO -> neither writable nor bootstrappable
+#    (codex-атк P1). Old `! -f` bootstrappable test would have declared
+#    a FIFO bootstrappable, letting the hook open() it and block forever.
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+rm -f "$wiki/.usage.json"
+mkfifo "$wiki/.usage.json"
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: .usage.json FIFO -> false" "1" "$r"
+if wiki_bootstrappable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_bootstrappable: .usage.json FIFO -> false (never blocks)" "1" "$r"
+rm -f "$wiki/.usage.json"
+
+# j. .usage.json is a DANGLING symlink -> not bootstrappable. `-e` is
+#    false for a broken link, so a bare `! -e` test would wrongly call it
+#    bootstrappable; the `! -L` guard rejects it (TOCTOU: the link target
+#    could be created as a FIFO between gate and open).
+fixture="$(make_fixture)"
+wiki="$fixture/docs/wiki"
+rm -f "$wiki/.usage.json"
+ln -s "$wiki/does-not-exist-target" "$wiki/.usage.json"
+if wiki_writable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_writable: .usage.json dangling symlink -> false" "1" "$r"
+if wiki_bootstrappable "$wiki"; then r=0; else r=1; fi
+assert_eq "wiki_bootstrappable: .usage.json dangling symlink -> false" "1" "$r"
+rm -f "$wiki/.usage.json"
+
 echo "=== session-start.sh ===" >&2
 
 # session-start.sh is a standalone hook process (it calls `exit` on every
@@ -877,6 +922,106 @@ created="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "created_at")"
 assert_eq "post-tool-use: backfill leaves existing created_at untouched" "2026-01-01T00:00:00Z" "$created"
 vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
 assert_eq "post-tool-use: backfill write bumps pre-existing view_count" "3" "$vc"
+
+# 13. pinned/protected union (codex-атк P1): a record carrying BOTH
+#     {"protected": true, "pinned": false} must stay protected after the
+#     migration write — the legacy `pinned:false` must NOT clobber the
+#     live `protected:true`, or a protected page would silently become
+#     cleanup-eligible. Old key dropped, protected stays true.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+python3 -c "
+import json
+d = {'foo.md': {
+    'view_count': 1, 'use_count': 0, 'patch_count': 0,
+    'last_viewed_at': None, 'last_used_at': None, 'last_patched_at': None,
+    'created_at': '2026-01-01T00:00:00Z', 'state': 'active',
+    'protected': True, 'pinned': False, 'archived_at': None,
+}}
+json.dump(d, open('$fixture/docs/wiki/.usage.json', 'w'))
+"
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+prot="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "protected")"
+assert_eq "post-tool-use: protected:true survives pinned:false migration (union)" "True" "$prot"
+has_pinned="$(python3 -c "
+import json
+d = json.load(open('$fixture/docs/wiki/.usage.json'))
+print('pinned' in d.get('foo.md', {}))
+")"
+assert_eq "post-tool-use: legacy pinned key dropped even in union case" "False" "$has_pinned"
+
+# 13b. Reverse direction: {"protected": false, "pinned": true} -> union
+#      keeps it protected (either name truthy).
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+python3 -c "
+import json
+d = {'foo.md': {
+    'view_count': 1, 'use_count': 0, 'patch_count': 0,
+    'last_viewed_at': None, 'last_used_at': None, 'last_patched_at': None,
+    'created_at': '2026-01-01T00:00:00Z', 'state': 'active',
+    'protected': False, 'pinned': True, 'archived_at': None,
+}}
+json.dump(d, open('$fixture/docs/wiki/.usage.json', 'w'))
+"
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+prot="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "protected")"
+assert_eq "post-tool-use: pinned:true promotes protected:false via union" "True" "$prot"
+
+# 14. .usage.json is a SYMLINK to an external JSON file (codex-атк P1):
+#     the hook must NOT read the external file's contents into the repo
+#     sidecar, and the external file must remain byte-for-byte unchanged.
+#     Version gate rejects the symlink, so nothing is written at all.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+outside_json="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-outside.XXXXXX")/external.json"
+mkdir -p "$(dirname "$outside_json")"
+track_tmp "$(dirname "$outside_json")"
+printf '{"SECRET_EXTERNAL_KEY": {"view_count": 999}}' >"$outside_json"
+outside_sha_before="$(_sha "$outside_json")"
+rm -f "$fixture/docs/wiki/.usage.json"
+ln -s "$outside_json" "$fixture/docs/wiki/.usage.json"
+out="$(_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" 2>&1)"
+rc=$?
+assert_eq "post-tool-use: symlink .usage.json -> exit 0" "0" "$rc"
+assert_file_unchanged "post-tool-use: symlink .usage.json -> external file untouched" "$outside_json" "$outside_sha_before"
+# The gate blocks the symlinked sidecar entirely, so the hook writes
+# nothing: the path must STILL be a symlink (never replaced by a repo
+# regular file materializing the external JSON). If a regression let the
+# write through, os.replace would have converted it to a regular file
+# carrying SECRET_EXTERNAL_KEY committed inside the repo tree.
+if [ -L "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
+assert_eq "post-tool-use: symlink .usage.json left untouched (no exfil write)" "0" "$r"
+if [ -f "$fixture/docs/wiki/.usage.json" ] && [ ! -L "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
+assert_eq "post-tool-use: sidecar not materialized as a regular repo file" "1" "$r"
+rm -f "$fixture/docs/wiki/.usage.json"
+
+# 15. .usage.json is a FIFO (codex-атк P1): the hook must return promptly
+#     (never block on open()) and exit 0. Run with a hard timeout so a
+#     regression that blocks fails loudly instead of hanging the suite.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/foo.md" <<'EOF'
+# Foo
+EOF
+rm -f "$fixture/docs/wiki/.usage.json"
+mkfifo "$fixture/docs/wiki/.usage.json"
+if command -v timeout >/dev/null 2>&1; then
+  _timeout="timeout 10"
+elif command -v gtimeout >/dev/null 2>&1; then
+  _timeout="gtimeout 10"
+else
+  _timeout=""
+fi
+_ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" $_timeout bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: FIFO .usage.json -> returns promptly, exit 0 (never blocks)" "0" "$rc"
+rm -f "$fixture/docs/wiki/.usage.json"
 
 # ---- summary ----
 echo "" >&2
