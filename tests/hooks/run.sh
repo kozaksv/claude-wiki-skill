@@ -301,7 +301,26 @@ expected="$(real "$fixture/level1/sub/docs/wiki")"
 out="$(discover_wiki "$fixture/level1/level2/level3" 2>/dev/null)"
 assert_eq "relative pointer resolves against config-file dir, not start_dir" "$expected" "$out"
 
-# 10. outside a git repo: boundary is $CLAUDE_PROJECT_DIR, never "/".
+# 10. outside a git repo: FAIL-CLOSED. Even a perfectly valid, in-bounds
+#     pointer + real docs/wiki/index.md must resolve to NOTHING when there
+#     is no git toplevel — discovery is git-backed and must never legalize
+#     a boundary for an orphan / non-git tree (codex-атк P1).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+# deliberately no `git init`
+mkdir -p "$fixture/docs/wiki"
+printf 'valid index' >"$fixture/docs/wiki/index.md"
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki at `docs/wiki`.
+EOF
+out="$(CLAUDE_PROJECT_DIR="$fixture" discover_wiki 2>/dev/null)"
+assert_eq "outside git repo: fail-closed, valid in-bounds pointer still resolves nothing" "" "$out"
+
+# 10b. outside a git repo: out-of-bounds pointer also yields nothing and
+#      never leaks /etc/passwd (fail-closed short-circuits before any
+#      pointer resolution).
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
 track_tmp "$fixture"
 # deliberately no `git init`
@@ -311,7 +330,7 @@ cat >"$fixture/CLAUDE.md" <<'EOF'
 Wiki at `../../etc/passwd`.
 EOF
 out="$(CLAUDE_PROJECT_DIR="$fixture" discover_wiki 2>/dev/null)"
-assert_eq "outside git repo: out-of-bounds pointer rejected, boundary stays at CLAUDE_PROJECT_DIR" "" "$out"
+assert_eq "outside git repo: out-of-bounds pointer rejected (fail-closed)" "" "$out"
 assert_not_contains "outside git repo: no /etc/passwd leakage" "$out" "root:"
 
 # 11. no realpath stderr noise for nonexistent paths.
@@ -325,6 +344,54 @@ Wiki at `does/not/exist/anywhere`.
 EOF
 err="$(discover_wiki "$fixture" 2>&1 >/dev/null)"
 assert_not_contains "no raw realpath stderr noise" "$err" "No such file or directory"
+
+# 12. agent-neutral discovery: a stale/pointerless CLAUDE.md must NOT mask
+#     a valid pointer in AGENTS.md sitting in the SAME directory. Previously
+#     only the first existing instruction file was read, so this fell into
+#     the wrong fallback / "no wiki" (codex-атк P1).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/from-agents/wiki"
+printf 'agents index' >"$fixture/from-agents/wiki/index.md"
+# CLAUDE.md exists but its "## Wiki" section carries NO backtick pointer.
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+See the team handbook for where the wiki lives.
+EOF
+cat >"$fixture/AGENTS.md" <<'EOF'
+## Wiki
+
+Wiki at `from-agents/wiki`.
+EOF
+expected="$(real "$fixture/from-agents/wiki")"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "agent-neutral: stale CLAUDE.md does not mask valid AGENTS.md pointer" "$expected" "$out"
+
+# 13. set -euo pipefail safety: a "## Wiki" section that exists but has NO
+#     backtick token makes the awk|grep|head|sed pipe exit non-zero. Sourced
+#     under `set -euo pipefail`, discover_wiki must NOT abort the caller on
+#     that assignment — it must fall through cleanly (codex-атк P1).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Section present, but no backtick pointer anywhere in it.
+EOF
+# Run in a fresh subshell that turns on the strict flags BEFORE sourcing,
+# so we observe the exact abort behavior a strict hook caller would.
+set_e_rc=0
+set_e_out="$(
+  set -euo pipefail
+  source "$DISCOVER_LIB"
+  discover_wiki "$fixture"
+  printf 'REACHED_END'
+)" || set_e_rc=$?
+assert_eq "set -euo pipefail: discover_wiki returns 0 on pointerless section" "0" "$set_e_rc"
+assert_contains "set -euo pipefail: caller runs to completion (not aborted)" "$set_e_out" "REACHED_END"
 
 # ---- assert_file_unchanged sanity: discover_wiki is read-only ----
 fixture="$(make_fixture)"
