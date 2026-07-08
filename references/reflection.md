@@ -7,7 +7,7 @@ The wiki is not just a passive store — it is a feedback loop. After meaningful
 Reflection has two purposes:
 
 1. **Visible reasoning** — a short, predictable block that lets the user verify the agent didn't just edit files, it actually thought about the diff. Hermes-style silent telemetry stays in `.usage.json`; РЕФЛЕКСІЯ is the loud counterpart.
-2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving so the next session doesn't have to re-derive it?". Load `references/crystallization.md` when a proposal is plausible; the reflection block names what was crystallized in the `Автоматизував:` field (one of `wiki — concepts/{name}.md`, `skill — delegated to writing-skills`, `skill — created at {path}`, or `нічого` with reason).
+2. **Crystallization trigger** — every reflection is an opportunity to ask "is this pattern worth saving so the next session doesn't have to re-derive it?". Load `references/crystallization.md` when a proposal is plausible; the reflection block names what was crystallized in the `Автоматизував:` field (`wiki — concepts/{name}.md`, or `нічого` with reason).
 
 Reflection fires on **events**, not on a timer the skill maintains. The agent is responsible for self-checking the trigger conditions on every operation — there is no harness-side counter.
 
@@ -21,21 +21,22 @@ Print this verbatim at the end of a triggered turn. Do not paraphrase the field 
 Дізнався: {one sentence — what new insight emerged}
 Чому це краще: {one or two sentences — why it works, why this approach}
 Зберіг у wiki: [[page-a]], [[page-b]]   (or: «не торкав wiki — нічого синтетичного»)
-Автоматизував: {wiki — concepts/{name}.md  /  skill — delegated to writing-skills  /  skill — created at {path}  /  нічого + причина}
+Автоматизував: {wiki — concepts/{name}.md  /  нічого + причина}
 
 [ONLY if structural files were touched (index.md / schema.md / log.md / .usage.json):]
 Перевірив:
   ✅ {what was updated}
   ✅ {what was updated}
   ⚠️ {what was skipped and why}
-
-──────────────────────────────────────────
-🧹 Показати список того, що в wiki могло застаріти?
-   Я лише покажу — нічого не змінюватиму без твого слова.
-   [y] показати  /  [n] продовжуємо
 ```
 
-The trailing horizontal-rule + cleanup-prompt is part of the block — see `references/cleanup-flow.md` for the safety contract behind it.
+The block ends on `Автоматизував:` (or `Перевірив:` when present) — no trailing interrogation, no y/n menu. The **one exception**: on a `trigger: pre-commit` turn where passive drift signals exist (dead cross-refs / schema drift — the same cheap, no-LLM-read signals `wiki status` computes), append a single non-interactive pointer line after the block:
+
+```
+⚠️ Вікі: {N} пасивних дрифт-сигналів — запусти `wiki status` для деталей
+```
+
+This asks nothing and runs nothing — it only points at the manual entry point (`wiki status`). It never appears on any other trigger, and it never appears on a pre-commit turn with no drift signal. See `references/cleanup-flow.md` for the full contract behind this notice.
 
 ### Triggers
 
@@ -77,7 +78,7 @@ Concretely:
 - A pure Query operation that only read pages → no reflection.
 - A Lint run → **no reflection, ever** (regardless of whether AUTO bucket wrote edits). The lint report itself — with 🟢 Авто-застосовано / 🟡 Потребує твого рішення / 🔵 Примітки / ВІДКАТ sections — already **is** the visible reasoning. Layering a РЕФЛЕКСІЯ block on top duplicates the structure, and the report's own ВІДКАТ section already exposes revert handles. No extra synthesis required.
 - A `wiki status` invocation → no reflection (meta-operation, no edits).
-- A cleanup-flow run (entered via `wiki status [a]/[b]/[c]` or via the РЕФЛЕКСІЯ cleanup-prompt) → no reflection. The action menu and revert section in the cleanup report serve the same purpose.
+- A cleanup-flow run (entered via `wiki status [a]/[b]/[c]`) → no reflection. The action menu and revert section in the cleanup report serve the same purpose.
 - An Ingest-Source that read 5 pages and edited 3 → reflection fires.
 - An Init that created files → reflection fires (structural changes always reflect).
 

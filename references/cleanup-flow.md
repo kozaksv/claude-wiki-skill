@@ -1,53 +1,28 @@
-### Cleanup-prompt embedded in reflection
-
-The trailing block (after the horizontal rule) is an **embedded cleanup-prompt**:
-
-```
-🧹 Показати список того, що в wiki могло застаріти?
-   Я лише покажу — нічого не змінюватиму без твого слова.
-   [y] показати  /  [n] продовжуємо
-```
-
-**Safety contract:**
-
-- `[y]` → the agent **only displays** a candidate list (top-N by drift signal from `.usage.json`, plus passive findings like cross-ref drift). It **does not** edit, delete, or modify any wiki content. The list is informational; any action taken from it requires a separate explicit instruction from the user.
-- `[n]` → the agent continues the conversation. Reflection block is closed.
-- No reply within the same turn → treat as `[n]`. Do not block waiting; the user can come back to it.
-
-The prompt is short on purpose — it's a passive offer, not an interrogation. If the user does not engage in three consecutive reflections, scale back to firing it only on pre-commit moments (still optional from the user side). This avoids prompt fatigue.
-
-**Anti-recursion rule (hard).** The cleanup-prompt **MUST NOT** appear at the end of a Lint run, a `wiki status` run, or any cleanup-flow run — independent of whether reflection itself would have fired. The prompt's purpose is to *bridge* normal work (a feature commit, a finished todo) into a wiki-cleanup pass. Bridging from a cleanup to a cleanup is recursive: the user has just seen what's stale and chosen which fixes to apply; offering «показати, що могло застаріти?» asks them to redo the work they finished one screen ago. Concretely: when emitting output at the end of `вікі лінт` / `вікі статус` / a cleanup-flow run, omit the cleanup-prompt block unconditionally. Combined with the anti-noise rule above (no reflection after lint / status / cleanup-flow), this means those operations end on their own report and nothing else.
-
-The same downstream flow (subset selection → content-verification → action menu) is also reachable from the `wiki status` operation. Both entry points lead to identical mechanics; this is documented in detail under `## Operation: Wiki Status` below and in the `### Cleanup-flow` subsection that immediately follows.
-
 ### Cleanup-flow
 
-The cleanup-flow is the **single canonical path** for any "the wiki has drifted, let's fix it" moment. Both entry points (the embedded РЕФЛЕКСІЯ prompt and the `wiki status` command) funnel into the same mechanics: subset selection → content-verification → per-page action menu. This subsection is the contract; everything in `## Operation: Lint` and `## Operation: Wiki Status` is a delegation target.
+The cleanup-flow is the **single canonical path** for any "the wiki has drifted, let's fix it" moment. The single entry point is `wiki status`; downstream is subset selection → content-verification → Two-Tier classification (AUTO auto-applied, DECIDE/INFO via the action menu below). This subsection is the contract; everything in `## Operation: Lint` and `## Operation: Wiki Status` is a delegation target.
 
-#### Two entry points, same downstream flow
+### Passive drift notice
 
-| Entry point | Trigger | What the user picks |
-|---|---|---|
-| **РЕФЛЕКСІЯ embedded prompt** | Passive — emitted at the end of a reflection-firing turn | `[y]` показати → enters subset selection |
-| **`wiki status` command** | Active — user typed `wiki status` / `вікі статус` | `[a]` / `[b]` / `[c]` directly picks a subset |
+At the end of a `trigger: pre-commit` РЕФЛЕКСІЯ block (see `references/reflection.md`), if passive drift signals exist (dead cross-refs / schema drift — the same cheap, no-LLM-read, no-`view_count`-bump signals `wiki status` already computes), the skill appends a single non-interactive line:
 
-Both lead to:
+```
+⚠️ Вікі: {N} пасивних дрифт-сигналів — запусти `wiki status` для деталей
+```
 
-1. **Subset selection** — top-5 most edited (`[a]`), top-5 longest unverified (`[b]`), or specific pages / category (`[c]`). Page protection filters out `protected: true` pages from `[a]` and `[b]` automatically.
-2. **Content-verification** — skill reads each picked page in full (this bumps `view_count`), checks claims against cited code and disk state, surfaces drift findings.
-3. **Action menu** — for each finding, the user picks one of the actions below.
+This fires at most once per pre-commit turn, only when a passive drift signal is present, and it is a **pointer**, not a second entry point — it names `wiki status` as the place to act; it does not itself offer a menu, ask `[y]/[n]`, or mutate anything. No other trigger (todo-completion, periodic-nudge, explicit, memory-flush) ever shows it, and a pre-commit turn with no drift signal shows nothing either.
 
-The two entry points share the same code path on purpose. There is no "lite" cleanup vs. "full" cleanup; the only difference is which trigger surfaced the prompt.
+**Anti-recursion rule (hard), re-scoped.** The passive drift notice **MUST NOT** appear at the end of a Lint run, a `wiki status` run, or any cleanup-flow run — those already end on their own report, and re-surfacing the notice there would ask the user to redo work they just finished.
 
 #### Action menu (per-page / per-finding)
 
-After verification, the skill presents findings with a numbered list. For each finding, the user picks an action verb (Ukrainian wording is the contract — do not translate):
+The six verbs below are the menu for **DECIDE / elevated-INFO** findings only — AUTO findings are already applied (and committed) before the report; the user reverts them with `відкат` / `відкат N`, they are never offered a verb (повний контракт AUTO/DECIDE/INFO — `## Operation: Lint › Two-Tier Autonomy`). After verification, the skill presents DECIDE/INFO findings with a numbered list. For each finding, the user picks an action verb (Ukrainian wording is the contract — do not translate):
 
 | Action | What the skill does | Telemetry effect |
 |---|---|---|
 | `глянь і онови` | Read page + cited code, update content synchronously, show diff before saving | `bump_patch(path)` |
 | `видали` | Delete the file, remove from `index.md`, mark in `.usage.json` | `forget(path)` |
-| `захисти` | Set `protected: true` in `.usage.json` — future cleanup-prompts skip this page | toggle `protected` |
+| `захисти` | Set `protected: true` in `.usage.json` — cleanup-flow skips this page | toggle `protected` |
 | `merge` | Propose merging two pages into one; triggers a separate flow that asks which is the target and which is the source | `forget(merged-into-other)` + `bump_patch(target)` |
 | `розбий` | Invoke the existing `## Operation: Split` on this page | (split's own telemetry, normally `bump_patch` on each successor) |
 | `глянь обидві` | Verbose side-by-side diff + recommendation (used when content-verification surfaces a contradiction between two pages) | (no immediate mutation; user then picks per-page action on each side) |

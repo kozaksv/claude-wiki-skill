@@ -380,8 +380,17 @@ if [ "$self_improvement_lines" -gt 90 ]; then
   fail "self-improvement routing reference should stay compact (<=90 lines), got $self_improvement_lines"
 fi
 
-grep -q 'set_skill_link' "$ROOT/references/crystallization.md" ||
-  fail "direct skill creation must point at installer safety helpers"
+grep -q 'set_skill_link' "$ROOT/references/crystallization.md" &&
+  fail "crystallization must not reference installer skill helpers (skill tier removed in 4.4)"
+
+grep -rq '🧹' "$ROOT/references/" &&
+  fail "cleanup-prompt emoji must not appear in references/ (removed in 4.4)"
+
+grep -rq 'writing-skills' "$ROOT/references/" &&
+  fail "skill-delegation must not appear in references/ (skill tier removed in 4.4)"
+
+grep -q 'Two entry points' "$ROOT/references/cleanup-flow.md" &&
+  fail "cleanup-flow must have a single entry point (wiki status)"
 
 grep -q '### РЕФЛЕКСІЯ block format (strict template)' "$ROOT/references/reflection.md" ||
   fail "reflection strict template missing"
