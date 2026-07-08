@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Skill behavior version: 4.3.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2/v4.3 changed agent behavior, installer behavior, and log substrate, not the on-disk schema major.
+**Skill behavior version: 4.4.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2/v4.3/v4.4 changed agent behavior, installer behavior, and log substrate, not the on-disk schema major.
 
 Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
@@ -27,6 +27,15 @@ Exports created by install.sh:
 `doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `96d6bf9e1df309c4b76d924d3a1f774f7ee33d12`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
+
+## What's new in v4.4
+
+- **v4.4.0 on master:** wiki-only crystallization — the skill-tier
+  crystallization target is removed, leaving `wiki` as the sole artifact
+  type. The interactive per-reflection cleanup proposal is replaced by a
+  single-entry cleanup-flow: a non-interactive, conditional pre-commit
+  passive drift notice that points at `wiki status` as the one way to
+  trigger cleanup. `wiki_version` stays `"4.0"` — behavior-only change.
 
 ## What's new in v4.3
 
@@ -115,7 +124,7 @@ Exports created by install.sh:
 v4.1 describes behavior changes that shipped on the path to v4.2. There is no
 separate `v4.1.0` install tag; use `v4.2.0` for the stable cross-agent release.
 
-- **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до двох артефактних типів: `wiki` і `skill`. User-runnable скрипти (`scripts/*.sh` / `*.py`) видалено як target крихталізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/crystallization.md`.
+- **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до wiki-only: єдиний target крихталізації — `wiki`-сторінка. User-runnable скрипти (`scripts/*.sh` / `*.py`) і окремий skill-tier видалено як target крихталізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/crystallization.md`. *(Перероблено у v4.1 і v4.4.)*
 - **Proactive query trigger.** Скіл активується на природних українських формах питання («як налаштувати X», «що таке X», «де лежить Y», «пам'ятаєш як ми Z», «потрібно знову W», «розкажи про…») — без вимоги вживати ключове слово "wiki" / "вікі". Master rule: query перед генерацією проєктно-специфічного контенту з пам'яті, навіть коли «знаю відповідь». Деталі: `references/operation-query.md`.
 - **Discovery ↔ crystallization pair.** Коли query не знаходить релевантної сторінки — це сигнал-кандидат для крихталізації після того, як агент відповість. Пара двох половин одного циклу: query читає збережене, crystallization зберігає re-derived.
 
@@ -123,7 +132,7 @@ separate `v4.1.0` install tag; use `v4.2.0` for the stable cross-agent release.
 
 - **РЕФЛЕКСІЯ block** — після кожного edit/write проходу скіл вмикає короткий refleksiya-крок з anti-noise rule (read-only блоки не тригерять reflection).
 - **Telemetry sidecar (`.usage.json`)** — gitignored per-clone metadata: `view_count` / `use_count` / `patch_count` (з timestamp'ами `last_viewed_at` / `last_used_at` / `last_patched_at`) для кожної сторінки. Для пріоритизації, не для flagging.
-- **Tiered crystallization** — патерн повторюється 3+ разів → пропозиція (y/n/пізніше) створити concept-сторінку, helper-скрипт або під-скіл. Ніколи silent. *(Перероблено у v4.1 — див. вище.)*
+- **Tiered crystallization** — патерн повторюється 3+ разів → пропозиція (y/n/пізніше) створити concept-сторінку, helper-скрипт або під-скіл. Ніколи silent. *(Перероблено у v4.1 і v4.4 — див. вище.)*
 - **`wiki status` operation** — інтроспективний звіт: hot pages, cold pages, drift candidates, telemetry summary.
 - **Karpathy lint reformulation** — staleness визначається content-verification (читання сторінки + judgement), не timestamp-евристикою.
 - **Versioning + migration** — поле `wiki_version` у `schema.md`. Структурні зміни — explicit plan-then-confirm; field-level backfill в `.usage.json` — silent.
@@ -173,6 +182,7 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 
 | Тег | Що це |
 |---|---|
+| **v4.4.0** *(behavior-only, немає окремого install-тегу — дивись `master`)* | Wiki-only crystallization (skill-tier видалено як target) + single-entry cleanup-flow: інтерактивна per-reflection пропозиція прибирання замінена на non-interactive pre-commit passive drift notice, що вказує на `wiki status` як єдину точку входу |
 | **v4.2.0** *(рекомендується для pin)* | Shared canonical cross-agent exports для Codex/Gemini + agent-neutral discovery + thin `SKILL.md` entrypoint |
 | `master` *(rolling)* | Найновіший стан інсталятора й skill references; може рухатись після останнього тегу |
 | **v4.0.0** | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization (4 рівні зі скриптами), cleanup-flow, page protection, 8 операцій |
