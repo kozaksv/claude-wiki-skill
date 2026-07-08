@@ -18,6 +18,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DISCOVER_LIB="$ROOT/hooks/lib/discover.sh"
 VERSION_GATE_LIB="$ROOT/hooks/lib/version-gate.sh"
+SESSION_START_HOOK="$ROOT/hooks/session-start.sh"
 
 # shellcheck source=../../hooks/lib/discover.sh
 source "$DISCOVER_LIB"
@@ -533,6 +534,102 @@ assert_eq "wiki_writable: CRLF schema.md, current version -> true" "0" "$r"
 printf -- '---\r\nwiki_version: "3.0"\r\n---\r\n' >"$wiki/schema.md"
 if wiki_writable "$wiki"; then r=0; else r=1; fi
 assert_eq "wiki_writable: CRLF schema.md, old version -> still false" "1" "$r"
+
+echo "=== session-start.sh ===" >&2
+
+# session-start.sh is a standalone hook process (it calls `exit` on every
+# path, including success) — it must be run as a subprocess, never
+# sourced, or `exit` would terminate this test harness itself.
+
+# 1. Happy path: valid wiki -> stable block markers + full index content
+#    injected, exit 0.
+fixture="$(make_fixture)"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start: exit 0 on valid wiki" "0" "$rc"
+assert_contains "session-start: opens WIKI INDEX block" "$out" "=== WIKI INDEX (hook-injected) ==="
+assert_contains "session-start: closes WIKI INDEX block" "$out" "=== END WIKI INDEX ==="
+assert_contains "session-start: injects full index.md content" "$out" "Test fixture wiki index."
+
+# 2. Preamble carries the mandatory untrusted-data label — the exact
+#    boundary phrase "НЕ інструкції" must appear (plan Task 2 requirement:
+#    index.md content is reference data, never trusted instructions).
+assert_contains "session-start: preamble has untrusted-data label" "$out" "НЕ інструкції"
+
+# 3. >24 KB index.md is truncated to the cap with a truncation marker; the
+#    tail past the cap must NOT appear in the injected block.
+fixture="$(make_fixture)"
+: >"$fixture/docs/wiki/index.md"
+yes "0123456789" | head -c 31000 >>"$fixture/docs/wiki/index.md"
+printf 'TAIL_MARKER_BEYOND_CAP' >>"$fixture/docs/wiki/index.md"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+assert_contains "session-start: >24KB index truncated with marker" "$out" "Індекс обрізано"
+assert_not_contains "session-start: truncated tail not leaked past 24KB cap" "$out" "TAIL_MARKER_BEYOND_CAP"
+
+# 4. Heartbeat: session_start_at / hook_version written atomically to
+#    .usage.json on a writable (current-schema) wiki.
+fixture="$(make_fixture)"
+CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" >/dev/null 2>&1
+sa="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json')); print(d.get('_hooks',{}).get('session_start_at',''))" 2>/dev/null)"
+hv="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json')); print(d.get('_hooks',{}).get('hook_version',''))" 2>/dev/null)"
+if [ -n "$sa" ]; then r=0; else r=1; fi
+assert_eq "session-start: heartbeat writes non-empty session_start_at" "0" "$r"
+assert_eq "session-start: heartbeat writes hook_version=1" "1" "$hv"
+# valid JSON after the write (atomic tmp+rename, never a half-written file).
+if python3 -c "import json; json.load(open('$fixture/docs/wiki/.usage.json'))" 2>/dev/null; then r=0; else r=1; fi
+assert_eq "session-start: .usage.json still valid JSON after heartbeat" "0" "$r"
+
+# 5. Version gate: legacy/wrong schema version -> index still injected
+#    (read-only, safe on any version), but .usage.json is NOT touched.
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/schema.md" <<'EOF'
+---
+wiki_version: "3.0"
+---
+
+# Schema
+EOF
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+assert_contains "session-start: legacy schema still injects index (read-only)" "$out" "=== WIKI INDEX (hook-injected) ==="
+assert_file_unchanged "session-start: legacy schema -> .usage.json NOT written" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 5b. Version gate: schema.md entirely absent -> same contract (index
+#     injected, .usage.json untouched).
+fixture="$(make_fixture)"
+rm -f "$fixture/docs/wiki/schema.md"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+assert_contains "session-start: missing schema.md still injects index" "$out" "=== WIKI INDEX (hook-injected) ==="
+assert_file_unchanged "session-start: missing schema.md -> .usage.json NOT written" "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 6. Lint reminder: last_lint_at 8 days old -> reminder present.
+fixture="$(make_fixture)"
+eight_days_ago="$(python3 -c "import time; print(time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-8*24*3600)))")"
+printf '{"_hooks": {"last_lint_at": "%s"}}' "$eight_days_ago" >"$fixture/docs/wiki/.usage.json"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+assert_contains "session-start: last_lint_at 8 days old -> reminder present" "$out" "wiki lint"
+
+# 6b. Lint reminder: last_lint_at 2 days old -> no reminder.
+fixture="$(make_fixture)"
+two_days_ago="$(python3 -c "import time; print(time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-2*24*3600)))")"
+printf '{"_hooks": {"last_lint_at": "%s"}}' "$two_days_ago" >"$fixture/docs/wiki/.usage.json"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+assert_not_contains "session-start: last_lint_at 2 days old -> no reminder" "$out" "wiki lint"
+
+# 6c. Lint reminder: last_lint_at absent entirely -> reminder present.
+fixture="$(make_fixture)"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+assert_contains "session-start: last_lint_at absent -> reminder present" "$out" "wiki lint"
+
+# 7. No wiki discoverable -> empty stdout, exit 0 (never blocks startup).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start: no wiki -> empty stdout" "" "$out"
+assert_eq "session-start: no wiki -> exit 0" "0" "$rc"
 
 # ---- summary ----
 echo "" >&2
