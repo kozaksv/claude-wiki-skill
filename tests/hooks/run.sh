@@ -735,6 +735,44 @@ assert_eq "session-start: FIFO .usage.json -> returns promptly, exit 0 (never bl
 assert_contains "session-start: FIFO .usage.json -> index still injected (read-only degrade)" "$out" "=== WIKI INDEX (hook-injected) ==="
 rm -f "$fixture/docs/wiki/.usage.json"
 
+# 8. Fresh checkout: current-schema wiki but .usage.json is entirely ABSENT
+#    (gitignored sidecar, never checked out) -> the heartbeat must still be
+#    written on this very first session by bootstrapping a minimal valid
+#    .usage.json, rather than skipping the write because wiki_writable()
+#    requires the file to already exist (fixwave0-8).
+fixture="$(make_fixture)"
+rm -f "$fixture/docs/wiki/.usage.json"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start: fresh checkout (no .usage.json) -> exit 0" "0" "$rc"
+assert_contains "session-start: fresh checkout -> index still injected" "$out" "=== WIKI INDEX (hook-injected) ==="
+if [ -f "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
+assert_eq "session-start: fresh checkout -> .usage.json bootstrapped" "0" "$r"
+sa="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json')); print(d.get('_hooks',{}).get('session_start_at',''))" 2>/dev/null)"
+if [ -n "$sa" ]; then r=0; else r=1; fi
+assert_eq "session-start: fresh checkout -> heartbeat written on first session" "0" "$r"
+hv="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json')); print(d.get('_hooks',{}).get('hook_version',''))" 2>/dev/null)"
+assert_eq "session-start: fresh checkout -> hook_version=1 written on bootstrap" "1" "$hv"
+if python3 -c "import json; json.load(open('$fixture/docs/wiki/.usage.json'))" 2>/dev/null; then r=0; else r=1; fi
+assert_eq "session-start: fresh checkout -> bootstrapped .usage.json is valid JSON" "0" "$r"
+if [ -L "$fixture/docs/wiki/.usage.json" ]; then r=1; else r=0; fi
+assert_eq "session-start: fresh checkout -> bootstrapped .usage.json is a real file, not a symlink" "0" "$r"
+
+# 8b. Fresh checkout + LEGACY schema (not current version) -> the version
+#     gate still wins over bootstrap: .usage.json must stay entirely absent.
+fixture="$(make_fixture)"
+rm -f "$fixture/docs/wiki/.usage.json"
+cat >"$fixture/docs/wiki/schema.md" <<'EOF'
+---
+wiki_version: "3.0"
+---
+
+# Schema
+EOF
+CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" >/dev/null 2>&1
+if [ -e "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
+assert_eq "session-start: fresh checkout + legacy schema -> .usage.json NOT created" "1" "$r"
+
 echo "=== post-tool-use.sh ===" >&2
 
 # post-tool-use.sh is a standalone hook process (it calls `exit` on every

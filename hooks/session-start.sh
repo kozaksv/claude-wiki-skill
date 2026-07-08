@@ -20,7 +20,18 @@
 # read-modify-write carve-out. Missing python3 / a corrupt .usage.json / a
 # failed write are all silently swallowed: the read-only index injection
 # still happens regardless (safe even against a legacy/wrong-version
-# wiki — only the heartbeat WRITE is gated by wiki_writable).
+# wiki — only the heartbeat WRITE is gated by wiki_writable OR
+# wiki_bootstrappable).
+#
+# Fresh checkout (fixwave0-8): .usage.json is gitignored, so on a brand
+# new checkout it does not exist yet — wiki_writable() alone would gate
+# the heartbeat off forever (it requires the sidecar to already be a
+# regular file), and .usage.json is otherwise only ever bootstrapped by
+# post-tool-use.sh, which may not run for a long time (or at all) after
+# startup. This hook therefore also accepts wiki_bootstrappable() (current
+# schema, path entirely absent) as write-eligible; the python helper below
+# creates a minimal valid sidecar in that case instead of skipping the
+# write, so the very first session already records session_start_at.
 #
 # Always exits 0: this hook must never block Claude Code startup.
 
@@ -48,15 +59,20 @@ READ FIRST виконано ЛИШЕ для цього index.md — темати
 EOF
 }
 
-# Best-effort telemetry helper. $1 = wiki dir, $2 = "1"/"0" writable
-# (already decided by the caller via wiki_writable, the version gate).
-# Reads {wiki}/.usage.json to decide the lint-reminder ("REMINDER=1"/
-# "REMINDER=0", printed on stdout), and — only when $2 = "1" AND the file
-# parses as a JSON object — atomically bumps _hooks.session_start_at /
-# _hooks.hook_version via tmp-file + rename in the same directory. No
-# python3 on PATH, a corrupt/non-object .usage.json, or any write error:
-# swallowed silently (stderr redirected, exceptions caught) — this
-# function never raises the caller's attention and never blocks.
+# Best-effort telemetry helper. $1 = wiki dir, $2 = "1"/"0" write-eligible
+# (already decided by the caller via wiki_writable OR wiki_bootstrappable,
+# the version gate). Reads {wiki}/.usage.json to decide the lint-reminder
+# ("REMINDER=1"/"REMINDER=0", printed on stdout), and — only when $2 = "1"
+# AND the sidecar either parses as a JSON object OR is simply absent
+# (fresh-checkout bootstrap) — atomically bumps _hooks.session_start_at /
+# _hooks.hook_version via tmp-file + rename in the same directory. A
+# missing sidecar is created from a minimal `{}` base in that same write,
+# never left un-bootstrapped. An EXISTING but corrupt/non-object
+# .usage.json is left untouched (not silently overwritten) — only its
+# absence is treated as bootstrappable. No python3 on PATH, a corrupt
+# .usage.json, or any write error: swallowed silently (stderr redirected,
+# exceptions caught) — this function never raises the caller's attention
+# and never blocks.
 _wiki_ss_telemetry() {
   local wiki_dir="$1" writable="$2"
   command -v python3 >/dev/null 2>&1 || return 0
@@ -85,6 +101,13 @@ def read_usage():
     #   * O_NONBLOCK  -> a FIFO / char-device opens immediately instead of
     #     hanging forever; the fstat/S_ISREG check then rejects it before
     #     any read. Anything not a plain regular file -> ({}, False).
+    #
+    # fixwave0-8: a completely ABSENT sidecar (FileNotFoundError, the
+    # normal fresh-checkout state — .usage.json is gitignored) is treated
+    # as ok=True with an empty `{}` base, distinct from an EXISTING but
+    # corrupt/non-object file (ok=False, left untouched below). This is
+    # what lets the write below bootstrap a minimal valid file on the
+    # very first session instead of silently skipping the heartbeat.
     d, ok, fd = {}, False, None
     try:
         fd = os.open(usage_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -95,6 +118,8 @@ def read_usage():
                 loaded = json.load(f)
             if isinstance(loaded, dict):
                 d, ok = loaded, True
+    except FileNotFoundError:
+        d, ok = {}, True
     except Exception:
         pass
     finally:
@@ -151,9 +176,13 @@ if isinstance(last_lint_at, str) and last_lint_at:
 
 print("REMINDER=1" if reminder_needed else "REMINDER=0")
 
-# Heartbeat write: only for a current-schema wiki (writable), only when the
-# sidecar parsed as an object, and only UNDER the lock — without it a
-# concurrent post-tool-use bump between our read and rename would be lost.
+# Heartbeat write: only for a current-schema wiki (writable OR
+# bootstrappable, decided by the bash caller), only when the sidecar
+# either parsed as an object OR was simply absent (parse_ok covers both —
+# see read_usage's FileNotFoundError branch, fixwave0-8), and only UNDER
+# the lock — without it a concurrent post-tool-use bump between our read
+# and rename would be lost. An existing-but-corrupt sidecar (parse_ok
+# False) is never touched here.
 if writable and parse_ok and lock_fd is not None:
     try:
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -205,8 +234,14 @@ main() {
     body="$(cat "$index_path" 2>/dev/null)"
   fi
 
+  # Write-eligible if the sidecar already exists (wiki_writable) OR is
+  # entirely absent on a current-schema wiki (wiki_bootstrappable — the
+  # fresh-checkout case, fixwave0-8: .usage.json is gitignored and would
+  # otherwise never get bootstrapped in time for the first heartbeat).
   local writable="0"
-  wiki_writable "$wiki" 2>/dev/null && writable="1"
+  if wiki_writable "$wiki" 2>/dev/null || wiki_bootstrappable "$wiki" 2>/dev/null; then
+    writable="1"
+  fi
 
   local telemetry_out reminder=""
   telemetry_out="$(_wiki_ss_telemetry "$wiki" "$writable")"
