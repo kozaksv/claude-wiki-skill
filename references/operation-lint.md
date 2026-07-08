@@ -290,7 +290,7 @@ Renumbering restarts each lint run.
 
 When AUTO findings exist:
 
-1. **Snapshot commit** — `git commit -m "chore(wiki): snapshot before lint auto-fixes"` on the current state. Stage only `docs/wiki/` if working tree has unrelated changes.
+1. **Snapshot commit** — `git commit -m "chore(wiki): snapshot before lint auto-fixes"` on the current state. Stage only the resolved `{wiki}` paths if the working tree has unrelated changes — never a hard-coded `docs/wiki/`, which stages the wrong files for wikis at pointer-resolved locations.
 2. **Per-fix commits** — each AUTO finding becomes its own commit:
    - Message: `auto-fix(wiki): #<N> <one-line description>` where `<N>` is the item number (e.g. `auto-fix(wiki): #2 drop derivable count from ui-components.md`)
    - Body: short rationale + grep evidence (e.g. `grep -c '^test\\b' ui-components.test.tsx → 14, page said 7`)

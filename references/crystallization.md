@@ -1,6 +1,6 @@
 ### Crystallization
 
-The reflection's `Автоматизував:` field isn't decorative — it's the agent's answer to a real question: **is anything from this block worth saving so the next session doesn't have to re-derive it?** When the answer is yes, the agent **proposes** (never silently creates) a single wiki-page artifact — never a skill.
+The reflection's `Автоматизував:` field isn't decorative — it's the agent's answer to a real question: **is anything from this block worth saving so the next session doesn't have to re-derive it?** When the answer is yes, the agent **proposes** (never silently creates) a single wiki-page artifact.
 
 | Type | Artifact | Storage | What the model judges (during a periodic nudge) |
 |---|---|---|---|

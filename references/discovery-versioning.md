@@ -214,9 +214,12 @@ For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
   Contract block above (since a stale-pointer repair rewrites that section
   anyway). **Before overwriting, capture any custom or legacy content in the old
   `## Wiki` section** (extra schema, hand-written notes, non-canonical details)
-  and surface it as a DECIDE finding — never silently discard it. Only rewrite
-  the section after that content has been surfaced. Mention the repair in the
-  response.
+  and quote it in the repair response — never silently discard it. Only rewrite
+  the section after that content has been quoted. Repair-time surfacing is
+  informational: Init/pointer-repair has no lint-style action menu, so do not
+  block on a verb choice — record the captured content as a DECIDE finding for
+  the next lint/cleanup pass, where the action menu exists. Mention the repair
+  in the response.
 
 Run this sync during Init and explicit pointer-repair requests. For non-absent
 Init states (`current`, `legacy`, `older`, `newer`), gate writes through the
@@ -393,6 +396,14 @@ treat the partial state according to what actually exists (`schema.md`,
   reflection. Motivation: prompt fatigue from the emoji cleanup-prompt asking
   after every reflection, plus an unused skill tier whose
   installer-safety/export-topology surface never paid off in practice.
+- Hardened alongside the simplification: destructive cleanup ops
+  (`видали`/`merge`/`розбий`) now commit the destructive change itself —
+  snapshot fires only when uncommitted wiki edits exist, no empty marker
+  commits — so `git revert HEAD` genuinely undoes the destruction; lint
+  snapshot staging targets the resolved `{wiki}` path instead of a hard-coded
+  `docs/wiki/`; stale-pointer repair quotes captured legacy `## Wiki` content
+  in the repair response and defers its DECIDE finding to the next lint pass
+  (no interactive dead-end during Init/repair).
 
 ### 4.3.0 (2026-06-02)
 - No schema migration (`wiki_version` stays `"4.0"`). New on-disk artifact:

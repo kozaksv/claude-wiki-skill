@@ -172,16 +172,20 @@ User: `wiki status`.
    ```
 
 7. User: `yes`.
-8. **Snapshot before delete:**
+8. **Snapshot before delete** — fires here because the working tree had
+   uncommitted wiki edits; on a clean tree this step is skipped (no empty
+   marker commits):
 
    ```bash
    git commit -m "chore(wiki): snapshot before видали"
    ```
 
 9. Skill deletes the file, removes from `index.md`, calls
-   `forget(concepts/legacy-feature-flag.md)` in `.usage.json`.
+   `forget(concepts/legacy-feature-flag.md)` in `.usage.json`, and **commits
+   the deletion as its own commit** (`chore(wiki): видали
+   concepts/legacy-feature-flag.md`).
 10. Skill confirms with rollback hint: «Якщо передумаєш — `git revert
-    HEAD` поверне до знімка».
+    HEAD` поверне сторінку» — true because HEAD is now the deletion commit.
 11. The lint-driven flow ends with its own confirmation and rollback hint. No
     extra РЕФЛЕКСІЯ block appears after `wiki status` / cleanup-flow.
 
@@ -269,7 +273,7 @@ later if the operation also touched `index.md` and `.usage.json`).
 Concrete `git log --oneline` after the destructive op might look like:
 
 ```
-abc1234 chore(wiki): cleanup — видалено concepts/legacy-feature-flag.md
+abc1234 chore(wiki): видали concepts/legacy-feature-flag.md
 def5678 chore(wiki): snapshot before видали
 ...
 ```

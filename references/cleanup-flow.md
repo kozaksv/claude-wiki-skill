@@ -63,21 +63,29 @@ Three layers protect against accidental destruction:
 
    Only `yes` (case-insensitive, trimmed) proceeds. Anything else cancels with no telemetry effect.
 
-2. **Snapshot before destructive ops.** Immediately before `видали` / `merge` / `розбий` actually mutates the wiki, the skill commits the current state:
+2. **Snapshot + committed destructive change.** Immediately before `видали` / `merge` / `розбий` mutates the wiki, if the working tree has uncommitted changes under `{wiki}`, the skill first commits them as a snapshot:
 
    ```bash
    git commit -m "chore(wiki): snapshot before {operation}"
    ```
 
-   Use the literal verb in `{operation}` — `видали`, `merge`, `розбий`. The commit captures the wiki *before* the destructive change, so rollback is a one-liner:
+   Use the literal verb in `{operation}` — `видали`, `merge`, `розбий`. The snapshot separates the user's pending edits from the destructive change so neither can sweep the other in. If the tree is already clean, skip the snapshot — the wiki lives in a git repo and history is already the anchor; do not create empty marker commits.
+
+   Then apply the destructive change and **commit it as its own commit**:
+
+   ```bash
+   git commit -m "chore(wiki): {operation} {path}"
+   ```
+
+   Rollback is a one-liner that reverts exactly that destructive commit:
 
    ```bash
    git revert HEAD
    ```
 
-   The skill mentions this in its post-operation message: «Якщо передумаєш — `git revert HEAD` поверне до знімка». Do not skip the snapshot just because the working tree «looked clean»; if there's nothing to commit, run an empty commit (`--allow-empty`) so the rollback anchor still exists.
+   The skill mentions this in its post-operation message: «Якщо передумаєш — `git revert HEAD` поверне сторінку». Committing the destruction itself is what makes that hint true: an uncommitted deletion would leave `git revert HEAD` pointing at the snapshot instead and restore nothing.
 
-   `.usage.json` is gitignored by default, so `git revert HEAD` may restore the
+   `.usage.json` is gitignored by default, so `git revert HEAD` restores the
    page and `index.md` without restoring the removed telemetry entry. If the
    agent notices this after a revert, it may offer to re-record a baseline entry
    with `bump_view`; do not do it silently.
