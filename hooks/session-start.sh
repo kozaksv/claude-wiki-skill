@@ -118,7 +118,15 @@ def read_usage():
     # very first session instead of silently skipping the heartbeat.
     d, ok, fd = {}, False, None
     try:
-        fd = os.open(usage_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        # Unix-only flags degrade to 0 on Windows via getattr — a bare
+        # os.O_NOFOLLOW reference raises AttributeError there, silently
+        # killing the heartbeat write (fixwave0-2 P2).
+        fd = os.open(
+            usage_path,
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+        )
         if stat.S_ISREG(os.fstat(fd).st_mode):
             f = os.fdopen(fd, "r", encoding="utf-8")
             fd = None  # ownership passed to f

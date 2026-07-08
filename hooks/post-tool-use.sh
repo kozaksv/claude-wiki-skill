@@ -134,7 +134,18 @@ if fcntl is not None:
 # regular file (rename never follows a symlink at the target path).
 data = {}
 try:
-    fd = os.open(usage_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    # O_NOFOLLOW / O_NONBLOCK are Unix-only attributes; on Windows they do
+    # not exist and a bare reference raises AttributeError, which the
+    # `except OSError` would NOT catch — killing all telemetry there
+    # (fixwave0-1 P1). getattr degrades them to 0: the defensive guards
+    # simply do not apply on a platform that has neither symlink-following
+    # hazards of the same shape nor mkfifo.
+    fd = os.open(
+        usage_path,
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0),
+    )
 except OSError:
     fd = None
 if fd is not None:
