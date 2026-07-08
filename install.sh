@@ -307,7 +307,7 @@ fi
 # canonical entrypoint. A failure here must never abort the wiki install —
 # text/source wiki operations work fine without hooks; only the automated
 # session-start/log-rotation conveniences are lost.
-if [ -x "$SKILL_LINK/hooks/install-hooks.sh" ]; then
+if [ -f "$SKILL_LINK/hooks/install-hooks.sh" ]; then
   if ! bash "$SKILL_LINK/hooks/install-hooks.sh"; then
     echo "Увага: не вдалося встановити git hooks. Запустіть вручну: bash \"$SKILL_LINK/hooks/install-hooks.sh\""
   fi

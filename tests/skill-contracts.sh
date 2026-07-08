@@ -603,6 +603,19 @@ grep -q 'version-gate.sh\|wiki_writable' "$ROOT/hooks/post-tool-use.sh" ||
 grep -q 'install-hooks.sh' "$ROOT/install.sh" ||
   fail "install.sh must call hooks/install-hooks.sh"
 
+# install.sh must gate hook registration on existence (-f), not the
+# executable bit (-x): the +x bit is commonly lost on Windows clones
+# (core.filemode=false) or after a zip/copy, and install.sh always invokes
+# the script via `bash ...`, so a missing +x should never skip registration.
+grep -qF '[ -x "$SKILL_LINK/hooks/install-hooks.sh" ]' "$ROOT/install.sh" &&
+  fail "install.sh must not gate hook registration on the executable bit (-x); use -f so it still runs via bash when +x was lost (Windows clone, zip extract, etc.)"
+
+grep -qF '[ -f "$SKILL_LINK/hooks/install-hooks.sh" ]' "$ROOT/install.sh" ||
+  fail "install.sh must gate hook registration on existence (-f \"\$SKILL_LINK/hooks/install-hooks.sh\"), since it invokes the script via bash regardless of the executable bit"
+
+grep -qF 'bash "$SKILL_LINK/hooks/install-hooks.sh"' "$ROOT/install.sh" ||
+  fail "install.sh must invoke install-hooks.sh via bash (not execute it directly), so a missing +x bit does not matter"
+
 grep -q 'uninstall-hooks.sh' "$ROOT/uninstall.sh" ||
   fail "uninstall.sh must call hooks/uninstall-hooks.sh"
 
