@@ -113,6 +113,15 @@
    - **Legacy (v1–v2):** sections inside an agent instruction file, usually `CLAUDE.md` (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
 
    Try `{wiki}/schema.md` first. Fall back to agent instruction file sections. When both exist, prefer `schema.md` and surface the duplication as a DECIDE finding during next lint.
+
+   **Configurable tracks:** the track set (and therefore the type vocabulary and
+   directory→type binding) is **not fixed** — `schema.md` may declare `preset:
+   <name>` or an inline `tracks:` list. With no declaration the default is the
+   `karpathy` preset (`concepts`/`entities`/`transcripts`). Built-in presets:
+   `karpathy`, `code-project` (projects may add their own). See SKILL.md →
+   *Tracks (configurable)* and
+   `references/wiki-structure.md`. The type vocabulary is the union of the
+   configured tracks' `type` values plus the reserved `reference` for `schema.md`.
 7. **If `index.md` is missing but other wiki-owned files exist (partial wiki)** — before declaring "no wiki found", check whether a wiki directory exists with wiki-owned files but lacks a valid `index.md`. The candidate directories to check (in this exact order, all of them, before falling through):
 
    - any directory referenced by a `## Wiki` pointer (even if its `index.md` is missing or invalid),
