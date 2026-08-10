@@ -238,7 +238,7 @@ For a fresh wiki (state = `absent`), present this single-block plan after
 project-type detection finishes. Substitute `{detected_type}` with the matched
 signal (e.g., `package.json`) or `порожній проєкт`; substitute `{entities-step}`
 with either `пропонована структура для {detected_type}: {category-list}` or
-`порожня папка (проєкт без сигналів; категорії з'являться пізніше)`; substitute
+`порожня папка + .gitkeep (проєкт без сигналів; категорії з'являться пізніше)`; substitute
 `{today}` with the current date in `YYYY-MM-DD` form. The plan is a user-facing
 outcome checklist, not an execution-order trace; the Execute section below may
 order steps differently for safe creation, migration, and failure reporting.
@@ -251,9 +251,9 @@ order steps differently for safe creation, migration, and failure reporting.
   2. docs/wiki/schema.md — frontmatter (wiki_version: "4.0", last_migration: "{today}", nudge_interval: 15) + три розділи (Layers / Operations / Conventions) + Migration Log
   3. docs/wiki/index.md — порожній з трьома секціями (Concepts | Entities | Transcripts)
   4. docs/wiki/log.md — порожній з заголовком
-  5. docs/wiki/concepts/ — порожня папка
+  5. docs/wiki/concepts/ — порожня папка (+ `.gitkeep`, бо git не зберігає порожніх папок)
   6. docs/wiki/entities/ — {entities-step}
-  7. docs/wiki/transcripts/ — порожня папка
+  7. docs/wiki/transcripts/ — порожня папка (+ `.gitkeep`)
   8. docs/wiki/.usage.json — телеметрія, порожня крім `_hooks.last_lint_at = now`
   9. archive/ — поза wiki (gitignored)
   10. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` через Cross-agent instruction-file sync; create missing minimal instruction files with a relative "Wiki schema → ..." path computed per file (usually `docs/wiki/schema.md`)
@@ -273,7 +273,7 @@ After consent:
    missing at this point, stop immediately; do not create wiki files. If the
    repo has a HEAD commit, record it for partial-failure reporting; if it is a
    fresh repo with unborn HEAD, record that explicitly.
-1. Create missing dirs: `concepts/`, `entities/`, `transcripts/`, `archive/`; create `entities/{categories}/` and `archive/{categories}/` only when the approved category list is non-empty
+1. Create missing dirs: `concepts/`, `entities/`, `transcripts/`, `archive/`; create `entities/{categories}/` and `archive/{categories}/` only when the approved category list is non-empty. Write an empty `.gitkeep` into every layer directory that ends up with no pages — git does not track empty directories, so without it the three-layer skeleton the plan just promised disappears on the first clone of the fresh wiki. `archive/` is gitignored and needs no placeholder. A `.gitkeep` may stay after real pages arrive; it costs nothing and removing it is not a lint finding
 2. Add `archive/` to `.gitignore`
 3. Move concept MDs → `concepts/`
 4. For each binary:

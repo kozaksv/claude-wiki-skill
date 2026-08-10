@@ -355,4 +355,6 @@ then
   fail "settings.json merge failed — nothing written"
 fi
 
+echo "install-hooks: SessionStart + PostToolUse зареєстровано в $SETTINGS_FILE" >&2
+
 exit 0

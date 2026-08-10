@@ -307,12 +307,15 @@ fi
 # canonical entrypoint. A failure here must never abort the wiki install —
 # text/source wiki operations work fine without hooks; only the automated
 # session-start/log-rotation conveniences are lost.
+HOOKS_STATUS="ok"
 if [ -f "$SKILL_LINK/hooks/install-hooks.sh" ]; then
   if ! bash "$SKILL_LINK/hooks/install-hooks.sh"; then
-    echo "Увага: не вдалося встановити git hooks. Запустіть вручну: bash \"$SKILL_LINK/hooks/install-hooks.sh\""
+    HOOKS_STATUS="failed"
+    echo "Увага: не вдалося зареєструвати session-хуки. Запустіть вручну: bash \"$SKILL_LINK/hooks/install-hooks.sh\""
   fi
 else
-  echo "Увага: install-hooks.sh не знайдено в $SKILL_LINK/hooks — hooks не встановлено."
+  HOOKS_STATUS="absent"
+  echo "Увага: install-hooks.sh не знайдено в $SKILL_LINK/hooks — хуки не зареєстровано."
 fi
 
 ANY_SKIPPED=0
@@ -332,6 +335,19 @@ if [ "$DOC_EXTRACT_INSTALLED" -eq 1 ]; then
   print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_AGENTS_STATUS"
   print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_GEMINI_STATUS"
 fi
+echo "Session-хуки Claude Code:"
+case "$HOOKS_STATUS" in
+  ok)
+    echo "  зареєстровано в $HOME/.claude/settings.json (SessionStart + PostToolUse)"
+    echo "  діють із НАСТУПНОЇ сесії — поточна зібрала свій контекст до встановлення"
+    ;;
+  failed)
+    echo "  не зареєстровано — крок завершився помилкою (повідомлення вище)"
+    ;;
+  absent)
+    echo "  не зареєстровано — install-hooks.sh не знайдено у скілі"
+    ;;
+esac
 if [ "$ANY_SKIPPED" -eq 1 ]; then
   echo ""
   echo "Увага: частину exports пропущено. Summary вище показує фактичний стан кожного шляху —"

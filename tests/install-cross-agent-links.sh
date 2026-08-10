@@ -127,6 +127,19 @@ grep -q '~/.claude/skills — це shared canonical registry' "$LOG" || {
   exit 1
 }
 
+# The hook step used to run silently: the summary said nothing about it, so the
+# only way to learn whether SessionStart/PostToolUse got registered was to read
+# ~/.claude/settings.json by hand. The fixture clone ships no hooks/ directory,
+# so this run must report the "not registered" outcome rather than stay quiet.
+grep -q 'Session-хуки Claude Code:' "$LOG" || {
+  echo "expected install summary to report the hook step outcome"
+  exit 1
+}
+grep -q 'не зареєстровано — install-hooks.sh не знайдено' "$LOG" || {
+  echo "expected install summary to report hooks as not registered for this fixture"
+  exit 1
+}
+
 expect_link_target "$AGENTS_WIKI" "$CLAUDE_WIKI"
 expect_link_target "$GEMINI_WIKI" "$CLAUDE_WIKI"
 expect_link_target "$AGENTS_DOC_EXTRACT" "$CLAUDE_DOC_EXTRACT"

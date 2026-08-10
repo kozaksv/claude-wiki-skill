@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.5.0"
+version: "4.5.1"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
@@ -128,8 +128,8 @@ instead of improvising the behavior from memory.
   registry for this stack even in Codex-only or Gemini-only sessions. It does
   not require Claude Code to be installed.
 - **Agent-neutral discovery:** `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` are
-  equal sources of a `## Wiki` pointer. Validate every pointer by checking for
-  `{wiki}/index.md`.
+  equal sources of a `## Wiki` / `## Вікі` pointer. Validate every pointer by
+  checking for `{wiki}/index.md`.
 - **Git-backed wiki:** Git is the foundation of the wiki: snapshots, rollback,
   lint auto-fixes, cleanup, and migration safety all rely on commits. A project
   without git metadata (`.git/` directory or `.git` file) is not wiki-ready.

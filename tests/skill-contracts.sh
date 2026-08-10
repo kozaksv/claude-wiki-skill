@@ -73,6 +73,22 @@ grep -q '`.git` file' "$ROOT/references/discovery-versioning.md" ||
 grep -q 'Git is the foundation of the wiki' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery reference must state that git is required for wiki operation"
 
+# The pointer section is matched in the user's language too. Matching only the
+# English heading turned a Ukrainian-headed pointer into "no wiki found", which
+# is a second-wiki hazard rather than a cosmetic miss.
+grep -q '## Вікі' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery reference must recognize the Ukrainian pointer heading"
+
+if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" | tr -s ' ' |
+  grep -q 'canonical form for \*\*writes\*\*'; then
+  fail 'discovery must keep ## Wiki canonical for writes while reading both spellings'
+fi
+
+if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" | tr -s ' ' |
+  grep -q 'never-create-a-second-wiki invariant exists to prevent'; then
+  fail "discovery must state why an unrecognized heading risks a second wiki"
+fi
+
 grep -q 'absolute_current_working_directory' "$ROOT/references/discovery-versioning.md" ||
   fail "git-init gate must show the absolute cwd before asking for consent"
 
@@ -95,6 +111,16 @@ grep -q 'Bootstrap plan template (step 12)' "$ROOT/references/operation-init.md"
 
 grep -q 'step 6: `entities/`' "$ROOT/references/operation-init.md" ||
   fail "operation-init must cross-reference bootstrap step 6 for entities"
+
+# A fresh wiki is committed straight after bootstrap; git drops empty dirs, so
+# without a placeholder the promised three-layer skeleton is gone on first clone.
+grep -q '`.gitkeep`' "$ROOT/references/operation-init.md" ||
+  fail "operation-init must keep empty layer dirs in git with .gitkeep"
+
+if ! tr '\n' ' ' <"$ROOT/references/operation-init.md" | tr -s ' ' |
+  grep -q 'git does not track empty directories'; then
+  fail "operation-init must explain why empty layer dirs need a placeholder"
+fi
 
 bootstrap_plan_numbers="$(awk '
   /^### Bootstrap plan template/ { in_section=1 }
@@ -255,6 +281,9 @@ fi
 grep -q 'Scenario 3e: Orphan wiki — skill explains and refuses' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
   fail "scenarios must cover orphan-wiki repair where the skill explains and refuses (no auto git init)"
 
+grep -q 'Scenario 3j: Pointer section headed in Ukrainian' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
+  fail "scenarios must cover a pointer section headed in the user's language (## Вікі)"
+
 grep -q 'Scenario 3f: Non-canonical wiki resolved via `## Wiki` pointer is not treated as absent' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
   fail "scenarios must cover non-canonical wiki resolved via pointer (Init must not classify it as absent and bootstrap a second wiki)"
 
@@ -314,8 +343,8 @@ if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" | tr -s ' ' |
 fi
 
 if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" | tr -s ' ' |
-  grep -q 'a `## Wiki` section exists but its pointer is stale/broken'; then
-  fail "Step 5 fallback must also fire when an instruction file has a stale/broken `## Wiki` pointer — otherwise a stale pointer can hide a valid canonical wiki"
+  grep -q 'a pointer section exists but its pointer is stale/broken'; then
+  fail "Step 5 fallback must also fire when an instruction file has a stale/broken pointer — otherwise a stale pointer can hide a valid canonical wiki"
 fi
 
 if ! tr '\n' ' ' <"$ROOT/references/operation-init.md" | tr -s ' ' |
@@ -427,8 +456,8 @@ grep -q 'Cross-agent instruction-file sync' "$ROOT/references/operation-init.md"
 grep -q '{schema_path_relative_to_instruction_file}' "$ROOT/references/discovery-versioning.md" ||
   fail "instruction-file sync must compute schema pointer relative to each instruction file"
 
-grep -q 'replacing the `## Wiki` section with the full Session-Start' "$ROOT/references/discovery-versioning.md" ||
-  fail "instruction-file sync must repair a stale pointer by rewriting the ## Wiki section with the Session-Start Contract block"
+grep -q 'replacing the pointer section with the full Session-Start' "$ROOT/references/discovery-versioning.md" ||
+  fail "instruction-file sync must repair a stale pointer by rewriting the pointer section with the Session-Start Contract block"
 
 grep -q 'never silently discard' "$ROOT/references/discovery-versioning.md" ||
   fail "stale-pointer repair must surface pre-existing custom ## Wiki content as a DECIDE finding before overwriting"
@@ -529,8 +558,8 @@ if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
   fail "no-code project detection must not invent people/documents categories"
 fi
 
-grep -q 'version: "4.5.0"' "$ROOT/SKILL.md" ||
-  fail "SKILL.md frontmatter must be bumped to 4.5.0"
+grep -q 'version: "4.5.1"' "$ROOT/SKILL.md" ||
+  fail "SKILL.md frontmatter must be bumped to 4.5.1"
 
 [ -f "$ROOT/references/operation-doctor.md" ] ||
   fail "references/operation-doctor.md must exist (wiki doctor operation)"
@@ -543,6 +572,9 @@ grep -q 'wiki-hooks-optout' "$ROOT/references/discovery-versioning.md" ||
 
 grep -q '### 4.5.0' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery-versioning.md Migration Log must have a ### 4.5.0 entry"
+
+grep -q '### 4.5.1' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery-versioning.md Migration Log must have a ### 4.5.1 entry"
 
 skill_version="$(sed -n 's/^version: "\([0-9][0-9]*\)\..*/\1/p' "$ROOT/SKILL.md" | head -1)"
 init_schema_major="$(grep -E 'wiki_version: "[0-9]+\.' "$ROOT/references/operation-init.md" | sed -n 's/.*wiki_version: "\([0-9][0-9]*\)\..*/\1/p' | head -1)"
@@ -602,6 +634,15 @@ grep -q 'version-gate.sh\|wiki_writable' "$ROOT/hooks/post-tool-use.sh" ||
 
 grep -q 'install-hooks.sh' "$ROOT/install.sh" ||
   fail "install.sh must call hooks/install-hooks.sh"
+
+# The hook step used to succeed in silence: nothing in the run or the final
+# summary said whether SessionStart/PostToolUse were registered, so the only
+# way to find out was reading ~/.claude/settings.json by hand.
+grep -q 'Session-хуки Claude Code:' "$ROOT/install.sh" ||
+  fail "install.sh summary must report the hook registration outcome"
+
+grep -q 'НАСТУПНОЇ сесії' "$ROOT/install.sh" ||
+  fail "install.sh must say hooks take effect from the next session, not the current one"
 
 # install.sh must gate hook registration on existence (-f), not the
 # executable bit (-x): the +x bit is commonly lost on Windows clones

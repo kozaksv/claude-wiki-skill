@@ -104,10 +104,14 @@
    directory structure and the skill has no reliable way to identify
    the matching project root from path strings alone.
 
-2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their `## Wiki` sections and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
-3. **Read the Wiki section** — look for a `## Wiki` section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)")
+2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their pointer sections (`## Wiki` / `## Вікі` — defined in step 3) and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
+3. **Read the pointer section** — look for the section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)").
+
+   **What counts as the pointer section.** A level-2 heading whose text starts with `Wiki` or `Вікі`, case-insensitive, optionally followed by more words. `## Wiki`, `## Вікі`, and `## Вікі штабу` are all the pointer section; `## Wiki notes` is too. Both spellings are recognized on **read**; `## Wiki` remains the canonical form for **writes** (new pointers and stale-pointer repairs).
+
+   Recognizing the Ukrainian spelling is not cosmetic politeness. This skill's user-facing language is Ukrainian, so a project whose instruction files are written in Ukrainian will naturally head that section `## Вікі` — and a discovery that only matches `## Wiki` then reports "no wiki found" for a project that plainly has one. If that project's wiki also lives outside `docs/wiki/`, the canonical-path fallback in step 5 finds nothing either, and Init proceeds to bootstrap a **second** wiki — the exact outcome the never-create-a-second-wiki invariant exists to prevent. A heading written in the user's own language must never be the reason the skill duplicates their wiki.
 4. **Verify wiki exists** — check that the discovered directory contains `index.md`
-5. **If no `## Wiki` pointer resolved to a valid `index.md`** — this covers two cases: (a) no `## Wiki` section exists in any discovered instruction file, or (b) a `## Wiki` section exists but its pointer is stale/broken (target file does not exist). In either case, fall through to canonical-path search: look for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory, then relative to the git root. The git-root fallback catches the case where cwd is nested below the project root and no instruction files exist (e.g. `/repo/.git/` + `/repo/docs/wiki/index.md` + cwd `/repo/src/`). A valid on-disk wiki always beats a stale resident pointer — if Step 5 finds `docs/wiki/index.md`, use it and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass.
+5. **If no pointer section resolved to a valid `index.md`** — this covers two cases: (a) no pointer section (`## Wiki` / `## Вікі`) exists in any discovered instruction file, or (b) a pointer section exists but its pointer is stale/broken (target file does not exist). In either case, fall through to canonical-path search: look for `docs/wiki/index.md` relative to the nearest agent instruction file location, then relative to the current working directory, then relative to the git root. The git-root fallback catches the case where cwd is nested below the project root and no instruction files exist (e.g. `/repo/.git/` + `/repo/docs/wiki/index.md` + cwd `/repo/src/`). A valid on-disk wiki always beats a stale resident pointer — if Step 5 finds `docs/wiki/index.md`, use it and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass.
 6. **Locate schema** — wiki schema (layers, operations, conventions, `Entity Categories`, `Document Types`, `File Naming`) lives in exactly one of:
    - **Preferred (v3+):** `{wiki}/schema.md` — canonical location, keeps wiki metadata out of resident agent-instruction context
    - **Legacy (v1–v2):** sections inside an agent instruction file, usually `CLAUDE.md` (`## Wiki`, `## Entity Categories`, `## Document Types`, `## File Naming`)
@@ -115,7 +119,7 @@
    Try `{wiki}/schema.md` first. Fall back to agent instruction file sections. When both exist, prefer `schema.md` and surface the duplication as a DECIDE finding during next lint.
 7. **If `index.md` is missing but other wiki-owned files exist (partial wiki)** — before declaring "no wiki found", check whether a wiki directory exists with wiki-owned files but lacks a valid `index.md`. The candidate directories to check (in this exact order, all of them, before falling through):
 
-   - any directory referenced by a `## Wiki` pointer (even if its `index.md` is missing or invalid),
+   - any directory referenced by a pointer section (`## Wiki` / `## Вікі`), even if its `index.md` is missing or invalid,
    - `docs/wiki/` relative to each instruction file's directory,
    - `docs/wiki/` relative to cwd,
    - `docs/wiki/` relative to the git root (so a partial wiki at the project root is caught even when cwd is nested and no instruction files exist).
@@ -256,11 +260,14 @@ For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
   Substitute the three placeholders with real relative paths before writing.
 - If the file is missing, create missing minimal instruction files containing
   only a short title and the full Session-Start Contract pointer block above.
-- If the file exists and has no `## Wiki` section, append the full pointer block.
-- If the file already has a `## Wiki` section that points at the resolved wiki
+- If the file exists and has no pointer section (`## Wiki` / `## Вікі`), append
+  the full pointer block.
+- If the file already has a pointer section that points at the resolved wiki
   (any pointer line that resolves to a valid on-disk wiki — old one-line form,
   Session-Start Contract block, absolute path, or repo-root-style path), leave
-  it unchanged. The Session-Start Contract block is the canonical form for
+  it unchanged. This includes a valid pointer under a `## Вікі` heading: the
+  heading being written in the user's language is not a defect, and renaming it
+  to `## Wiki` would be exactly the formatting migration this rule forbids. The Session-Start Contract block is the canonical form for
   **new** pointers and **stale-pointer repairs**, not a formatting migration
   for already-valid pointers. If the user wants to upgrade an existing valid
   pointer to the new block, that is an explicit `wiki init` / pointer-repair
@@ -268,10 +275,10 @@ For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
 - If the file points at a different valid wiki, do not overwrite it silently;
   surface the conflict as a DECIDE finding during lint/cleanup.
 - If the file points at a stale path and the resolved wiki is valid, repair the
-  stale pointer by replacing the `## Wiki` section with the full Session-Start
+  stale pointer by replacing the pointer section with the full Session-Start
   Contract block above (since a stale-pointer repair rewrites that section
   anyway). **Before overwriting, capture any custom or legacy content in the old
-  `## Wiki` section** (extra schema, hand-written notes, non-canonical details)
+  pointer section** (extra schema, hand-written notes, non-canonical details)
   and quote it in the repair response — never silently discard it. Only rewrite
   the section after that content has been quoted. Repair-time surfacing is
   informational: Init/pointer-repair has no lint-style action menu, so do not
@@ -444,6 +451,28 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.5.1 (2026-08-10)
+- No schema migration (`wiki_version` stays `"4.0"`); nothing to migrate on
+  existing wikis. Three defects found while bootstrapping a fresh wiki in a
+  Ukrainian-language project:
+  - **The pointer section now also accepts `## Вікі`.** Step 0 matched only
+    `## Wiki`, so an instruction file headed `## Вікі штабу` read as having no
+    pointer at all. That is a duplication hazard, not a cosmetic miss: for a
+    wiki declared under a Ukrainian heading at a non-canonical path, discovery
+    finds nothing and Init bootstraps a **second** wiki beside the real one.
+    Recognition accepts both spellings; `## Wiki` stays canonical for writes,
+    and a valid pointer under a Ukrainian heading is left unchanged.
+  - **Init keeps the layer directories in git.** `concepts/`, `entities/`, and
+    `transcripts/` are created empty, and git does not track empty directories
+    — so the skeleton the bootstrap plan promises vanished on the first clone.
+    Init now writes a `.gitkeep` into each empty layer directory.
+  - **The installer reports the hook step.** `install.sh` ran
+    `install-hooks.sh` silently and its final summary never mentioned hooks, so
+    the only way to find out whether SessionStart/PostToolUse were registered
+    was to read `~/.claude/settings.json` by hand. The summary now states the
+    outcome and that hooks take effect from the *next* session. The same block
+    called them "git hooks", which they are not.
 
 ### 4.5.0 (2026-07-08)
 - No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki

@@ -320,6 +320,38 @@ create, query, lint, or cleanup a wiki.
 - No second wiki is created, and the existing `AGENTS.md` pointer
   continues to resolve correctly after Init completes.
 
+## Scenario 3j: Pointer section headed in Ukrainian (`## Вікі`)
+
+### Setup
+
+- Project root is `/work/shtab/` with `/work/shtab/.git/` present.
+- The project's documents and instruction files are written in Ukrainian.
+- `/work/shtab/CLAUDE.md` contains a section headed `## Вікі штабу`, whose
+  body points at the project wiki (`Вікі штабу — knowledge/. Схема →
+  knowledge/schema.md.`).
+- `/work/shtab/knowledge/index.md` and `knowledge/schema.md` exist;
+  `schema.md` declares `wiki_version: "4.0"`.
+- `/work/shtab/` has no `docs/wiki/` directory.
+- User says `wiki init`.
+
+### Expected behavior
+
+- Step 0 treats `## Вікі штабу` as the pointer section: the match is a
+  level-2 heading whose text starts with `Wiki` or `Вікі`,
+  case-insensitive, trailing words allowed.
+- The wiki resolves at `/work/shtab/knowledge/`; state is `current`.
+- Init does **not** bootstrap a second wiki at `/work/shtab/docs/wiki/`.
+  This is the whole point of the scenario: matching only the English
+  heading makes a Ukrainian-language project look wiki-less, and the
+  canonical-path fallback then finds nothing either, so the skill would
+  duplicate a wiki that already exists.
+- Cross-agent sync leaves the `## Вікі штабу` section unchanged, because
+  it resolves to a valid on-disk wiki. Heading language is not a defect,
+  and rewriting it to `## Wiki` would be the formatting migration the
+  sync rules forbid for already-valid pointers.
+- Missing pointers written **by** the skill (a new `AGENTS.md`, a
+  stale-pointer repair) still use the canonical `## Wiki` heading.
+
 ## Scenario 3g: Partial wiki (wiki-owned files exist, `index.md` missing)
 
 ### Setup
