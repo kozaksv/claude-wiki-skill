@@ -23,7 +23,7 @@ GEMINI_SKILLS_ROOT="$HOME/.gemini/skills"
 DOC_EXTRACT_REPO="https://github.com/kozaksv/claude-doc-extract-skill.git"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
 DOC_EXTRACT_LINK="$SKILLS_ROOT/doc-extract"
-DOC_EXTRACT_REF="${WIKI_DOC_EXTRACT_REF:-96d6bf9e1df309c4b76d924d3a1f774f7ee33d12}"
+DOC_EXTRACT_REF="${WIKI_DOC_EXTRACT_REF:-51f720ff620478688abf7d906d18112d45e28a90}"
 
 validate_ref() {
   local label="$1" ref="$2"

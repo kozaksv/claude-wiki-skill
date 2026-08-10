@@ -24,7 +24,7 @@ Exports created by install.sh:
 а не вимога Claude Code. Функціонально це shared cross-agent canonical install,
 який однаково використовують Claude, Codex і Gemini.
 
-`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `96d6bf9e1df309c4b76d924d3a1f774f7ee33d12`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
+`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `51f720ff620478688abf7d906d18112d45e28a90`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
 
@@ -34,7 +34,7 @@ Exports created by install.sh:
   україномовному проєкті. Схема не змінюється (`wiki_version` лишається
   `"4.0"`), мігрувати наявні вікі не треба.
   - **Покажчик розпізнається і як `## Вікі`.** Раніше Step 0 шукав лише
-    заголовок `## Wiki`, тож секція `## Вікі штабу` читалася як «покажчика
+    заголовок `## Wiki`, тож секція `## Вікі проєкту` читалася як «покажчика
     немає». Це не косметика, а ризик дублювання: якщо вікі оголошена під
     українським заголовком і лежить не в `docs/wiki/`, пошук не знаходить
     нічого — і Init створює **другу** вікі поруч зі справжньою. Тепер

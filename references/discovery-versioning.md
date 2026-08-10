@@ -107,7 +107,7 @@
 2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their pointer sections (`## Wiki` / `## Вікі` — defined in step 3) and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
 3. **Read the pointer section** — look for the section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)").
 
-   **What counts as the pointer section.** A level-2 heading whose text starts with `Wiki` or `Вікі`, case-insensitive, optionally followed by more words. `## Wiki`, `## Вікі`, and `## Вікі штабу` are all the pointer section; `## Wiki notes` is too. Both spellings are recognized on **read**; `## Wiki` remains the canonical form for **writes** (new pointers and stale-pointer repairs).
+   **What counts as the pointer section.** A level-2 heading whose text starts with `Wiki` or `Вікі`, case-insensitive, optionally followed by more words. `## Wiki`, `## Вікі`, and `## Вікі проєкту` are all the pointer section; `## Wiki notes` is too. Both spellings are recognized on **read**; `## Wiki` remains the canonical form for **writes** (new pointers and stale-pointer repairs).
 
    Recognizing the Ukrainian spelling is not cosmetic politeness. This skill's user-facing language is Ukrainian, so a project whose instruction files are written in Ukrainian will naturally head that section `## Вікі` — and a discovery that only matches `## Wiki` then reports "no wiki found" for a project that plainly has one. If that project's wiki also lives outside `docs/wiki/`, the canonical-path fallback in step 5 finds nothing either, and Init proceeds to bootstrap a **second** wiki — the exact outcome the never-create-a-second-wiki invariant exists to prevent. A heading written in the user's own language must never be the reason the skill duplicates their wiki.
 4. **Verify wiki exists** — check that the discovered directory contains `index.md`
@@ -457,7 +457,7 @@ treat the partial state according to what actually exists (`schema.md`,
   existing wikis. Three defects found while bootstrapping a fresh wiki in a
   Ukrainian-language project:
   - **The pointer section now also accepts `## Вікі`.** Step 0 matched only
-    `## Wiki`, so an instruction file headed `## Вікі штабу` read as having no
+    `## Wiki`, so an instruction file headed `## Вікі проєкту` read as having no
     pointer at all. That is a duplication hazard, not a cosmetic miss: for a
     wiki declared under a Ukrainian heading at a non-canonical path, discovery
     finds nothing and Init bootstraps a **second** wiki beside the real one.

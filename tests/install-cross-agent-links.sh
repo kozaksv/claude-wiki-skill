@@ -32,7 +32,7 @@ if [[ "${1:-}" == "-C" ]]; then
       exit 0
       ;;
     checkout)
-      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-96d6bf9e1df309c4b76d924d3a1f774f7ee33d12}"
+      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-51f720ff620478688abf7d906d18112d45e28a90}"
       if [[ "$dir" == *"claude-doc-extract-skill"* && "${2:-}" != "$expected_doc_ref" ]]; then
         echo "doc-extract must be checked out at $expected_doc_ref in this fixture" >&2
         exit 1
@@ -40,7 +40,7 @@ if [[ "${1:-}" == "-C" ]]; then
       exit 0
       ;;
     rev-parse)
-      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-96d6bf9e1df309c4b76d924d3a1f774f7ee33d12}"
+      expected_doc_ref="${DOC_EXTRACT_EXPECTED_REF:-51f720ff620478688abf7d906d18112d45e28a90}"
       ref="${@: -1}"
       case "$ref" in
         master*|origin/master*|main*|origin/main*|v4.2.0*|origin/v4.2.0*|"$expected_doc_ref"*|"origin/$expected_doc_ref"*)
