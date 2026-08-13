@@ -2535,6 +2535,48 @@ assert_contains "t6: clone vanished under lock -> stderr mentions vanished clone
 assert_file_unchanged "t6: clone vanished under lock -> settings.json byte-identical" "$f" "$sha_before"
 assert_eq "t6: clone vanished under lock -> no lockdir left" "" "$([ -d "$lockdir" ] && echo present)"
 
+# T6g. Pre-planted symlink at the predictable backup path must NOT be
+# written through (codex-атк P1). The backup name is
+# "$settings_file.bak-wiki-hooks-$(date +%Y%m%d%H%M%S)" — fully guessable by
+# anyone who can write into the settings dir — so the installer creates it
+# with O_CREAT|O_EXCL|O_NOFOLLOW and steps to the next numbered candidate
+# instead of following a symlink and truncating + chmod-ing the victim.
+# The exact second the installer picks is racy from out here, so every
+# candidate name in a 3-second window is booby-trapped; the install below
+# runs far inside that window.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+printf '{}' >"$f"
+victim="$home/victim.txt"
+printf 'DO-NOT-TOUCH\n' >"$victim"
+chmod 600 "$victim"
+victim_sha="$(_sha "$victim")"
+for off in 0 1 2 3; do
+  planted_ts="$(python3 -c "
+import sys, time
+print(time.strftime('%Y%m%d%H%M%S', time.localtime(time.time() + int(sys.argv[1]))))
+" "$off")"
+  ln -s "$victim" "$f.bak-wiki-hooks-$planted_ts" 2>/dev/null || true
+done
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t6: planted backup symlink -> victim file byte-identical" "$victim_sha" "$(_sha "$victim")"
+assert_eq "t6: planted backup symlink -> victim keeps 0600" "600" "$(t6_stat_mode "$victim")"
+assert_eq "t6: planted backup symlink -> install still succeeds" "0" "$rc"
+assert_eq "t6: planted backup symlink -> hooks still registered" "1" "$(json_get "$f" "len(d['hooks']['SessionStart'])")"
+# The real backup landed on a sidestepped name and is a regular file, not
+# one of the planted symlinks.
+real_backup=""
+for cand in "$home/.claude/"*.bak-wiki-hooks-*; do
+  [ -e "$cand" ] || continue
+  if [ ! -L "$cand" ] && [ -f "$cand" ]; then
+    real_backup="$cand"
+    break
+  fi
+done
+assert_eq "t6: planted backup symlink -> a real (non-symlink) backup was created" "1" "$([ -n "$real_backup" ] && echo 1 || echo 0)"
+assert_eq "t6: planted backup symlink -> real backup holds the pre-merge settings" "{}" "$(cat "$real_backup" 2>/dev/null)"
+
 # ---- summary ----
 echo "" >&2
 echo "pass: $PASS  fail: $FAIL" >&2

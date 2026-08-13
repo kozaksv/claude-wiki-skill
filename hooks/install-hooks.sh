@@ -34,8 +34,14 @@
 #      before any merge (only once the existing file is confirmed to be
 #      valid JSON), from the already-read in-memory content of the
 #      fstat-verified fd (never by reopening settings_file by path — that
-#      would reintroduce the TOCTOU gap point 8 closes), with permissions
-#      copied over explicitly via os.chmod.
+#      would reintroduce the TOCTOU gap point 8 closes). The backup path is
+#      fully predictable, so it is CREATED, never opened: O_CREAT|O_EXCL
+#      (+O_NOFOLLOW) refuses any pre-existing path — a planted symlink
+#      included — and the next numbered candidate
+#      ("...-$TS-1", "...-$TS-2", …) is tried instead, so the backup is
+#      always a file this process just made and never a write-through to
+#      somebody else's file (codex-атк P1). Permissions are copied from the
+#      source via fchmod on that owned fd, after creating it 0600.
 #   4. The merge (python3) is idempotent and operates at the granularity of
 #      individual entries inside each matcher-entry's nested `hooks[]`
 #      array: only elements whose `command` contains the
@@ -188,6 +194,7 @@ register_into() {
 
   if ! python3 - "$client" "$settings_file" "$backup_file" "$MARKER" "$legacy_marker" \
       "$session_script" "$post_script" "$session_matcher" "$post_matcher" <<'PYEOF'
+import errno
 import json
 import os
 import stat
@@ -205,6 +212,10 @@ import tempfile
     session_matcher,
     post_matcher,
 ) = sys.argv[1:10]
+
+# How many "$settings_file.bak-wiki-hooks-$TS[-N]" candidates the exclusive
+# backup create below will probe before giving up (see the long note there).
+BACKUP_NAME_ATTEMPTS = 64
 
 
 def die(msg):
@@ -268,18 +279,70 @@ if fd is not None:
             die("%s is not valid JSON: %s" % (settings_file, exc))
     if not isinstance(data, dict):
         die("%s top-level value is not a JSON object" % settings_file)
+    # Write the backup from `raw` (already read from the fstat-verified fd
+    # above), not by reopening settings_file by name — shutil.copy2 would
+    # reopen the path itself, reintroducing the very TOCTOU window the
+    # O_NOFOLLOW|O_NONBLOCK open + fstat/S_ISREG check above closes (spec
+    # R11): the path could be swapped to a FIFO/device/symlink between that
+    # check and the copy, hanging or backing up the wrong file.
+    #
+    # The DESTINATION needs the mirror-image guard (codex-атк P1): the
+    # backup path is fully predictable ("$settings_file.bak-wiki-hooks-$TS"),
+    # so a plain open(..., "w") follows a symlink pre-planted there by anyone
+    # who can write into the settings dir and truncates + overwrites — and
+    # the following chmod re-permissions — an arbitrary file reachable by
+    # this process. O_CREAT|O_EXCL refuses to open ANY existing path,
+    # symlink included (POSIX: O_EXCL fails on a symlink, even a dangling
+    # one), so what gets written is always a file created right here;
+    # O_NOFOLLOW is belt-and-braces on the same window, Windows-degradable
+    # via getattr exactly like the read above.
+    #
+    # A collision is not necessarily an attack — $TS has one-second
+    # resolution, so back-to-back re-installs of the same client legitimately
+    # land on one name. Hence a bounded numbered-suffix probe: keep the
+    # canonical name for the common case, step aside (never overwrite) for
+    # anything already sitting there, and only fail once the whole window is
+    # taken.
+    #
+    # Created 0600 and fchmod'd to the source mode only once the fd is ours,
+    # so the copy is never briefly wider than the original (settings.json can
+    # carry secrets under other keys). os.fchmod is absent on Windows — there
+    # the backup simply stays at its 0600 creation mode.
+    bfd = None
+    for attempt in range(BACKUP_NAME_ATTEMPTS):
+        candidate = backup_file if attempt == 0 else "%s-%d" % (backup_file, attempt)
+        try:
+            bfd = os.open(
+                candidate,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+        except OSError as exc:
+            # EEXIST is the POSIX answer for "something is already there",
+            # symlink included; ELOOP is what an O_NOFOLLOW-first kernel may
+            # report for the same situation. Both mean "step aside", never
+            # "overwrite". Anything else is a genuine I/O failure.
+            if exc.errno in (errno.EEXIST, errno.ELOOP):
+                continue
+            die("backup failed: %s" % exc)
+        break
+    if bfd is None:
+        die("backup failed: no free backup name beside %s" % settings_file)
     try:
-        # Write the backup from `raw` (already read from the fstat-verified
-        # fd above), not by reopening settings_file by name — shutil.copy2
-        # would reopen the path itself, reintroducing the very TOCTOU window
-        # the O_NOFOLLOW|O_NONBLOCK open + fstat/S_ISREG check above closes
-        # (spec R11): the path could be swapped to a FIFO/device/symlink
-        # between that check and the copy, hanging or backing up the wrong
-        # file.
-        with open(backup_file, "w", encoding="utf-8") as bf:
+        if mode is not None and hasattr(os, "fchmod"):
+            os.fchmod(bfd, mode)
+        with os.fdopen(bfd, "w", encoding="utf-8") as bf:
+            bfd = None  # ownership passed to bf
             bf.write(raw)
-        os.chmod(backup_file, mode)
     except OSError as exc:
+        if bfd is not None:
+            try:
+                os.close(bfd)
+            except OSError:
+                pass
         die("backup failed: %s" % exc)
 
 hooks = data.get("hooks")
