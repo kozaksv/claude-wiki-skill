@@ -167,3 +167,8 @@ HTTP-hooks, `timeout`-поля в entries, PreToolUse, глобальний `~/.
 - Всі шляхи хуків `exit 0` і ніколи не блокують інструмент.
 - Boundary-guard і version-gate інваріанти збережені.
 - Claude/Codex/Gemini поведінка байт-у-байт без змін (регрес-нуль).
+
+## Відкладене рев'ю
+
+- [P1] (codex-кор) Task 2 add() vs regres-test path count conflict [file: docs/superpowers/plans/2026-08-13-v46-qwen.md]: Task 2 одночасно вимагає обробляти всі file_path/notebook_path/path через add() і в регрес-тесті бампати лише file_path; за наявності кількох валідних шляхів реалізація неминуче оновить кілька записів.
+- [P1] (agy-атк) uninstall.sh orphaned-hook guard omits ~/.qwen/settings.json [file: uninstall.sh]: SETTINGS_JSON is hardcoded to $HOME/.claude/settings.json; grep confirms zero references to qwen anywhere in uninstall.sh. If a user has active Qwen hook entries only in ~/.qwen/settings.json (no Claude hooks), HOOKS_FAILED stays 0 and --remove-clones deletes $SKILL_DIR, stranding the Qwen hook references with no recovery script left.
