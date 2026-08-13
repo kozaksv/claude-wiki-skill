@@ -183,13 +183,19 @@ deregister_from() {
   backup_file="$settings_file.bak-wiki-hooks-$ts"
 
   if ! python3 - "$client" "$settings_file" "$backup_file" "$MARKER" "$legacy_marker" <<'PYEOF'
+import errno
 import json
 import os
-import shutil
+import stat
 import sys
 import tempfile
 
 client, settings_file, backup_file, marker, legacy_marker = sys.argv[1:6]
+
+# How many "$settings_file.bak-wiki-hooks-$TS[-N]" candidates the exclusive
+# backup create below probes before giving up — same bound, same reason as
+# install-hooks.sh (see the long note there).
+BACKUP_NAME_ATTEMPTS = 64
 
 if not os.path.exists(settings_file) and not os.path.islink(settings_file):
     sys.exit(0)
@@ -206,6 +212,10 @@ if not os.path.isfile(settings_file):
 try:
     with open(settings_file, "r", encoding="utf-8") as fh:
         raw = fh.read()
+        # Captured from the ALREADY-OPEN fd, so the mode the backup gets is
+        # the mode of the file we actually read (a later stat-by-name could
+        # answer for a different file).
+        src_mode = stat.S_IMODE(os.fstat(fh.fileno()).st_mode)
 except OSError as exc:
     sys.stderr.write("uninstall-hooks: %s: cannot read %s: %s\n" % (client, settings_file, exc))
     sys.exit(1)
@@ -226,9 +236,69 @@ if not isinstance(data, dict):
     )
     sys.exit(1)
 
+# Backup-path parity with install-hooks.sh (agy-атк P1, wave3). The backup
+# path is fully predictable ("$settings_file.bak-wiki-hooks-$TS"), so it is
+# CREATED, never opened: shutil.copy2 opened the destination without
+# O_CREAT|O_EXCL|O_NOFOLLOW, so a symlink pre-planted there by anyone able
+# to write into the settings dir was FOLLOWED — truncating the target,
+# overwriting it with settings.json content and re-permissioning it to the
+# source's mode (arbitrary file overwrite). O_CREAT|O_EXCL refuses to open
+# ANY existing path, symlink included (POSIX: O_EXCL fails on a symlink,
+# even a dangling one), so what gets written is always a file created right
+# here; O_NOFOLLOW is belt-and-braces on the same window, Windows-degradable
+# via getattr like everywhere else in this tree.
+#
+# A collision is not necessarily an attack — $TS has one-second resolution,
+# so an install and an uninstall (or two uninstalls) in the same second
+# legitimately land on one name. Hence the bounded numbered-suffix probe:
+# keep the canonical name for the common case, step aside (never overwrite)
+# for anything already there, fail only once the whole window is taken.
+#
+# The content comes from `raw`, already read above, rather than from
+# reopening settings_file by name as copy2 did — reopening by path would
+# race a swap of the settings path between the isfile() check and the copy.
+#
+# Created 0600 and fchmod'd to the source mode only once the fd is ours, so
+# the copy is never briefly wider than the original (settings.json can carry
+# secrets under other keys). os.fchmod is absent on Windows — there the
+# backup simply stays at its 0600 creation mode.
+bfd = None
+for attempt in range(BACKUP_NAME_ATTEMPTS):
+    candidate = backup_file if attempt == 0 else "%s-%d" % (backup_file, attempt)
+    try:
+        bfd = os.open(
+            candidate,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+    except OSError as exc:
+        # EEXIST is the POSIX answer for "something is already there",
+        # symlink included; ELOOP is what an O_NOFOLLOW-first kernel may
+        # report for the same situation. Both mean "step aside", never
+        # "overwrite". Anything else is a genuine I/O failure.
+        if exc.errno in (errno.EEXIST, errno.ELOOP):
+            continue
+        sys.stderr.write("uninstall-hooks: %s: backup failed: %s\n" % (client, exc))
+        sys.exit(1)
+    break
+if bfd is None:
+    sys.stderr.write(
+        "uninstall-hooks: %s: backup failed: no free backup name beside %s\n"
+        % (client, settings_file)
+    )
+    sys.exit(1)
 try:
-    shutil.copy2(settings_file, backup_file)
+    if hasattr(os, "fchmod"):
+        os.fchmod(bfd, src_mode)
+    with os.fdopen(bfd, "w", encoding="utf-8") as bf:
+        bfd = None  # ownership passed to bf
+        bf.write(raw)
 except OSError as exc:
+    if bfd is not None:
+        try:
+            os.close(bfd)
+        except OSError:
+            pass
     sys.stderr.write("uninstall-hooks: %s: backup failed: %s\n" % (client, exc))
     sys.exit(1)
 

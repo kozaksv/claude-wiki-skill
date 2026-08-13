@@ -340,16 +340,27 @@ if [ "$REMOVE_CLONES" -eq 1 ]; then
     echo "$SKILL_DIR — skipped (git hooks removal failed; run the command above first, then re-run --remove-clones)"
     SKIPPED=1
   else
+    # LOAD-BEARING ORDER (wave3, codex-кор P1): $SKILL_DIR is deleted HERE,
+    # inside the critical section, and the locks are released only after.
+    # install-hooks.sh's self-hosting-clone guard (design note 10) is what
+    # actually stops a waiting installer from writing orphans, and it works
+    # by re-checking, under its own lock, that the clone hosting it still
+    # exists. That check is only meaningful if the deletion has already
+    # happened by the time the lock changes hands — moving this deletion
+    # after the release loop below would silently disarm it. One contract,
+    # two ends.
     remove_clone_dir "$SKILL_DIR"
     if [ ! -e "$SKILL_DIR" ]; then
       # Boundary of the invariant, stated where it is enforced: the locks
       # guarantee no entry existed at deletion time. They do NOT guarantee
       # none appears afterwards — an installer that was waiting for the lock
-      # gets it right after release and legitimately writes its entries.
-      # That is the mutex working, not a race. Such entries are inert by
-      # construction (`test -x "…" && "…" || exit 0` exits 0 silently once
-      # the canonical path is gone). Widening the section to "wait them out"
-      # would mean holding both locks indefinitely — forbidden.
+      # gets it right after release. One that ran from THIS clone now
+      # refuses (guard above); one running from some other copy of the skill
+      # still writes, and that is the mutex working, not a race. Such
+      # entries are inert by construction (`test -x "…" && "…" || exit 0`
+      # exits 0 silently once the canonical path is gone). Widening the
+      # section to "wait them out" would mean holding both locks
+      # indefinitely — forbidden.
       echo "Примітка: паралельний інсталер міг дописати записи hooks уже після видалення клону. Вони інертні; приберіть їх запуском hooks/uninstall-hooks.sh з репозиторію або переінстальованого скіла."
     fi
   fi

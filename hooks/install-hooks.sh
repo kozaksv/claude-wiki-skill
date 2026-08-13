@@ -100,6 +100,20 @@
 #      writing entries now would create fresh orphans pointing at a
 #      just-deleted clone. That case refuses with a "skill clone vanished
 #      while waiting for lock" message and nothing is written.
+#  10. Self-hosting-clone guard (wave3): (9) only fires when the canonical
+#      scripts were present BEFORE the wait, and uninstall.sh removes that
+#      canonical symlink OUTSIDE its locks — an installer starting inside
+#      that window has pre_clone_ok=0, so (9) never triggered and entries
+#      got written the instant uninstall.sh released the locks, after
+#      --remove-clones had deleted the clone hosting the ONLY script that
+#      can remove them again (hooks/uninstall-hooks.sh). So the clone
+#      hosting THIS script ($SELF_DIR, resolved with `pwd -P` at startup)
+#      is re-checked under the lock too, with no snapshot involved: gone
+#      means uninstall.sh deleted it mid-wait, and nothing is written
+#      ("skill clone hosting this script vanished while waiting for
+#      lock"). Correctness rests on uninstall.sh deleting $SKILL_DIR
+#      INSIDE its critical section, before releasing — one contract, two
+#      ends; do not reorder either.
 #
 # Always exits 0 only when there is genuinely nothing to do (no python3);
 # any real failure (unreadable/corrupt settings.json, lock timeout, write
@@ -129,8 +143,16 @@ QWEN_SETTINGS="$QWEN_DIR/settings.json"
 # post-update install never leaves the index injected twice.
 LEGACY_QWEN_MARKER="/.qwen/hooks/wiki-session-start.sh"
 
+# Physical directory of the clone hosting THIS script — resolved once, at
+# startup, i.e. while it provably still exists. `pwd -P`, not the logical
+# `pwd`: the installer is normally invoked through the canonical symlink
+# ($HOME/.claude/skills/wiki/hooks/install-hooks.sh), and the guard in
+# register_into (design note 10) must track the real clone directory, not
+# the link — removing the link alone is not "the clone was deleted".
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
 # shellcheck source=lib/settings-lock.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/settings-lock.sh"
+source "$SELF_DIR/lib/settings-lock.sh"
 
 # fail <client> <message> — used only for the initial lock-acquisition
 # check below, where no lock is held yet: a hard `exit 1` there is exactly
@@ -196,6 +218,23 @@ register_into() {
   fi
   if [ "$pre_clone_ok" = "1" ] && [ "$post_clone_ok" != "1" ]; then
     echo "install-hooks: $client: skill clone vanished while waiting for lock" >&2
+    wiki_lock_release "$lock_dir"
+    return 1
+  fi
+
+  # Snapshot-independent half of the same guard (design note 10 / codex-кор
+  # P1): uninstall.sh removes the canonical ~/.claude/skills/wiki symlink
+  # OUTSIDE its locks, so an installer that started inside that window
+  # snapshots pre_clone_ok=0 and the check above stays disarmed — it would
+  # then write fresh entries the instant uninstall.sh released the locks,
+  # i.e. AFTER --remove-clones had already deleted the clone that hosts
+  # hooks/uninstall-hooks.sh, the only script able to remove them again.
+  # Our OWN clone dir needs no snapshot: if it is gone by the time we hold
+  # the lock, uninstall.sh tore it down while we waited, and nothing may be
+  # written. This is sound only because uninstall.sh deletes $SKILL_DIR
+  # INSIDE its critical section, before releasing — do not reorder that.
+  if [ ! -d "$SELF_DIR" ]; then
+    echo "install-hooks: $client: skill clone hosting this script vanished while waiting for lock" >&2
     wiki_lock_release "$lock_dir"
     return 1
   fi

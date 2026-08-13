@@ -2635,6 +2635,120 @@ done
 assert_eq "t6: planted backup symlink -> a real (non-symlink) backup was created" "1" "$([ -n "$real_backup" ] && echo 1 || echo 0)"
 assert_eq "t6: planted backup symlink -> real backup holds the pre-merge settings" "{}" "$(cat "$real_backup" 2>/dev/null)"
 
+# T6h. The clone that HOSTS install-hooks.sh is deleted while the installer
+# waits for the settings lock (wave3 P1). This is the case T6f's pre/post
+# snapshot cannot see: `uninstall.sh` removes the canonical
+# ~/.claude/skills/wiki symlink OUTSIDE its locks, so an installer that
+# started inside that window snapshots pre_clone_ok=0 and the R12 guard
+# stays disarmed — it then wrote fresh entries the instant uninstall.sh
+# released the locks, i.e. AFTER --remove-clones had already deleted the
+# clone hosting hooks/uninstall-hooks.sh, the only script able to remove
+# those entries again. Hence: canonical scripts deliberately ABSENT from
+# the start (pre_clone_ok=0), a lockdir pre-held by a live foreign process,
+# and the installer's OWN clone rm -rf'd mid-wait. Refusal must be
+# non-zero, settings.json byte-identical, no lockdir leftover.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+printf '{}' >"$f"
+sha_before="$(_sha "$f")"
+clone_h="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-clone.XXXXXX")"
+track_tmp "$clone_h"
+mkdir -p "$clone_h/hooks/lib"
+cp "$INSTALL_HOOKS_SCRIPT" "$clone_h/hooks/install-hooks.sh"
+cp "$SETTINGS_LOCK_LIB" "$clone_h/hooks/lib/settings-lock.sh"
+
+lockdir="$f.lockdir"
+( sleep 30 ) &
+foreign_pid=$!
+mkdir -p "$lockdir"
+echo "$foreign_pid" >"$lockdir/pid"
+
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=8 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$clone_h/hooks/install-hooks.sh" >/dev/null 2>"t6h_err.$$" &
+waiter_pid=$!
+
+sleep 0.5
+rm -rf "$clone_h"
+rm -rf "$lockdir"
+
+rc=0
+wait "$waiter_pid" || rc=$?
+kill "$foreign_pid" 2>/dev/null || true
+wait "$foreign_pid" 2>/dev/null || true
+
+t6h_err="$(cat "t6h_err.$$" 2>/dev/null)"
+rm -f "t6h_err.$$"
+assert_eq "t6: hosting clone deleted under lock -> non-zero exit" "1" "$rc"
+assert_contains "t6: hosting clone deleted under lock -> stderr names the hosting clone" "$t6h_err" "skill clone hosting this script vanished"
+assert_file_unchanged "t6: hosting clone deleted under lock -> settings.json byte-identical" "$f" "$sha_before"
+assert_eq "t6: hosting clone deleted under lock -> no lockdir left" "" "$([ -d "$lockdir" ] && echo present)"
+
+# T6i. Backup-path parity for hooks/uninstall-hooks.sh (wave3 P1): the
+# uninstaller writes the SAME fully predictable
+# "$settings_file.bak-wiki-hooks-$(date +%Y%m%d%H%M%S)" backup as
+# install-hooks.sh, so it needs the identical O_CREAT|O_EXCL|O_NOFOLLOW
+# create-never-open discipline T6g pins down for the installer. With
+# shutil.copy2 the destination was merely opened for writing: a symlink
+# pre-planted at that path by anyone able to write into the settings dir
+# was followed, truncating the victim, overwriting it with settings.json
+# content and re-permissioning it to the source's mode. Same booby-trapped
+# 3-second window as T6g; settings.json is 0644 while the victim is 0600,
+# so a mode leak is observable and not a coincidence.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+# Built with python3 rather than a heredoc: the registered command embeds
+# double quotes (`test -x "…" && "…" || exit 0`), which shell-escaping into
+# JSON by hand gets wrong silently — an invalid-JSON fixture would make the
+# uninstaller bail BEFORE the backup step this test is about.
+python3 - "$f" "$home" <<'PYEOF'
+import json, sys
+
+settings_file, home = sys.argv[1:3]
+canon = home + "/.claude/skills/wiki/hooks/session-start.sh"
+command = 'test -x "%s" && "%s" || exit 0' % (canon, canon)
+data = {
+    "hooks": {
+        "SessionStart": [
+            {
+                "matcher": "startup|clear|compact",
+                "hooks": [{"type": "command", "command": command}],
+            }
+        ]
+    }
+}
+with open(settings_file, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, indent=2, ensure_ascii=False)
+    fh.write("\n")
+PYEOF
+chmod 644 "$f"
+settings_before="$(cat "$f")"
+victim="$home/victim.txt"
+printf 'DO-NOT-TOUCH\n' >"$victim"
+chmod 600 "$victim"
+victim_sha="$(_sha "$victim")"
+for off in 0 1 2 3; do
+  planted_ts="$(python3 -c "
+import sys, time
+print(time.strftime('%Y%m%d%H%M%S', time.localtime(time.time() + int(sys.argv[1]))))
+" "$off")"
+  ln -s "$victim" "$f.bak-wiki-hooks-$planted_ts" 2>/dev/null || true
+done
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t6: uninstall planted backup symlink -> victim file byte-identical" "$victim_sha" "$(_sha "$victim")"
+assert_eq "t6: uninstall planted backup symlink -> victim keeps 0600" "600" "$(t6_stat_mode "$victim")"
+assert_eq "t6: uninstall planted backup symlink -> uninstall still succeeds" "0" "$rc"
+assert_eq "t6: uninstall planted backup symlink -> wiki entries still stripped" "False" "$(json_get "$f" "'hooks' in d")"
+real_backup=""
+for cand in "$home/.claude/"*.bak-wiki-hooks-*; do
+  [ -e "$cand" ] || continue
+  if [ ! -L "$cand" ] && [ -f "$cand" ]; then
+    real_backup="$cand"
+    break
+  fi
+done
+assert_eq "t6: uninstall planted backup symlink -> a real (non-symlink) backup was created" "1" "$([ -n "$real_backup" ] && echo 1 || echo 0)"
+assert_eq "t6: uninstall planted backup symlink -> real backup holds the pre-strip settings" "$settings_before" "$(cat "$real_backup" 2>/dev/null)"
+
 # ---- t7-install-qwen: hooks/install-hooks.sh registers a SECOND client
 #      (qwen) via a sequential register_into call added in Task 7
 #      (docs/superpowers/plans/2026-08-13-v46-qwen.md). Gate: `command -v
