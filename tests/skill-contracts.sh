@@ -18,8 +18,8 @@ if [ "$description_lines" -gt 14 ]; then
   fail "SKILL.md frontmatter description should stay compact (<=14 lines including delimiters), got $description_lines"
 fi
 
-grep -q '^|---|---|---|---|$' "$ROOT/SKILL.md" ||
-  fail "Platform Compatibility table separator must have 4 columns"
+grep -q '^|---|---|---|---|---|$' "$ROOT/SKILL.md" ||
+  fail "Platform Compatibility table separator must have 5 columns"
 
 references=(
   references/discovery-versioning.md
@@ -558,8 +558,14 @@ if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
   fail "no-code project detection must not invent people/documents categories"
 fi
 
-grep -q 'version: "4.5.1"' "$ROOT/SKILL.md" ||
-  fail "SKILL.md frontmatter must be bumped to 4.5.1"
+grep -q 'version: "4.6.0"' "$ROOT/SKILL.md" ||
+  fail "SKILL.md frontmatter must be bumped to 4.6.0"
+
+grep -q '| Qwen Code |' "$ROOT/SKILL.md" ||
+  fail "Platform Compatibility table must include a Qwen Code column"
+
+grep -q 'QWEN.md' "$ROOT/SKILL.md" ||
+  fail "SKILL.md must mention QWEN.md as an agent instruction file"
 
 [ -f "$ROOT/references/operation-doctor.md" ] ||
   fail "references/operation-doctor.md must exist (wiki doctor operation)"

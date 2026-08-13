@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.5.1"
+version: "4.6.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
@@ -23,7 +23,7 @@ Instead of re-discovering knowledge each session, the wiki accumulates
 synthesized understanding across conversations.
 
 This skill is **project-agnostic** and **agent-neutral**: it discovers wiki
-location automatically and can be used from Claude, Codex, or Gemini.
+location automatically and can be used from Claude, Codex, Gemini, or Qwen Code.
 
 This file is intentionally a thin entrypoint. The operational contract lives in
 `references/` and should be loaded only when needed for the current operation.
@@ -32,12 +32,12 @@ This file is intentionally a thin entrypoint. The operational contract lives in
 
 The workflow is written in Claude-era terms, but the contract is platform-neutral:
 
-| Generic action | Claude Code | Codex | Gemini CLI |
-|---|---|---|---|
-| Read file(s) | Read | shell/read tools | shell/read tools |
-| Edit file(s) | Edit/Write | apply_patch | shell/edit tools |
-| Run commands | Bash | exec_command | shell tool |
-| Track tasks | TodoWrite | update_plan | native plan/todo mechanism if available |
+| Generic action | Claude Code | Codex | Gemini CLI | Qwen Code |
+|---|---|---|---|---|
+| Read file(s) | Read | shell/read tools | shell/read tools | read_file |
+| Edit file(s) | Edit/Write | apply_patch | shell/edit tools | edit / write_file |
+| Run commands | Bash | exec_command | shell tool | shell |
+| Track tasks | TodoWrite | update_plan | native plan/todo mechanism if available | todo_write |
 
 When references name a platform-specific tool (`Read`, `Edit`, `Write`, `Bash`,
 `TodoWrite`), translate it to the current agent's equivalent. The behavior is
@@ -127,9 +127,9 @@ instead of improvising the behavior from memory.
 - **Shared canonical registry:** `~/.claude/skills/` is the canonical skill
   registry for this stack even in Codex-only or Gemini-only sessions. It does
   not require Claude Code to be installed.
-- **Agent-neutral discovery:** `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` are
-  equal sources of a `## Wiki` / `## Вікі` pointer. Validate every pointer by
-  checking for `{wiki}/index.md`.
+- **Agent-neutral discovery:** `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and
+  `QWEN.md` are equal sources of a `## Wiki` / `## Вікі` pointer. Validate
+  every pointer by checking for `{wiki}/index.md`.
 - **Git-backed wiki:** Git is the foundation of the wiki: snapshots, rollback,
   lint auto-fixes, cleanup, and migration safety all rely on commits. A project
   without git metadata (`.git/` directory or `.git` file) is not wiki-ready.
