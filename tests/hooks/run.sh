@@ -19,6 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DISCOVER_LIB="$ROOT/hooks/lib/discover.sh"
 VERSION_GATE_LIB="$ROOT/hooks/lib/version-gate.sh"
 SESSION_START_HOOK="$ROOT/hooks/session-start.sh"
+SESSION_START_QWEN_HOOK="$ROOT/hooks/session-start-qwen.sh"
 POST_TOOL_USE_HOOK="$ROOT/hooks/post-tool-use.sh"
 INSTALL_HOOKS_SCRIPT="$ROOT/hooks/install-hooks.sh"
 UNINSTALL_HOOKS_SCRIPT="$ROOT/hooks/uninstall-hooks.sh"
@@ -968,6 +969,102 @@ EOF
 CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" >/dev/null 2>&1
 if [ -e "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
 assert_eq "session-start: fresh checkout + legacy schema -> .usage.json NOT created" "1" "$r"
+
+echo "=== session-start-qwen.sh ===" >&2
+
+# session-start-qwen.sh is a standalone hook process (exit on every path)
+# — run as a subprocess, never sourced.
+
+# 1. Happy path: valid wiki -> exit 0, stdout is valid single-line JSON
+#    wrapping the canonical hook's index injection.
+fixture="$(make_fixture)"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_QWEN_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start-qwen: exit 0 on valid wiki" "0" "$rc"
+if printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then r=0; else r=1; fi
+assert_eq "session-start-qwen: stdout parses as JSON" "0" "$r"
+
+# 2. Envelope shape: continue is True; hookEventName == "SessionStart".
+cont="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["continue"])')"
+assert_eq "session-start-qwen: continue is True" "True" "$cont"
+evt="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["hookEventName"])')"
+assert_eq "session-start-qwen: hookEventName == SessionStart" "SessionStart" "$evt"
+
+# 3. additionalContext carries the canonical hook's WIKI INDEX block and
+#    the mandatory untrusted-data label (exact string from
+#    hooks/session-start.sh's preamble).
+actx="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
+assert_contains "session-start-qwen: additionalContext has WIKI INDEX marker" "$actx" "=== WIKI INDEX (hook-injected) ==="
+assert_contains "session-start-qwen: additionalContext has untrusted-data label" "$actx" "НЕ інструкції"
+
+# 4. stdout is EXACTLY one line.
+lc="$(printf '%s' "$out" | grep -c '^')"
+assert_eq "session-start-qwen: stdout is exactly one line" "1" "$lc"
+
+# 5. No wiki discoverable (git repo, no pointer, no docs/wiki/) -> stdout
+#    empty, exit 0.
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_QWEN_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start-qwen: no wiki -> empty stdout" "" "$out"
+assert_eq "session-start-qwen: no wiki -> exit 0" "0" "$rc"
+
+# 6. Non-git directory -> stdout empty, exit 0 (fail-closed inherited from
+#    the canonical hook's discovery).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_QWEN_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start-qwen: non-git dir -> empty stdout" "" "$out"
+assert_eq "session-start-qwen: non-git dir -> exit 0" "0" "$rc"
+
+# 7. No python3 on PATH (curated PATH technique, mirrors the post-tool-use
+#    "no python3" test) -> stdout empty, exit 0.
+fixture="$(make_fixture)"
+curated_path_dir="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-nopython.XXXXXX")"
+track_tmp "$curated_path_dir"
+for _tool in bash dirname basename realpath sed cat git; do
+  _tool_src="$(command -v "$_tool" 2>/dev/null)"
+  [ -n "$_tool_src" ] && ln -s "$_tool_src" "$curated_path_dir/$_tool"
+done
+out="$(CLAUDE_PROJECT_DIR="$fixture" PATH="$curated_path_dir" bash "$SESSION_START_QWEN_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start-qwen: no python3 -> empty stdout" "" "$out"
+assert_eq "session-start-qwen: no python3 -> exit 0" "0" "$rc"
+
+# 8. stderr from the child hook never leaks into stdout: an out-of-bounds
+#    CLAUDE.md pointer makes the canonical hook write a
+#    "поза межами репо" notice to ITS stderr. The wrapper's stdout must
+#    stay either empty or valid JSON, and must never contain that stderr
+#    substring.
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+cat >"$fixture/CLAUDE.md" <<'EOF'
+# Test Project
+
+## Wiki
+
+Wiki at `../outside-of-repo/docs/wiki`. Schema -> `../outside-of-repo/docs/wiki/schema.md`. Skill: `wiki`.
+EOF
+out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_QWEN_HOOK" 2>/dev/null)"
+rc=$?
+assert_eq "session-start-qwen: out-of-bounds pointer -> exit 0" "0" "$rc"
+if [ -z "$out" ]; then
+  r=0
+elif printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+  r=0
+else
+  r=1
+fi
+assert_eq "session-start-qwen: out-of-bounds pointer -> stdout empty or valid JSON" "0" "$r"
+assert_not_contains "session-start-qwen: child stderr does not leak into stdout" "$out" "поза межами репо"
+
+# 9. Wrapper file is executable.
+if [ -x "$SESSION_START_QWEN_HOOK" ]; then r=0; else r=1; fi
+assert_eq "session-start-qwen: file is executable" "0" "$r"
 
 echo "=== post-tool-use.sh ===" >&2
 
