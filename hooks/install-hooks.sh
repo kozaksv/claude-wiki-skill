@@ -32,7 +32,10 @@
 #      merge — never a cached/earlier snapshot.
 #   3. A timestamped backup ("$settings_file.bak-wiki-hooks-$TS") is written
 #      before any merge (only once the existing file is confirmed to be
-#      valid JSON), via shutil.copy2 (preserves the source's permissions).
+#      valid JSON), from the already-read in-memory content of the
+#      fstat-verified fd (never by reopening settings_file by path — that
+#      would reintroduce the TOCTOU gap point 8 closes), with permissions
+#      copied over explicitly via os.chmod.
 #   4. The merge (python3) is idempotent and operates at the granularity of
 #      individual entries inside each matcher-entry's nested `hooks[]`
 #      array: only elements whose `command` contains the
@@ -187,7 +190,6 @@ register_into() {
       "$session_script" "$post_script" "$session_matcher" "$post_matcher" <<'PYEOF'
 import json
 import os
-import shutil
 import stat
 import sys
 import tempfile
@@ -267,7 +269,16 @@ if fd is not None:
     if not isinstance(data, dict):
         die("%s top-level value is not a JSON object" % settings_file)
     try:
-        shutil.copy2(settings_file, backup_file)
+        # Write the backup from `raw` (already read from the fstat-verified
+        # fd above), not by reopening settings_file by name — shutil.copy2
+        # would reopen the path itself, reintroducing the very TOCTOU window
+        # the O_NOFOLLOW|O_NONBLOCK open + fstat/S_ISREG check above closes
+        # (spec R11): the path could be swapped to a FIFO/device/symlink
+        # between that check and the copy, hanging or backing up the wrong
+        # file.
+        with open(backup_file, "w", encoding="utf-8") as bf:
+            bf.write(raw)
+        os.chmod(backup_file, mode)
     except OSError as exc:
         die("backup failed: %s" % exc)
 
