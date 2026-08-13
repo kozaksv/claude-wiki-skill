@@ -2203,10 +2203,18 @@ f="$home/.claude/settings.json"
 lockdir="$home/.claude/settings.json.lockdir"
 env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_TEST_SLEEP_AFTER_LOCK=5 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
 interrupted_pid=$!
-# Poll for the lock dir to appear instead of a fixed sleep, so this isn't
-# racy under slow/loaded CI.
+# Poll for OWNERSHIP (a non-empty pid file), not merely for the lock dir to
+# exist, and never a fixed sleep — so this isn't racy under slow/loaded CI.
+# The bare `-d` check used to fire during the holder's mkdir->pid-write
+# window, where the lock dir exists but nothing records an owner yet; a
+# SIGTERM delivered there is NOT "interrupted mid-critical-section" (what
+# this case is about) and the trap deliberately leaves such an empty-pid dir
+# alone (agy-атк P0, wave4 — deleting it could destroy a new owner's lock),
+# so the assertion below intermittently saw a legitimately-retained dir.
+# Waiting for the pid file makes the interrupt land where the comment says
+# it does; the empty-pid window's own behaviour is covered by U5.
 wait_start="$(date +%s)"
-while [ ! -d "$lockdir" ]; do
+while [ ! -s "$lockdir/pid" ]; do
   now="$(date +%s)"
   if [ $((now - wait_start)) -ge 5 ]; then
     break
@@ -2340,6 +2348,39 @@ out="$(bash -c '
 assert_eq "settings-lock lib: U4 both distinct lockdirs acquired in one process" "BOTH_ACQUIRED" "$out"
 assert_eq "settings-lock lib: U4 first lockdir removed after exit" "" "$([ -d "$lockdir_a" ] && echo present)"
 assert_eq "settings-lock lib: U4 second lockdir removed after exit" "" "$([ -d "$lockdir_b" ] && echo present)"
+
+# U5. pid-write failure is a FAILED acquisition, never a silent warning
+#     (codex-атк P1). Simulated with a `mkdir` shell function that creates
+#     the lock dir and immediately strips its write bit, so the very next
+#     `>"$lockdir/pid"` fails with EACCES exactly like a read-only fs /
+#     ENOSPC / quota would. wiki_lock_acquire must return non-zero (both
+#     installers do `wiki_lock_acquire … || fail`, so the caller never runs
+#     its settings.json read-modify-write under a lock dir that no guard can
+#     attribute to an owner), and the abandoned empty-pid dir must stay
+#     put — removing it is what would steal a live foreign lock — so a later
+#     contender still self-heals through the mtime-age fallback.
+home="$(make_fake_home)"
+lockdir="$home/u5.lockdir"
+u5_out="$(bash -c '
+  set -uo pipefail
+  source "'"$SETTINGS_LOCK_LIB"'"
+  mkdir() { command mkdir "$@" && chmod 500 "$1"; }
+  if wiki_lock_acquire "'"$lockdir"'"; then echo ACQUIRED; else echo REFUSED; fi
+' 2>/dev/null)"
+assert_eq "settings-lock lib: U5 unwritable pid file makes acquire fail, not succeed" "REFUSED" "$u5_out"
+assert_eq "settings-lock lib: U5 recorded owner pid is absent/empty (nothing claims ownership)" "" "$(cat "$lockdir/pid" 2>/dev/null)"
+assert_eq "settings-lock lib: U5 abandoned lock dir is left for the age fallback, not stolen back" "yes" "$([ -d "$lockdir" ] && echo yes || echo no)"
+# Backdate the abandoned dir instead of waiting out lock_timeout in real
+# time, so this assertion tests the reclaim path itself rather than the
+# scheduler: the contender must reclaim on its very first iteration.
+touch -t 202001010000 "$lockdir" 2>/dev/null || true
+u5_next="$(env WIKI_HOOKS_LOCK_TIMEOUT=1 WIKI_HOOKS_LOCK_POLL=0.1 bash -c '
+  set -uo pipefail
+  source "'"$SETTINGS_LOCK_LIB"'"
+  if wiki_lock_acquire "'"$lockdir"'"; then echo ACQUIRED_AFTER; else echo TIMED_OUT; fi
+' 2>/dev/null)"
+assert_eq "settings-lock lib: U5 next client reclaims the abandoned empty-pid lock (self-healing)" "ACQUIRED_AFTER" "$u5_next"
+chmod -R u+rwX "$home" 2>/dev/null || true
 
 # ---- summary ----
 echo "" >&2

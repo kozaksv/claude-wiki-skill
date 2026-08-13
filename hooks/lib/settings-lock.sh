@@ -31,7 +31,13 @@
 #   blocks reclamation forever.
 #
 # Public API (the only functions callers should use):
-#   wiki_lock_acquire <lockdir>  -> 0 = acquired, 1 = timed out.
+#   wiki_lock_acquire <lockdir>  -> 0 = acquired (and the lock dir provably
+#                                    records OUR pid as its owner), 1 = not
+#                                    acquired: either timed out, or the
+#                                    owner pid could not be recorded at all
+#                                    (read-only fs / ENOSPC / quota), which
+#                                    is a failed acquisition and never a
+#                                    warning — see _wiki_lock_write_pid.
 #                                    Installs the shared EXIT/INT/TERM trap
 #                                    on its first-ever call.
 #   wiki_lock_release <lockdir>  -> idempotent; removes the lock dir only
@@ -75,6 +81,53 @@ _WIKI_LOCK_TRAP_INSTALLED=0
 
 _wiki_lock_is_pid_alive() {
   [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null
+}
+
+# Record OUR pid as the lock dir's owner. -> 0 the pid file now provably
+# names us, 1 it does not (write failed, or a racing reclaim gave the dir
+# to somebody else).
+#
+# The pid file is what makes a lock dir OWNED: every other guard in this
+# lib (trap teardown, wiki_lock_release, the liveness branch of the
+# acquire loop) keys off "the pid file names me". A failed write therefore
+# has to be treated as a FAILED ACQUISITION, never as a soft warning
+# (codex-атк P1) — see wiki_lock_acquire.
+#
+# Both the write status AND a read-back are checked. The status alone is
+# not enough: on a full/quota'd filesystem the redirection can create the
+# file and then lose the payload, and a partial write leaves a pid file
+# whose content is not our pid. The read-back also catches the (tiny)
+# case where the dir we created was reclaimed and re-acquired by someone
+# else while we were descheduled — a pid file naming a foreign process is
+# not ours to run under either.
+# The read-back deliberately uses the `read` BUILTIN redirected from the
+# file, never `$(cat …)`: everything between the `mkdir` that created the
+# lock dir and the moment its pid file names us is a window in which a
+# signal leaves an empty-pid dir behind that the trap must (correctly)
+# refuse to delete, so this window is kept as short as possible — a
+# command substitution would fork+exec a whole process inside it.
+_wiki_lock_write_pid() {
+  local lockdir="$1" recorded=""
+  if ! printf '%s\n' "$$" >"$lockdir/pid" 2>/dev/null; then
+    return 1
+  fi
+  read -r recorded <"$lockdir/pid" 2>/dev/null || true
+  [ "$recorded" = "$$" ]
+}
+
+# Drop <lockdir> from the held-locks array WITHOUT touching the lock dir
+# itself (used when an acquisition is abandoned before ownership was
+# established — the dir must be left for the age fallback to reclaim, see
+# wiki_lock_acquire). Idempotent; a lockdir that is not held is a no-op.
+_wiki_lock_forget() {
+  local lockdir="$1" i
+  for i in "${!_WIKI_LOCK_HELD[@]}"; do
+    if [ "${_WIKI_LOCK_HELD[$i]}" = "$lockdir" ]; then
+      unset "_WIKI_LOCK_HELD[$i]"
+      break
+    fi
+  done
+  return 0
 }
 
 _wiki_lock_dir_age_seconds() {
@@ -148,7 +201,8 @@ _wiki_lock_release_all() {
   exit "$ec"
 }
 
-# wiki_lock_acquire <lockdir> -> 0 acquired, 1 timed out.
+# wiki_lock_acquire <lockdir> -> 0 acquired, 1 not acquired (timed out, or
+# the owner pid could not be recorded).
 #
 # mkdir-based lock: atomic `mkdir` as the mutex. Crash/interrupt recovery
 # relies on the shared EXIT/INT/TERM trap (installed below on first call)
@@ -181,8 +235,33 @@ wiki_lock_acquire() {
       # write below, the trap must still know it owns (and must remove)
       # this lock dir, even pid-less.
       _WIKI_LOCK_HELD+=("$lockdir")
-      echo $$ >"$lockdir/pid" 2>/dev/null || true
-      return 0
+      if _wiki_lock_write_pid "$lockdir"; then
+        return 0
+      fi
+      # The pid write FAILED (read-only fs, ENOSPC, quota, lost race). It
+      # must NOT be swallowed (codex-атк P1): without a pid file naming us,
+      # nothing in this lib — not the trap, not wiki_lock_release, not a
+      # contender's liveness check — recognises us as the owner. Returning 0
+      # here would run the caller's read-modify-write of settings.json under
+      # a lock dir that no guard can attribute to anybody, and once the
+      # empty-pid dir ages past lock_timeout any contender legitimately
+      # reclaims it and enters the same critical section concurrently. So we
+      # report a FAILED acquisition instead; both callers do
+      # `wiki_lock_acquire … || fail`, so the critical section is never
+      # entered unguarded.
+      #
+      # The lock dir itself is deliberately left in place, exactly like the
+      # trap's empty-pid case (agy-атк P0, wave4): an empty pid file is
+      # ambiguous — it can be our own failed write, but it can equally be a
+      # NEW owner's mid-acquire window if we stalled long enough for our dir
+      # to be age-reclaimed and re-created. Removing it on that ambiguity
+      # would destroy a live foreign lock. Leaving it is self-healing and
+      # bounded: the empty/absent-pid branch below reclaims it via mtime age
+      # after lock_timeout.
+      _wiki_lock_forget "$lockdir"
+      printf 'settings-lock: cannot record owner pid in %s (write failed: read-only fs, out of space, or quota) — refusing the lock rather than entering the critical section unguarded\n' \
+        "$lockdir" >&2
+      return 1
     fi
     if [ -f "$lockdir/pid" ]; then
       pid="$(cat "$lockdir/pid" 2>/dev/null || true)"
