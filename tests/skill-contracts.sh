@@ -692,6 +692,21 @@ grep -q 'uninstall-hooks.sh' "$ROOT/uninstall.sh" ||
 [ -x "$ROOT/hooks/install-hooks.sh" ] || fail "hooks/install-hooks.sh must be executable"
 [ -x "$ROOT/hooks/uninstall-hooks.sh" ] || fail "hooks/uninstall-hooks.sh must be executable"
 
+# t15-refs-lint-doctor: Lint, Doctor, and Ingest-Source must cover QWEN.md
+# alongside CLAUDE.md/AGENTS.md/GEMINI.md as a resident agent instruction
+# file, and Doctor must collect qwen-specific hook/export state.
+grep -q 'QWEN.md' "$ROOT/references/operation-lint.md" ||
+  fail "operation-lint.md must cover QWEN.md as a resident agent instruction file"
+
+grep -q 'QWEN.md' "$ROOT/references/operation-doctor.md" ||
+  fail "operation-doctor.md must cover QWEN.md as an agent instruction file"
+
+grep -qF '~/.qwen' "$ROOT/references/operation-doctor.md" ||
+  fail "operation-doctor.md must collect qwen-specific state (exports/hooks) under ~/.qwen"
+
+grep -q 'QWEN.md' "$ROOT/references/operation-ingest-source.md" ||
+  fail "operation-ingest-source.md must cover QWEN.md as an agent instruction file"
+
 # Wire the executable hooks test suite into the project gate — it must run
 # as the last step so all of the above static guards fail fast first.
 bash "$ROOT/tests/hooks/run.sh" || fail "hooks executable tests failed"

@@ -43,7 +43,7 @@ Doctor draws on these references while running its checks — load them as neede
 ### Check groups
 
 **(1) Pointers.** Re-run the pointer-validation part of Step 0
-(`CLAUDE.md`/`AGENTS.md`/`GEMINI.md` → `## Wiki` → resolves to `{wiki}/index.md`)
+(`CLAUDE.md`/`AGENTS.md`/`GEMINI.md`/`QWEN.md` → `## Wiki` → resolves to `{wiki}/index.md`)
 without acting on it. ✅ every discovered instruction file's pointer resolves
 to a valid `index.md`. ⚠️ a pointer is stale/broken/missing for an agent whose
 instruction file exists — repair routes to the existing Step 0
@@ -80,18 +80,27 @@ skip them in this check entirely.
 
 **(4) Symlink exports.** Check the cross-agent symlink exports from the
 canonical `~/.claude/skills/wiki/` clone (per Core Invariants — DRY topology,
-shared canonical registry). ✅ expected per-agent export symlinks exist and
-resolve to the canonical clone. ⚠️ an export is missing or dangling — repair
-routes to the existing installer self-heal (same mechanism Init already uses
-to fix cross-agent skill export drift).
+shared canonical registry): `~/.agents/skills/wiki` (Codex), `~/.gemini/skills/wiki`
+(Gemini), and `~/.qwen/skills/wiki` (Qwen). ✅ expected per-agent export
+symlinks exist and resolve to the canonical clone. ⚠️ an export is missing or
+dangling — repair routes to the existing installer self-heal (same mechanism
+Init already uses to fix cross-agent skill export drift, `install.sh --repair-exports`).
 
-**(5) Hooks.** Three sub-checks, all read-only:
+**(5) Hooks.** Three sub-checks, all read-only, run against both settings
+files that can carry entries — `~/.claude/settings.json` and (when Qwen is
+present) `~/.qwen/settings.json`:
 - **Marker present?** Does `~/.claude/settings.json` contain a hook entry
   whose `command` uses the canonical symlink path
   `~/.claude/skills/wiki/hooks/…` (not a resolved-clone path)? ✅ marker
   present. ⚠️ marker absent — this project could benefit from hook
   provisioning; repair routes to the Hook provisioning DECIDE
   (`references/discovery-versioning.md`), not a silent install from doctor.
+  Same check, same read-only collection, runs against `~/.qwen/settings.json`
+  for the qwen-hook-entries (same canonical `…/skills/wiki/hooks/…` marker,
+  registered via `register_into qwen`). ✅ qwen marker present when Qwen is
+  in use. ⚠️ qwen marker absent — repair routes to the same existing
+  mechanism, `bash hooks/install-hooks.sh` (never a doctor-specific install
+  path).
 - **Scripts executable, python3 present?** ✅ `hooks/session-start.sh` and
   `hooks/post-tool-use.sh` (and `hooks/lib/*.sh`) are executable, and
   `python3` resolves on `PATH`. ⚠️ a script lost its executable bit, or

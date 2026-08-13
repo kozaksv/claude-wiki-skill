@@ -118,7 +118,7 @@ One-paragraph description of what this page covers.
 ### IMPORTANT: Wiki vs. Agent Instruction Files
 
 When updating documentation after implementing a feature:
-- **Agent instruction files** (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) get ONLY: new conventions, rules, data model summary changes (1-2 lines max)
+- **Agent instruction files** (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md`) get ONLY: new conventions, rules, data model summary changes (1-2 lines max)
 - **Wiki** gets: implementation details, how things work, component behavior, API specifics
 - If in doubt whether something is a "convention" or "implementation detail" — it's wiki
 - Reference wiki from instruction files when needed: "Details → see [[page-name]] in wiki"
