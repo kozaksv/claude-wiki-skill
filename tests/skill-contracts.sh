@@ -582,6 +582,27 @@ grep -q '### 4.5.0' "$ROOT/references/discovery-versioning.md" ||
 grep -q '### 4.5.1' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery-versioning.md Migration Log must have a ### 4.5.1 entry"
 
+# t14-refs-discovery: Qwen Code is now a fourth agent-instruction-file source
+# alongside CLAUDE.md/AGENTS.md/GEMINI.md, everywhere discovery and init
+# enumerate/sync those files, plus a deterministic priority order for
+# same-directory pointer conflicts and a Migration Log entry for v4.6.
+grep -q 'QWEN.md' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery-versioning.md must cover QWEN.md as an agent instruction file"
+
+if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" |
+  grep -q 'CLAUDE.md`.*AGENTS.md`.*GEMINI.md`.*QWEN.md`'; then
+  fail "discovery-versioning.md must document the deterministic CLAUDE.md -> AGENTS.md -> GEMINI.md -> QWEN.md pointer priority order"
+fi
+
+grep -q 'QWEN.md' "$ROOT/references/operation-init.md" ||
+  fail "operation-init.md must cover QWEN.md as an agent instruction file"
+
+grep -qF '~/.qwen/skills' "$ROOT/references/operation-init.md" ||
+  fail "operation-init.md Cross-agent skill availability must check ~/.qwen/skills/wiki"
+
+grep -q '### 4.6.0' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery-versioning.md Migration Log must have a ### 4.6.0 entry"
+
 skill_version="$(sed -n 's/^version: "\([0-9][0-9]*\)\..*/\1/p' "$ROOT/SKILL.md" | head -1)"
 init_schema_major="$(grep -E 'wiki_version: "[0-9]+\.' "$ROOT/references/operation-init.md" | sed -n 's/.*wiki_version: "\([0-9][0-9]*\)\..*/\1/p' | head -1)"
 [ -n "$skill_version" ] || fail "could not parse SKILL.md major version"

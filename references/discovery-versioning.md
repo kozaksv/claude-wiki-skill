@@ -24,8 +24,9 @@
    Wiki artifacts include both fully-formed and partial wikis:
 
    - A `docs/wiki/index.md` file (canonical, fully formed).
-   - A `## Wiki` pointer in `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` that
-     resolves to an on-disk `index.md` (pointer-based, fully formed).
+   - A `## Wiki` pointer in `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, or
+     `QWEN.md` that resolves to an on-disk `index.md` (pointer-based, fully
+     formed).
    - A `docs/wiki/` directory (or pointer-resolved directory) containing
      any wiki-owned files even when `index.md` is missing: `schema.md`,
      `log.md`, `.usage.json`, `concepts/`, `entities/`, `transcripts/`,
@@ -104,7 +105,7 @@
    directory structure and the skill has no reliable way to identify
    the matching project root from path strings alone.
 
-2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`. If more than one exists, read all of their pointer sections (`## Wiki` / `## Вікі` — defined in step 3) and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
+2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `QWEN.md`. If more than one exists, read all of their pointer sections (`## Wiki` / `## Вікі` — defined in step 3) and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). When candidates still tie inside the same directory (active agent unclear, more than one file at that walk depth points at a valid but different wiki), break the tie with the deterministic file-priority order `CLAUDE.md` → `AGENTS.md` → `GEMINI.md` → `QWEN.md`: the first file in that order with a valid pointer wins. If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
 3. **Read the pointer section** — look for the section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)").
 
    **What counts as the pointer section.** A level-2 heading whose text starts with `Wiki` or `Вікі`, case-insensitive, optionally followed by more words. `## Wiki`, `## Вікі`, and `## Вікі проєкту` are all the pointer section; `## Wiki notes` is too. Both spellings are recognized on **read**; `## Wiki` remains the canonical form for **writes** (new pointers and stale-pointer repairs).
@@ -233,7 +234,7 @@ target is the directory containing the valid instruction-file pointer. If the
 wiki was found by fallback (`docs/wiki/index.md`) rather than a pointer, use the
 project root under the discovery boundary.
 
-For each of `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` in that target directory:
+For each of `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and `QWEN.md` in that target directory:
 
 - Compute `{schema_path_relative_to_instruction_file}` as the POSIX relative
   path from that instruction file's directory to the resolved `{wiki}/schema.md`.
@@ -300,7 +301,7 @@ questions, never interrupt the answer solely to create pointer files.
 
 **Monorepo scope:** the supported default is one canonical wiki per git root marker (`.git/` directory or `.git` file). If multiple sub-projects inside the same repo intentionally maintain separate wikis, treat that as an explicit user/project convention: require an instruction-file pointer in or below the sub-project directory and prefer the closest valid pointer found in the cwd → parent walk. Do not infer multiple wikis from sibling directories on your own.
 
-**Why schema.md is preferred over agent instruction file sections:** files like `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` can load into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
+**Why schema.md is preferred over agent instruction file sections:** files like `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and `QWEN.md` can load into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
 
 _Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in resident instruction files such as CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the instruction-file fallback._
 
@@ -407,8 +408,8 @@ treat the partial state according to what actually exists (`schema.md`,
 
 ### 4.2.2 (2026-05-17)
 - No schema migration. Discovery/init behavior changed: cross-agent
-  instruction-file sync keeps `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` wiki
-  pointers aligned for existing and newly bootstrapped wikis.
+  instruction-file sync keeps `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and
+  `QWEN.md` wiki pointers aligned for existing and newly bootstrapped wikis.
 
 ### 4.2.3 (2026-05-17)
 - No schema migration. Tightened repair behavior: instruction pointers use paths
@@ -451,6 +452,23 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.6.0 (2026-08-13)
+- No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki migrations
+  required for existing wikis. Native Qwen Code support added: agent-neutral
+  discovery now spans four instruction files instead of three —
+  `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md` — as equal pointer
+  sources, all validated the same way (`{wiki}/index.md` must exist).
+  Discovery's bounded walk, Cross-agent instruction-file sync, and the
+  resident-context rationale note all cover `QWEN.md` alongside the other
+  three files. Step 0's file-conflict rule gained an explicit deterministic
+  tie-breaker for the case where the active agent is unclear and more than
+  one instruction file at the same walk depth points at a different valid
+  wiki: fall back to file-priority order `CLAUDE.md` → `AGENTS.md` →
+  `GEMINI.md` → `QWEN.md`, first valid pointer wins. Operation Init mirrors
+  the same four-file coverage (active-agent inference, contract-bound wiki
+  location, project pointer sync, migration-plan templates) and gained a
+  fourth cross-agent skill export check: `~/.qwen/skills/wiki`.
 
 ### 4.5.1 (2026-08-10)
 - No schema migration (`wiki_version` stays `"4.0"`); nothing to migrate on
@@ -539,7 +557,7 @@ treat the partial state according to what actually exists (`schema.md`,
   explicit «no citations = bug, retry» clause. Cross-agent
   instruction-file sync now writes a full Session-Start Contract
   pointer block (not a one-line pointer) to `CLAUDE.md` / `AGENTS.md` /
-  `GEMINI.md` for new pointers and stale-pointer repairs; already-valid
+  `GEMINI.md` / `QWEN.md` for new pointers and stale-pointer repairs; already-valid
   pointers are left unchanged (no formatting migration). Empty-Wiki
   Exception preserved: agent says «у вікі нема, відповідаю з training»
   and marks topic for crystallization. Motivation: agents were
@@ -567,7 +585,7 @@ treat the partial state according to what actually exists (`schema.md`,
 
   - **Wiki location is contract-bound.** A project's wiki lives at
     `docs/wiki/` or wherever a `## Wiki` pointer in `CLAUDE.md` /
-    `AGENTS.md` / `GEMINI.md` resolves to. If Step 0 finds neither,
+    `AGENTS.md` / `GEMINI.md` / `QWEN.md` resolves to. If Step 0 finds neither,
     the project is considered to have no wiki — period. Init does
     not scan for stray `index.md` or wiki-like content in
     non-canonical locations. Users who want a wiki outside
