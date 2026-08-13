@@ -5,12 +5,15 @@
 # find the nearest resident `## Wiki` pointer walking up from <start_dir>
 # to the git-root boundary, falling back to docs/wiki/ when no pointer
 # resolves. In each directory ALL agent instruction files (CLAUDE.md,
-# AGENTS.md, GEMINI.md) are consulted and the first pointer that actually
-# VALIDATES (resolved index.md inside the boundary) wins — agent-neutral
-# discovery. A stale/broken pointer never stops the search: the remaining
-# files of the same directory are still tried, and the walk-up continues
-# to higher directories, so a stale nested CLAUDE.md can mask neither a
-# valid AGENTS.md/GEMINI.md pointer beside it nor a valid root-level one. Discovery is FAIL-CLOSED without git: with no git toplevel we
+# AGENTS.md, GEMINI.md, QWEN.md) are consulted and the first pointer that
+# actually VALIDATES (resolved index.md inside the boundary) wins —
+# agent-neutral discovery. A stale/broken pointer never stops the search:
+# the remaining files of the same directory are still tried, and the
+# walk-up continues to higher directories, so a stale nested CLAUDE.md can
+# mask neither a valid AGENTS.md/GEMINI.md/QWEN.md pointer beside it nor a
+# valid root-level one.
+#
+# Discovery is FAIL-CLOSED without git: with no git toplevel we
 # refuse to establish a boundary and resolve nothing (Session-Start
 # Contract requires a git marker; an orphan / non-git tree must not resolve
 # or mutate a wiki). Every candidate is boundary-guarded on its RESOLVED
@@ -82,15 +85,18 @@ _wiki_disc_extract_pointer() {
 
 _wiki_disc_dir_pointers() {
   # $1 = directory. Agent-neutral pointer lookup: consult ALL instruction
-  # files in priority order (CLAUDE.md, AGENTS.md, GEMINI.md) and print
-  # EVERY `## Wiki` backtick pointer found, one per line, in that order.
-  # A file with no pointer contributes nothing but does NOT stop the scan
-  # (codex-атк P1). Printing ALL pointers (not just the first) lets the
-  # caller validate each one, so a stale-but-present CLAUDE.md pointer
-  # cannot mask a valid AGENTS.md/GEMINI.md pointer in the same directory
-  # (agy-атк P1 follow-up). Always exits 0; empty output = no pointers.
+  # files in priority order (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md) and
+  # print EVERY `## Wiki` backtick pointer found, one per line, in that
+  # order. A file with no pointer contributes nothing but does NOT stop the
+  # scan (codex-атк P1). Printing ALL pointers (not just the first) lets
+  # the caller validate each one, so a stale-but-present CLAUDE.md pointer
+  # cannot mask a valid AGENTS.md/GEMINI.md/QWEN.md pointer in the same
+  # directory (agy-атк P1 follow-up). QWEN.md is appended LAST — it never
+  # changes the priority of the existing files, it only adds a lower-
+  # priority fallback pointer source. Always exits 0; empty output = no
+  # pointers.
   local dir="$1" name raw
-  for name in CLAUDE.md AGENTS.md GEMINI.md; do
+  for name in CLAUDE.md AGENTS.md GEMINI.md QWEN.md; do
     [ -f "$dir/$name" ] || continue
     raw="$(_wiki_disc_extract_pointer "$dir/$name")"
     [ -n "$raw" ] && printf '%s\n' "$raw"
@@ -139,10 +145,16 @@ _wiki_disc_candidate() {
 }
 
 discover_wiki() {
-  # $1 = optional start_dir. Fallback: $CLAUDE_PROJECT_DIR, then pwd.
+  # $1 = optional start_dir. Fallback precedence: $CLAUDE_PROJECT_DIR, then
+  # $QWEN_PROJECT_DIR, then pwd. CLAUDE_PROJECT_DIR always wins when both
+  # are set (spec edge 11) — this is a plain if-chain, no command
+  # substitution feeds an assignment directly, so it stays safe under
+  # `set -euo pipefail` (an unset/empty var under `:-` never trips set -e).
   local start="${1:-}"
   if [ -z "$start" ]; then
-    start="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+    start="${CLAUDE_PROJECT_DIR:-}"
+    [ -n "$start" ] || start="${QWEN_PROJECT_DIR:-}"
+    [ -n "$start" ] || start="$(pwd)"
   fi
   [ -d "$start" ] || return 0
 

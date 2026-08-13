@@ -488,6 +488,110 @@ sha_before="$(_sha "$fixture/docs/wiki/index.md")"
 discover_wiki "$fixture" >/dev/null
 assert_file_unchanged "discover_wiki does not modify index.md" "$fixture/docs/wiki/index.md" "$sha_before"
 
+# ---- QWEN.md pointer + QWEN_PROJECT_DIR anchor (v4.6.0 Task 1) ----
+
+# 14. QWEN.md only: no CLAUDE.md/AGENTS.md/GEMINI.md present, a pointer in
+#     QWEN.md alone must resolve the wiki (QWEN.md appended last, still
+#     consulted).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/from-qwen/wiki"
+printf 'qwen index' >"$fixture/from-qwen/wiki/index.md"
+cat >"$fixture/QWEN.md" <<'EOF'
+## Wiki
+
+Wiki at `from-qwen/wiki`.
+EOF
+expected="$(real "$fixture/from-qwen/wiki")"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "QWEN.md-only: pointer in QWEN.md alone resolves the wiki" "$expected" "$out"
+
+# 15. CLAUDE.md and QWEN.md both valid but pointing at DIFFERENT wikis:
+#     CLAUDE.md wins (higher priority, first in the consult order).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/from-claude/wiki" "$fixture/from-qwen/wiki"
+printf 'claude index' >"$fixture/from-claude/wiki/index.md"
+printf 'qwen index' >"$fixture/from-qwen/wiki/index.md"
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki at `from-claude/wiki`.
+EOF
+cat >"$fixture/QWEN.md" <<'EOF'
+## Wiki
+
+Wiki at `from-qwen/wiki`.
+EOF
+expected="$(real "$fixture/from-claude/wiki")"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "CLAUDE.md and QWEN.md both valid: CLAUDE.md wins" "$expected" "$out"
+
+# 16. stale/broken pointer in CLAUDE.md must not mask a valid QWEN.md
+#     pointer in the same directory (agent-neutral scan continues past a
+#     broken higher-priority file, mirrors the AGENTS.md/GEMINI.md case).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+mkdir -p "$fixture/from-qwen/wiki"
+printf 'qwen index' >"$fixture/from-qwen/wiki/index.md"
+cat >"$fixture/CLAUDE.md" <<'EOF'
+## Wiki
+
+Wiki at `moved/away/long/ago`.
+EOF
+cat >"$fixture/QWEN.md" <<'EOF'
+## Wiki
+
+Wiki at `from-qwen/wiki`.
+EOF
+expected="$(real "$fixture/from-qwen/wiki")"
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+assert_eq "stale CLAUDE.md pointer does not mask valid QWEN.md pointer beside it" "$expected" "$out"
+
+# 17. QWEN_PROJECT_DIR as the start-point anchor when CLAUDE_PROJECT_DIR is
+#     unset: run discover_wiki with no start_dir arg from an unrelated cwd,
+#     env -u CLAUDE_PROJECT_DIR, QWEN_PROJECT_DIR pointing at the fixture.
+fixture="$(make_fixture)"
+unrelated_cwd="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$unrelated_cwd"
+expected="$(real "$fixture/docs/wiki")"
+out="$(
+  cd "$unrelated_cwd" && env -u CLAUDE_PROJECT_DIR QWEN_PROJECT_DIR="$fixture" \
+    bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
+)"
+assert_eq "QWEN_PROJECT_DIR anchors discovery when CLAUDE_PROJECT_DIR is unset" "$expected" "$out"
+
+# 18. both CLAUDE_PROJECT_DIR and QWEN_PROJECT_DIR set to DIFFERENT
+#     fixtures: CLAUDE_PROJECT_DIR wins (spec edge 11).
+claude_fixture="$(make_fixture)"
+qwen_fixture="$(make_fixture)"
+expected="$(real "$claude_fixture/docs/wiki")"
+out="$(
+  CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" \
+    bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
+)"
+assert_eq "CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR when both are set" "$expected" "$out"
+
+# 19. out-of-bounds pointer in QWEN.md: pointer resolves outside the git
+#     boundary -> rejected, empty stdout, stderr carries the boundary note
+#     (mirrors the existing out-of-bounds CLAUDE.md coverage; boundary-guard
+#     itself is untouched by this task).
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
+track_tmp "$fixture"
+( cd "$fixture" && git init -q )
+cat >"$fixture/QWEN.md" <<'EOF'
+## Wiki
+
+Wiki at `../../../../../../etc`.
+EOF
+out="$(discover_wiki "$fixture" 2>/dev/null)"
+err="$(discover_wiki "$fixture" 2>&1 >/dev/null)"
+assert_eq "out-of-bounds QWEN.md pointer: empty stdout" "" "$out"
+assert_contains "out-of-bounds QWEN.md pointer: stderr notes boundary rejection" "$err" "поза межами репо"
+
 echo "=== version-gate.sh ===" >&2
 
 # a. frontmatter 4.0 + .usage.json exists -> writable true, bootstrappable false.
