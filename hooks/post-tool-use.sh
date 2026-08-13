@@ -30,16 +30,40 @@
 # rung added by v46-qwen Task 2 — Qwen exports both vars but the hook does
 # not rely on the compat export).
 #
-# MultiEdit shape (fixwave0-3 P1): MultiEdit's tool_input does not
-# reliably carry a single top-level `file_path` the way Edit/Write do — it
-# can instead (or additionally) carry a per-edit `file_path` on each entry
-# of `tool_input.edits[]`. Reading only the top-level field silently
-# skipped telemetry for every MultiEdit call. The stdin parser below
-# therefore collects the UNION of the top-level `tool_input.file_path`
-# (if any) and every distinct `tool_input.edits[].file_path` (if any), and
-# main() bumps telemetry once per distinct resolved path — covering both
-# the single-file-path shape and the per-edit-array shape without double
-# counting a path that appears in both places.
+# Path extraction (fixwave0-3 P1 + v46-qwen Task 3): the stdin parser
+# below runs two independent extraction modes.
+#
+# Scalar keys are first-match-wins, NOT a union: exactly one primary path
+# is read per tool call, from the chain `file_path` -> `notebook_path` ->
+# `path`, stopping at the first non-empty string. Claude's own matched
+# tools (Read/Edit/Write/MultiEdit) always carry `file_path`, so the chain
+# never reaches `notebook_path`/`path` for them — NOT because Claude
+# tool_input never contains those keys (Glob/Grep do carry `path`), but
+# because those tool names sit outside the action-gate allowlist so the
+# extractor never runs for them, and `file_path` already satisfies the
+# chain for every Claude tool that IS matched. Qwen's `read_file`/
+# `write_file`/`edit`/`replace` use `file_path`; `notebook_edit` uses
+# `notebook_path`. A union here would silently inflate telemetry —
+# bumping several `.usage.json` records for one single-file call via a
+# legacy duplicate `path` key or an injected extra field. A rejected
+# primary path (boundary-guard/filters) never falls back to the next key
+# in the chain either — that would turn the guard into a bypass via a
+# second key (spec edge 17).
+#
+# `edits[]` stays an ADDITIVE union, but only for tool names in
+# BATCH_TOOLS (currently `{"MultiEdit"}`). BATCH_TOOLS is a subset of the
+# bash action-gate's `case "$tool_name"` in main(): the action-gate
+# decides "do we count this call at all", BATCH_TOOLS decides "may this
+# call yield more than one path". MultiEdit's tool_input does not
+# reliably carry a single top-level `file_path` the way Edit/Write do —
+# it can instead (or additionally) carry a per-edit `file_path` on each
+# entry of `tool_input.edits[]`. Reading only the top-level field
+# silently skipped telemetry for every MultiEdit call. For every other
+# matched tool name (Qwen's included), `edits` is never read even if
+# present in the payload. Order-stable dedup via `seen` still applies, so
+# a path present in both the primary key and `edits[]` is bumped once,
+# not twice. A future batch tool name is one edit in BOTH the
+# action-gate case AND BATCH_TOOLS, same commit.
 #
 # Boundary guard: resolved realpath(file_path) must land strictly inside
 # realpath({wiki})/ — mirrors hooks/lib/discover.sh's own boundary-guard
@@ -300,13 +324,29 @@ def add(p):
         paths.append(p)
 
 
-add(tool_input.get("file_path", ""))
+# Exactly ONE primary path per tool call: the first non-empty string in
+# this chain wins and the remaining keys are NOT read (spec R9). All
+# matched Qwen tools (read_file/write_file/edit/notebook_edit) are
+# single-file, so a union here would bump several .usage.json records for
+# one call — silently inflating telemetry via a legacy duplicate `path`
+# or an injected extra key.
+for _key in ("file_path", "notebook_path", "path"):
+    _v = tool_input.get(_key, "")
+    if isinstance(_v, str) and _v:
+        add(_v)
+        break
 
-edits = tool_input.get("edits", [])
-if isinstance(edits, list):
-    for item in edits:
-        if isinstance(item, dict):
-            add(item.get("file_path", ""))
+# BATCH_TOOLS ⊂ the bash action-gate `case "$tool_name"` in main(). The
+# action-gate decides "do we count this call at all"; BATCH_TOOLS decides
+# "may this call yield more than one path". A future batch tool = one
+# edit in BOTH places, same commit.
+BATCH_TOOLS = {"MultiEdit"}
+if tool_name in BATCH_TOOLS:
+    edits = tool_input.get("edits", [])
+    if isinstance(edits, list):
+        for item in edits:
+            if isinstance(item, dict):
+                add(item.get("file_path", ""))
 
 sys.stdout.write("\0".join([tool_name, cwd] + paths) + "\0")
 ' 2>/dev/null)

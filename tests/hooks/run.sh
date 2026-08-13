@@ -997,6 +997,18 @@ print('' if v is None else v)
 " 2>/dev/null
 }
 
+_ptu_keys() {
+  # $1 = .usage.json path. Comma-joined sorted list of every non-`_` top
+  # level key (i.e. every page record actually present) — proves "no
+  # phantom records exist at all", not merely a counter value.
+  python3 -c "
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+print(','.join(sorted(k for k in d if not k.startswith('_'))))
+" "$1" 2>/dev/null
+}
+
 # 1. Read a wiki page -> view_count + 1, last_viewed_at set.
 fixture="$(make_fixture)"
 cat >"$fixture/docs/wiki/foo.md" <<'EOF'
@@ -1548,7 +1560,107 @@ _ptu_stdin "edit" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" ba
 assert_file_unchanged "post-tool-use: legacy schema + qwen edit -> .usage.json unchanged" \
   "$fixture/docs/wiki/.usage.json" "$sha_before"
 
-# 26. Regression: post-tool-use.sh MUST be committed executable. install
+# ---- v46-qwen Task 3: first-match-wins scalar chain
+#      (file_path -> notebook_path -> path), BATCH_TOOLS-gated edits[]
+#      union.
+
+# 26. Qwen `notebook_edit` with tool_input.notebook_path (NO file_path) ->
+#     patch_count = 1.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+printf '{"tool_name":"notebook_edit","tool_input":{"notebook_path":"%s"}}' \
+  "$fixture/docs/wiki/foo.md" \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: qwen notebook_edit (notebook_path only) bumps patch_count to 1" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+
+# 27. Qwen `read_file` with a relative tool_input.path (NO file_path/
+#     notebook_path) + QWEN_PROJECT_DIR anchor, CLAUDE_PROJECT_DIR unset ->
+#     view_count = 1.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+printf '{"tool_name":"read_file","tool_input":{"path":"docs/wiki/foo.md"}}' \
+  | env -u CLAUDE_PROJECT_DIR QWEN_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: qwen read_file (relative path only) bumps view_count to 1" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# 28. First-match-wins guard (required): a single read_file call whose
+#     tool_input carries file_path AND notebook_path AND path — three
+#     DIFFERENT existing wiki pages -> _ptu_keys is exactly the file_path
+#     page's name; the other two keys never appear in .usage.json at all.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+printf 'body\n' >"$fixture/docs/wiki/bar.md"
+printf 'body\n' >"$fixture/docs/wiki/baz.md"
+printf '{"tool_name":"read_file","tool_input":{"file_path":"%s","notebook_path":"%s","path":"%s"}}' \
+  "$fixture/docs/wiki/foo.md" "$fixture/docs/wiki/bar.md" "$fixture/docs/wiki/baz.md" \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: first-match-wins -> only file_path page bumped" \
+  "foo.md" "$(_ptu_keys "$fixture/docs/wiki/.usage.json")"
+
+# 29. Mirror case: notebook_path + path without file_path -> bumps only
+#     the notebook_path page.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/bar.md"
+printf 'body\n' >"$fixture/docs/wiki/baz.md"
+printf '{"tool_name":"notebook_edit","tool_input":{"notebook_path":"%s","path":"%s"}}' \
+  "$fixture/docs/wiki/bar.md" "$fixture/docs/wiki/baz.md" \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: notebook_path + path (no file_path) -> only notebook_path page bumped" \
+  "bar.md" "$(_ptu_keys "$fixture/docs/wiki/.usage.json")"
+
+# 30. Batch-only guard for edits[] (required): a `write_file` payload with
+#     a valid top-level file_path PLUS tool_input.edits[] pointing at two
+#     other existing wiki pages -> _ptu_keys contains exactly the primary
+#     page (write_file is not in BATCH_TOOLS, so edits[] is never read).
+#     Mirrored for `edit`.
+for _qwen_tool in write_file edit; do
+  fixture="$(make_fixture)"
+  printf 'body\n' >"$fixture/docs/wiki/foo.md"
+  printf 'body\n' >"$fixture/docs/wiki/bar.md"
+  printf 'body\n' >"$fixture/docs/wiki/baz.md"
+  printf '{"tool_name":"%s","tool_input":{"file_path":"%s","edits":[{"file_path":"%s","old_string":"a","new_string":"b"},{"file_path":"%s","old_string":"c","new_string":"d"}]}}' \
+    "$_qwen_tool" "$fixture/docs/wiki/foo.md" "$fixture/docs/wiki/bar.md" "$fixture/docs/wiki/baz.md" \
+    | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+  assert_eq "post-tool-use: $_qwen_tool + edits[] -> edits[] ignored (batch-only), only primary bumped" \
+    "foo.md" "$(_ptu_keys "$fixture/docs/wiki/.usage.json")"
+done
+
+# 31. Positive control: the SAME payload shape as #30 under tool_name
+#     MultiEdit -> three records (primary + the two from edits[]) — proves
+#     the guard in #30 rejects the non-batch tool NAME, not the edits[]
+#     branch itself.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+printf 'body\n' >"$fixture/docs/wiki/bar.md"
+printf 'body\n' >"$fixture/docs/wiki/baz.md"
+printf '{"tool_name":"MultiEdit","tool_input":{"file_path":"%s","edits":[{"file_path":"%s","old_string":"a","new_string":"b"},{"file_path":"%s","old_string":"c","new_string":"d"}]}}' \
+  "$fixture/docs/wiki/foo.md" "$fixture/docs/wiki/bar.md" "$fixture/docs/wiki/baz.md" \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: MultiEdit positive control -> all three pages bumped" \
+  "bar.md,baz.md,foo.md" "$(_ptu_keys "$fixture/docs/wiki/.usage.json")"
+
+# 32. Guard for non-matched Claude instruments (required): a Grep payload
+#     and a Glob payload, each with tool_input.path pointing at an
+#     existing wiki page -> .usage.json byte-for-byte unchanged, empty
+#     stdout, exit 0. Grep/Glob DO carry a `path` key in real Claude Code
+#     tool_input, so this proves the action-gate rejects the tool NAME
+#     before the scalar chain ever reads `path` for them.
+for _claude_tool in Grep Glob; do
+  fixture="$(make_fixture)"
+  printf 'body\n' >"$fixture/docs/wiki/foo.md"
+  sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+  out="$(printf '{"tool_name":"%s","tool_input":{"path":"%s"}}' \
+    "$_claude_tool" "$fixture/docs/wiki/foo.md" \
+    | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" 2>&1)"
+  rc=$?
+  assert_eq "post-tool-use: $_claude_tool exits 0" "0" "$rc"
+  assert_eq "post-tool-use: $_claude_tool -> empty stdout" "" "$out"
+  assert_file_unchanged "post-tool-use: $_claude_tool (tool_input.path) -> .usage.json unchanged" \
+    "$fixture/docs/wiki/.usage.json" "$sha_before"
+done
+
+# 33. Regression: post-tool-use.sh MUST be committed executable. install
 #     registers `test -x <canonical> && <canonical> || exit 0`, so a
 #     non-executable file (git mode 100644) makes the installed hook a silent
 #     no-op — PostToolUse telemetry never fires (codex-атк P1). The blocks
