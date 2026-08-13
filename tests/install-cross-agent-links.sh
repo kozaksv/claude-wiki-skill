@@ -547,17 +547,15 @@ for link in \
   "$HOME_ROUNDTRIP/.claude/skills/doc-extract" \
   "$HOME_ROUNDTRIP/.agents/skills/wiki" \
   "$HOME_ROUNDTRIP/.gemini/skills/wiki" \
+  "$HOME_ROUNDTRIP/.qwen/skills/wiki" \
   "$HOME_ROUNDTRIP/.agents/skills/doc-extract" \
-  "$HOME_ROUNDTRIP/.gemini/skills/doc-extract"; do
+  "$HOME_ROUNDTRIP/.gemini/skills/doc-extract" \
+  "$HOME_ROUNDTRIP/.qwen/skills/doc-extract"; do
   [ ! -e "$link" ] && [ ! -L "$link" ] || {
     echo "expected uninstall to remove round-trip symlink: $link"
     exit 1
   }
 done
-# ~/.qwen/skills exports are not yet handled by uninstall.sh (tracked as a
-# separate, later task); they remain in place after uninstall for now — this
-# does not affect canonical registry cleanliness since they point at the
-# already-removed canonical link and become dangling, not orphaned real dirs.
 PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/install.sh" >"$TMP/install-roundtrip-2.log" 2>&1
 expect_link_target "$HOME_ROUNDTRIP/.agents/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"
 expect_link_target "$HOME_ROUNDTRIP/.qwen/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"

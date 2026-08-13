@@ -57,14 +57,16 @@ expect_link_target() {
 
 setup_installed_tree() {
   rm -rf "$HOME_DIR"
-  mkdir -p "$HOME_DIR/.claude/skills" "$HOME_DIR/.agents/skills" "$HOME_DIR/.gemini/skills"
+  mkdir -p "$HOME_DIR/.claude/skills" "$HOME_DIR/.agents/skills" "$HOME_DIR/.gemini/skills" "$HOME_DIR/.qwen/skills"
   mkdir -p "$HOME_DIR/claude-wiki-skill/.git" "$HOME_DIR/claude-doc-extract-skill/.git"
   ln -s "$HOME_DIR/claude-wiki-skill" "$HOME_DIR/.claude/skills/wiki"
   ln -s "$HOME_DIR/claude-doc-extract-skill" "$HOME_DIR/.claude/skills/doc-extract"
   ln -s "$HOME_DIR/.claude/skills/wiki" "$HOME_DIR/.agents/skills/wiki"
   ln -s "$HOME_DIR/.claude/skills/wiki" "$HOME_DIR/.gemini/skills/wiki"
+  ln -s "$HOME_DIR/.claude/skills/wiki" "$HOME_DIR/.qwen/skills/wiki"
   ln -s "$HOME_DIR/.claude/skills/doc-extract" "$HOME_DIR/.agents/skills/doc-extract"
   ln -s "$HOME_DIR/.claude/skills/doc-extract" "$HOME_DIR/.gemini/skills/doc-extract"
+  ln -s "$HOME_DIR/.claude/skills/doc-extract" "$HOME_DIR/.qwen/skills/doc-extract"
 }
 
 setup_installed_tree
@@ -75,12 +77,15 @@ for path in \
   "$HOME_DIR/.claude/skills/doc-extract" \
   "$HOME_DIR/.agents/skills/wiki" \
   "$HOME_DIR/.gemini/skills/wiki" \
+  "$HOME_DIR/.qwen/skills/wiki" \
   "$HOME_DIR/.agents/skills/doc-extract" \
-  "$HOME_DIR/.gemini/skills/doc-extract"; do
+  "$HOME_DIR/.gemini/skills/doc-extract" \
+  "$HOME_DIR/.qwen/skills/doc-extract"; do
   expect_missing "$path"
 done
 expect_exists "$HOME_DIR/.agents"
 expect_exists "$HOME_DIR/.gemini"
+expect_exists "$HOME_DIR/.qwen"
 expect_exists "$HOME_DIR/claude-wiki-skill"
 expect_exists "$HOME_DIR/claude-doc-extract-skill"
 grep -q 'Real clone directories kept' "$TMP/uninstall-default.log" || {

@@ -16,7 +16,7 @@ git clone directories intact:
   ~/claude-doc-extract-skill
 
 It removes empty */skills subdirectories when possible, but keeps parent
-~/.claude, ~/.agents, and ~/.gemini directories in place.
+~/.claude, ~/.agents, ~/.gemini, and ~/.qwen directories in place.
 
 Use --remove-clones to remove those clone directories too, but only when each
 directory is a git repo and has no local changes.
@@ -44,6 +44,7 @@ done
 SKILLS_ROOT="$HOME/.claude/skills"
 AGENTS_SKILLS_ROOT="$HOME/.agents/skills"
 GEMINI_SKILLS_ROOT="$HOME/.gemini/skills"
+QWEN_SKILLS_ROOT="$HOME/.qwen/skills"
 
 SKILL_DIR="$HOME/claude-wiki-skill"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
@@ -143,13 +144,16 @@ fi
 # partial uninstall.
 remove_symlink_entry "$AGENTS_SKILLS_ROOT/wiki" "$SKILLS_ROOT/wiki"
 remove_symlink_entry "$GEMINI_SKILLS_ROOT/wiki" "$SKILLS_ROOT/wiki"
+remove_symlink_entry "$QWEN_SKILLS_ROOT/wiki" "$SKILLS_ROOT/wiki"
 remove_symlink_entry "$AGENTS_SKILLS_ROOT/doc-extract" "$SKILLS_ROOT/doc-extract"
 remove_symlink_entry "$GEMINI_SKILLS_ROOT/doc-extract" "$SKILLS_ROOT/doc-extract"
+remove_symlink_entry "$QWEN_SKILLS_ROOT/doc-extract" "$SKILLS_ROOT/doc-extract"
 remove_symlink_entry "$SKILLS_ROOT/wiki" "$SKILL_DIR"
 remove_symlink_entry "$SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_DIR"
 
 rmdir "$AGENTS_SKILLS_ROOT" 2>/dev/null || true
 rmdir "$GEMINI_SKILLS_ROOT" 2>/dev/null || true
+rmdir "$QWEN_SKILLS_ROOT" 2>/dev/null || true
 rmdir "$SKILLS_ROOT" 2>/dev/null || true
 
 if [ "$REMOVE_CLONES" -eq 1 ]; then

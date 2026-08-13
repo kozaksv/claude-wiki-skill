@@ -220,8 +220,19 @@ wiki_lock_acquire() {
       # EXACTLY like absent: fall back to mtime age as the ONLY reclaim
       # signal, so only a genuinely abandoned lock is ever reclaimed
       # (atomic claim-then-destroy — see _wiki_lock_reclaim).
+      # Use -ge, not -gt, here: age (now - mtime, the lockdir's creation
+      # time) and elapsed (now - start, this waiter's own wait time) climb
+      # in lockstep whenever the waiter started in the same wall-clock
+      # second the lockdir was created (start == mtime). On that tie, age
+      # and elapsed reach lock_timeout on the very same iteration; a strict
+      # `-gt` here loses the race to the `elapsed -ge lock_timeout` bailout
+      # a few lines below EVERY time (age is never > lock_timeout on the
+      # iteration it first reaches it), so an abandoned lock could never be
+      # reclaimed and the caller got a spurious timeout instead (agy-атк
+      # P1). `-ge` reclaims on that same iteration, before the bailout
+      # check runs, closing the starvation window.
       age="$(_wiki_lock_dir_age_seconds "$lockdir" 2>/dev/null || true)"
-      if [ -n "${age:-}" ] && [ "$age" -gt "$lock_timeout" ]; then
+      if [ -n "${age:-}" ] && [ "$age" -ge "$lock_timeout" ]; then
         _wiki_lock_reclaim "$lockdir"
         continue
       fi
