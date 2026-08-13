@@ -2577,6 +2577,237 @@ done
 assert_eq "t6: planted backup symlink -> a real (non-symlink) backup was created" "1" "$([ -n "$real_backup" ] && echo 1 || echo 0)"
 assert_eq "t6: planted backup symlink -> real backup holds the pre-merge settings" "{}" "$(cat "$real_backup" 2>/dev/null)"
 
+# ---- t7-install-qwen: hooks/install-hooks.sh registers a SECOND client
+#      (qwen) via a sequential register_into call added in Task 7
+#      (docs/superpowers/plans/2026-08-13-v46-qwen.md). Gate: `command -v
+#      qwen` OR an existing ~/.qwen/settings.json — absence of Qwen is not
+#      an error. Both qwen entries point at the CANONICAL
+#      $HOME/.claude/skills/wiki/hooks/ paths (never ~/.qwen/…), so the
+#      shared /skills/wiki/hooks/ marker never accumulates duplicates on
+#      repeat installs, and a legacy ~/.qwen/hooks/wiki-session-start.sh
+#      wrapper entry is migrated away on first contact. Everything else
+#      (locking, backup, permission preservation, TOCTOU guard, atomic
+#      write) is the SAME register_into machinery already covered above
+#      for claude — these cases only cover what is NEW: the gate itself,
+#      the qwen-specific matchers/scripts, and the legacy-marker
+#      migration. ----
+
+# no_qwen_path -> the current $PATH with every directory containing an
+# executable `qwen` stripped out. Needed because "gate-negative" and
+# "gate via file" require a genuine ABSENCE of qwen, and a dev/CI host can
+# perfectly well have a real Qwen CLI installed somewhere on PATH already
+# (independent of this repo) — without this, those two cases would be
+# flaky-by-environment instead of deterministic.
+no_qwen_path() {
+  local dir joined="" saved_ifs="$IFS"
+  IFS=':'
+  for dir in $PATH; do
+    [ -n "$dir" ] || continue
+    [ -x "$dir/qwen" ] && continue
+    if [ -z "$joined" ]; then
+      joined="$dir"
+    else
+      joined="$joined:$dir"
+    fi
+  done
+  IFS="$saved_ifs"
+  printf '%s' "$joined"
+}
+NO_QWEN_PATH="$(no_qwen_path)"
+
+# make_qwen_stub_path -> a PATH-prependable dir holding an executable
+# `qwen` stub (`#!/usr/bin/env bash\nexit 0`) that satisfies `command -v
+# qwen` without needing a real Qwen CLI.
+make_qwen_stub_path() {
+  local dir
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-qwenstub.XXXXXX")"
+  track_tmp "$dir"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$dir/qwen"
+  chmod +x "$dir/qwen"
+  printf '%s' "$dir"
+}
+qwen_stub_dir="$(make_qwen_stub_path)"
+
+# T7a. Gate-negative: no `qwen` on PATH and no ~/.qwen/settings.json ->
+# the qwen step is skipped entirely, overall exit 0, ~/.qwen is NEVER
+# created, claude is still registered normally, and stderr carries exactly
+# one client-prefixed hint line.
+home="$(make_fake_home)"
+err="$(env "${WH_ENV[@]}" HOME="$home" PATH="$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "t7 gate-negative: exit 0" "0" "$rc"
+assert_eq "t7 gate-negative: ~/.qwen not created" "" "$([ -e "$home/.qwen" ] && echo present)"
+assert_eq "t7 gate-negative: claude still registered normally" "1" \
+  "$(json_get "$home/.claude/settings.json" "len(d['hooks']['SessionStart'])")"
+assert_contains "t7 gate-negative: stderr carries a client-prefixed hint" "$err" "install-hooks: qwen:"
+hint_lines="$(printf '%s\n' "$err" | grep -c 'install-hooks: qwen:')"
+assert_eq "t7 gate-negative: hint is exactly one line" "1" "$hint_lines"
+
+# T7b. Gate via binary: qwen stub on PATH, ~/.qwen absent beforehand ->
+# ~/.qwen/settings.json is created, mode 0600, one entry per event.
+home="$(make_fake_home)"
+assert_eq "t7 gate-binary: ~/.qwen absent before install" "" "$([ -e "$home/.qwen" ] && echo present)"
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+qf="$home/.qwen/settings.json"
+assert_eq "t7 gate-binary: ~/.qwen/settings.json created" "yes" "$([ -f "$qf" ] && echo yes || echo no)"
+assert_eq "t7 gate-binary: created file is mode 0600" "600" "$(t6_stat_mode "$qf")"
+assert_eq "t7 gate-binary: SessionStart has 1 entry" "1" "$(json_get "$qf" "len(d['hooks']['SessionStart'])")"
+assert_eq "t7 gate-binary: PostToolUse has 1 entry" "1" "$(json_get "$qf" "len(d['hooks']['PostToolUse'])")"
+
+# T7c. Gate via file: ~/.qwen/settings.json already exists ({}), no qwen
+# binary anywhere on PATH -> still registered.
+home="$(make_fake_home)"
+qf="$home/.qwen/settings.json"
+mkdir -p "$home/.qwen"
+printf '{}' >"$qf"
+env "${WH_ENV[@]}" HOME="$home" PATH="$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "t7 gate-file: registered via pre-existing settings.json (no qwen binary)" "1" \
+  "$(json_get "$qf" "len(d['hooks']['SessionStart'])")"
+
+# T7d/T7e. Matchers, canonical script targets, and absence of extra
+# fields (timeout/name) on a fresh install via the stub-binary gate.
+home="$(make_fake_home)"
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+qf="$home/.qwen/settings.json"
+assert_eq "t7: registered SessionStart matcher" "startup|clear|compact" \
+  "$(json_get "$qf" "d['hooks']['SessionStart'][0]['matcher']")"
+assert_eq "t7: registered PostToolUse matcher" "read_file|write_file|edit|replace|notebook_edit" \
+  "$(json_get "$qf" "d['hooks']['PostToolUse'][0]['matcher']")"
+session_cmd="$(json_get "$qf" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
+post_cmd="$(json_get "$qf" "d['hooks']['PostToolUse'][0]['hooks'][0]['command']")"
+assert_contains "t7: SessionStart command carries canonical marker" "$session_cmd" "/skills/wiki/hooks/"
+assert_contains "t7: PostToolUse command carries canonical marker" "$post_cmd" "/skills/wiki/hooks/"
+expected_session_canon="$home/.claude/skills/wiki/hooks/session-start-qwen.sh"
+expected_post_canon="$home/.claude/skills/wiki/hooks/post-tool-use.sh"
+assert_contains "t7: SessionStart command targets session-start-qwen.sh under the canonical path" \
+  "$session_cmd" "$expected_session_canon"
+assert_contains "t7: PostToolUse command targets post-tool-use.sh under the canonical path" \
+  "$post_cmd" "$expected_post_canon"
+case "$session_cmd" in
+  "test -x \"$expected_session_canon\""*) session_prefix_ok=yes ;;
+  *) session_prefix_ok=no ;;
+esac
+case "$post_cmd" in
+  "test -x \"$expected_post_canon\""*) post_prefix_ok=yes ;;
+  *) post_prefix_ok=no ;;
+esac
+assert_eq "t7: SessionStart command begins with the canonical script path" "yes" "$session_prefix_ok"
+assert_eq "t7: PostToolUse command begins with the canonical script path" "yes" "$post_prefix_ok"
+assert_eq "t7: SessionStart entry hook has no 'timeout' field" "False" \
+  "$(json_get "$qf" "'timeout' in d['hooks']['SessionStart'][0]['hooks'][0]")"
+assert_eq "t7: SessionStart entry hook has no 'name' field" "False" \
+  "$(json_get "$qf" "'name' in d['hooks']['SessionStart'][0]['hooks'][0]")"
+assert_eq "t7: PostToolUse entry hook has no 'timeout' field" "False" \
+  "$(json_get "$qf" "'timeout' in d['hooks']['PostToolUse'][0]['hooks'][0]")"
+assert_eq "t7: PostToolUse entry hook has no 'name' field" "False" \
+  "$(json_get "$qf" "'name' in d['hooks']['PostToolUse'][0]['hooks'][0]")"
+
+# T7f. Idempotency: three runs in a row -> exactly 1 wiki entry per event
+# in BOTH files (claude and qwen).
+home="$(make_fake_home)"
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+cf="$home/.claude/settings.json"
+qf="$home/.qwen/settings.json"
+assert_eq "t7 idempotent: claude SessionStart still 1 entry after 3 runs" "1" "$(json_get "$cf" "len(d['hooks']['SessionStart'])")"
+assert_eq "t7 idempotent: claude PostToolUse still 1 entry after 3 runs" "1" "$(json_get "$cf" "len(d['hooks']['PostToolUse'])")"
+assert_eq "t7 idempotent: qwen SessionStart still 1 entry after 3 runs" "1" "$(json_get "$qf" "len(d['hooks']['SessionStart'])")"
+assert_eq "t7 idempotent: qwen PostToolUse still 1 entry after 3 runs" "1" "$(json_get "$qf" "len(d['hooks']['PostToolUse'])")"
+
+# T7g. Legacy migration: a pre-existing SessionStart entry whose command
+# is the old ~/.qwen/hooks/wiki-session-start.sh wrapper is stripped, a
+# single canonical wiki entry takes its place, and an unrelated foreign
+# SessionStart entry survives untouched.
+home="$(make_fake_home)"
+qf="$home/.qwen/settings.json"
+mkdir -p "$home/.qwen"
+cat >"$qf" <<EOF
+{
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "startup|clear|compact", "hooks": [{"type": "command", "command": "$home/.qwen/hooks/wiki-session-start.sh"}]},
+      {"matcher": "foreign-matcher", "hooks": [{"type": "command", "command": "/foreign/qwen-session.sh"}]}
+    ]
+  }
+}
+EOF
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "t7 legacy-migration: old wrapper entry gone" "False" \
+  "$(json_get "$qf" "any('wiki-session-start.sh' in h['command'] for e in d['hooks']['SessionStart'] for h in e['hooks'])")"
+assert_eq "t7 legacy-migration: exactly one canonical wiki entry present" "1" \
+  "$(json_get "$qf" "sum(1 for e in d['hooks']['SessionStart'] for h in e['hooks'] if '/skills/wiki/hooks/' in h['command'])")"
+assert_eq "t7 legacy-migration: unrelated foreign SessionStart entry survives" "True" \
+  "$(json_get "$qf" "any(h['command'] == '/foreign/qwen-session.sh' for e in d['hooks']['SessionStart'] for h in e['hooks'])")"
+
+# T7h. Foreign keys/secrets: env/mcpServers/modelProviders round-trip with
+# identical values (only formatting changes), and neither stdout nor
+# stderr of the run ever leaks the secret value.
+home="$(make_fake_home)"
+qf="$home/.qwen/settings.json"
+mkdir -p "$home/.qwen"
+cat >"$qf" <<'EOF'
+{
+  "env": {"TOKEN": "s3cr3t"},
+  "mcpServers": {"foo": {"command": "bar", "args": ["--flag"]}},
+  "modelProviders": [{"name": "x", "baseUrl": "https://example.invalid"}]
+}
+EOF
+out="$(env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" 2>&1)"
+assert_eq "t7 secrets: env.TOKEN value unchanged" "s3cr3t" "$(json_get "$qf" "d['env']['TOKEN']")"
+assert_eq "t7 secrets: mcpServers value unchanged" "{'foo': {'command': 'bar', 'args': ['--flag']}}" "$(json_get "$qf" "d['mcpServers']")"
+assert_eq "t7 secrets: modelProviders value unchanged" "[{'name': 'x', 'baseUrl': 'https://example.invalid'}]" "$(json_get "$qf" "d['modelProviders']")"
+assert_not_contains "t7 secrets: run output never contains the secret value" "$out" "s3cr3t"
+
+# T7i. Corrupt JSON / JSONC in the qwen file -> non-zero exit, qwen file
+# byte-identical, client-prefixed stderr mentioning invalid JSON — while
+# claude (which runs first, sequentially) is ALREADY correctly registered
+# (partial-failure semantics, spec R8).
+home="$(make_fake_home)"
+qf="$home/.qwen/settings.json"
+mkdir -p "$home/.qwen"
+printf '{\n  // a JSONC comment\n  "hooks": {}\n}\n' >"$qf"
+sha_before="$(_sha "$qf")"
+err="$(env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "t7 corrupt qwen JSON: non-zero exit" "1" "$rc"
+assert_file_unchanged "t7 corrupt qwen JSON: settings.json byte-identical" "$qf" "$sha_before"
+assert_contains "t7 corrupt qwen JSON: stderr carries qwen client prefix" "$err" "install-hooks: qwen:"
+assert_contains "t7 corrupt qwen JSON: stderr mentions invalid JSON" "$err" "is not valid JSON"
+assert_eq "t7 corrupt qwen JSON: claude already correctly registered" "1" \
+  "$(json_get "$home/.claude/settings.json" "len(d['hooks']['SessionStart'])")"
+
+# T7j. Non-object top-level value ([]) in the qwen file -> non-zero exit,
+# qwen file left completely untouched.
+home="$(make_fake_home)"
+qf="$home/.qwen/settings.json"
+mkdir -p "$home/.qwen"
+printf '[]' >"$qf"
+sha_before="$(_sha "$qf")"
+rc=0
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t7 non-object qwen file: non-zero exit" "1" "$rc"
+assert_file_unchanged "t7 non-object qwen file: settings.json byte-identical" "$qf" "$sha_before"
+
+# T7k. Permissions of an existing qwen settings.json (0644) are preserved
+# after install (same guarantee as T6a, on the second client's file).
+home="$(make_fake_home)"
+qf="$home/.qwen/settings.json"
+mkdir -p "$home/.qwen"
+printf '{}' >"$qf"
+chmod 644 "$qf"
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "t7: existing 0644 qwen settings.json keeps 0644 after install" "644" "$(t6_stat_mode "$qf")"
+
+# T7l. After a successful run registering both clients, neither
+# settings.json.lockdir is left behind.
+home="$(make_fake_home)"
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "t7: no leftover claude settings.json.lockdir" "" \
+  "$([ -d "$home/.claude/settings.json.lockdir" ] && echo present)"
+assert_eq "t7: no leftover qwen settings.json.lockdir" "" \
+  "$([ -d "$home/.qwen/settings.json.lockdir" ] && echo present)"
+
 # ---- summary ----
 echo "" >&2
 echo "pass: $PASS  fail: $FAIL" >&2

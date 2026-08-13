@@ -8,10 +8,14 @@
 #  lock->read->backup->merge->atomic-write protocol was pulled out of the
 #  top level into a single `register_into <client> ...` function so a later
 #  task (T7) can call it a second time for a second client (qwen) without a
-#  second copy of this logic. This file itself still calls it exactly ONCE,
-#  for claude — the qwen call is added in T7, deliberately kept out of this
-#  diff so the existing tests below serve as a pure regression detector for
-#  the claude branch staying byte-identical.)
+#  second copy of this logic;
+#  Task 7 — the SECOND, sequential call for qwen is added below, gated on
+#  qwen actually being present (command -v qwen, or an existing
+#  ~/.qwen/settings.json). All the tests above the "t6-register-into"
+#  marker in tests/hooks/run.sh exercise the pre-T7 claude-only behavior
+#  unmodified and stay green byte-for-byte — that is the identity proof
+#  that the claude branch through register_into is unchanged by this
+#  addition.)
 #
 # Design (see plan Task 4/6 for the full rationale):
 #   1. Serialized read-modify-write under ONE exclusive mutex PER CLIENT: an
@@ -117,6 +121,13 @@ LOCK_TIMEOUT="${WIKI_HOOKS_LOCK_TIMEOUT:-10}"
 MARKER="/skills/wiki/hooks/"
 CANON_SESSION_START="$CLAUDE_DIR/skills/wiki/hooks/session-start.sh"
 CANON_POST_TOOL_USE="$CLAUDE_DIR/skills/wiki/hooks/post-tool-use.sh"
+CANON_SESSION_START_QWEN="$CLAUDE_DIR/skills/wiki/hooks/session-start-qwen.sh"
+QWEN_DIR="$HOME_DIR/.qwen"
+QWEN_SETTINGS="$QWEN_DIR/settings.json"
+# Old qwen wrapper-script path this install migrates away from (T7 spec
+# note 4) — stripped from SessionStart alongside the canonical $MARKER so a
+# post-update install never leaves the index injected twice.
+LEGACY_QWEN_MARKER="/.qwen/hooks/wiki-session-start.sh"
 
 # shellcheck source=lib/settings-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/settings-lock.sh"
@@ -444,5 +455,22 @@ PYEOF
 register_into claude "$CLAUDE_DIR/settings.json" \
   "$CANON_SESSION_START" "$CANON_POST_TOOL_USE" \
   'startup|clear|compact' 'Read|Edit|Write|MultiEdit' '' || exit 1
+
+# Second, SEQUENTIAL call for qwen (T7): the claude critical section above
+# has already released its lock (register_into always releases before
+# returning), so this never nests a second lock inside the first — see
+# design note 1. Gated on qwen actually being present: `command -v qwen`
+# (the CLI is installed) OR an existing $QWEN_SETTINGS (the user already
+# has a qwen config, even if the CLI itself isn't on THIS PATH right now).
+# Absence of Qwen is not an error — a single-line stderr hint and a clean
+# `exit 0` instead.
+if command -v qwen >/dev/null 2>&1 || [ -f "$QWEN_SETTINGS" ]; then
+  register_into qwen "$QWEN_SETTINGS" \
+    "$CANON_SESSION_START_QWEN" "$CANON_POST_TOOL_USE" \
+    'startup|clear|compact' 'read_file|write_file|edit|replace|notebook_edit' \
+    "$LEGACY_QWEN_MARKER" || exit 1
+else
+  echo "install-hooks: qwen: qwen not detected (no 'qwen' on PATH and no $QWEN_SETTINGS) — skipping" >&2
+fi
 
 exit 0
