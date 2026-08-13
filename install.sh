@@ -19,6 +19,7 @@ SKILLS_ROOT="$HOME/.claude/skills"
 SKILL_LINK="$SKILLS_ROOT/wiki"
 AGENTS_SKILLS_ROOT="$HOME/.agents/skills"
 GEMINI_SKILLS_ROOT="$HOME/.gemini/skills"
+QWEN_SKILLS_ROOT="$HOME/.qwen/skills"
 
 DOC_EXTRACT_REPO="https://github.com/kozaksv/claude-doc-extract-skill.git"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
@@ -201,8 +202,10 @@ repair_cross_agent_exports() {
 
   local wiki_agents_status="ok"
   local wiki_gemini_status="ok"
+  local wiki_qwen_status="ok"
   local doc_agents_status="ok"
   local doc_gemini_status="ok"
+  local doc_qwen_status="ok"
   local doc_extract_present=0
 
   if ! export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"; then
@@ -210,6 +213,9 @@ repair_cross_agent_exports() {
   fi
   if ! export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"; then
     wiki_gemini_status="skipped"
+  fi
+  if ! export_skill_link "wiki" "$SKILL_LINK" "$QWEN_SKILLS_ROOT/wiki"; then
+    wiki_qwen_status="skipped"
   fi
 
   if [ -e "$DOC_EXTRACT_LINK/SKILL.md" ]; then
@@ -220,10 +226,13 @@ repair_cross_agent_exports() {
     if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$GEMINI_SKILLS_ROOT/doc-extract"; then
       doc_gemini_status="skipped"
     fi
+    if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$QWEN_SKILLS_ROOT/doc-extract"; then
+      doc_qwen_status="skipped"
+    fi
   fi
 
   local any_skipped=0
-  for status in "$wiki_agents_status" "$wiki_gemini_status" "$doc_agents_status" "$doc_gemini_status"; do
+  for status in "$wiki_agents_status" "$wiki_gemini_status" "$wiki_qwen_status" "$doc_agents_status" "$doc_gemini_status" "$doc_qwen_status"; do
     [ "$status" = "skipped" ] && any_skipped=1
   done
 
@@ -231,9 +240,11 @@ repair_cross_agent_exports() {
   echo "Cross-agent export targets:"
   print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_agents_status"
   print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_gemini_status"
+  print_export_summary "$QWEN_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_qwen_status"
   if [ "$doc_extract_present" -eq 1 ]; then
     print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_agents_status"
     print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_gemini_status"
+    print_export_summary "$QWEN_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_qwen_status"
   else
     echo "  $DOC_EXTRACT_LINK — optional doc-extract canonical не знайдено; exports не створювались"
   fi
@@ -274,14 +285,19 @@ install_skill_at_ref "wiki" "$REPO" "$SKILL_DIR" "$SKILL_LINK" "$WIKI_VERSION"
 # автоматично підхоплювали Codex і Gemini.
 WIKI_AGENTS_STATUS="ok"
 WIKI_GEMINI_STATUS="ok"
+WIKI_QWEN_STATUS="ok"
 DOC_AGENTS_STATUS="ok"
 DOC_GEMINI_STATUS="ok"
+DOC_QWEN_STATUS="ok"
 
 if ! export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"; then
   WIKI_AGENTS_STATUS="skipped"
 fi
 if ! export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"; then
   WIKI_GEMINI_STATUS="skipped"
+fi
+if ! export_skill_link "wiki" "$SKILL_LINK" "$QWEN_SKILLS_ROOT/wiki"; then
+  WIKI_QWEN_STATUS="skipped"
 fi
 
 # 3. doc-extract (optional dependency for ingest-binary). It is pinned to a
@@ -297,6 +313,9 @@ if install_skill_at_ref "doc-extract" "$DOC_EXTRACT_REPO" "$DOC_EXTRACT_DIR" "$D
   fi
   if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$GEMINI_SKILLS_ROOT/doc-extract"; then
     DOC_GEMINI_STATUS="skipped"
+  fi
+  if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$QWEN_SKILLS_ROOT/doc-extract"; then
+    DOC_QWEN_STATUS="skipped"
   fi
 else
   echo "Увага: doc-extract не встановлено. Wiki skill працюватиме, але ingest-binary буде недоступний до повторного встановлення."
@@ -319,7 +338,7 @@ else
 fi
 
 ANY_SKIPPED=0
-for status in "$WIKI_AGENTS_STATUS" "$WIKI_GEMINI_STATUS" "$DOC_AGENTS_STATUS" "$DOC_GEMINI_STATUS"; do
+for status in "$WIKI_AGENTS_STATUS" "$WIKI_GEMINI_STATUS" "$WIKI_QWEN_STATUS" "$DOC_AGENTS_STATUS" "$DOC_GEMINI_STATUS" "$DOC_QWEN_STATUS"; do
   [ "$status" = "skipped" ] && ANY_SKIPPED=1
 done
 
@@ -330,10 +349,12 @@ echo "  Примітка: ~/.claude/skills — це shared canonical registry; C
 echo "Cross-agent exports (symlinks to shared canonical):"
 print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_AGENTS_STATUS"
 print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_GEMINI_STATUS"
+print_export_summary "$QWEN_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_QWEN_STATUS"
 if [ "$DOC_EXTRACT_INSTALLED" -eq 1 ]; then
   echo "  $DOC_EXTRACT_LINK → $DOC_EXTRACT_DIR  (@ $DOC_EXTRACT_REF)"
   print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_AGENTS_STATUS"
   print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_GEMINI_STATUS"
+  print_export_summary "$QWEN_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_QWEN_STATUS"
 fi
 echo "Session-хуки Claude Code:"
 case "$HOOKS_STATUS" in

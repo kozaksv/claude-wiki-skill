@@ -99,6 +99,8 @@ AGENTS_WIKI="$HOME_DIR/.agents/skills/wiki"
 AGENTS_DOC_EXTRACT="$HOME_DIR/.agents/skills/doc-extract"
 GEMINI_WIKI="$HOME_DIR/.gemini/skills/wiki"
 GEMINI_DOC_EXTRACT="$HOME_DIR/.gemini/skills/doc-extract"
+QWEN_WIKI="$HOME_DIR/.qwen/skills/wiki"
+QWEN_DOC_EXTRACT="$HOME_DIR/.qwen/skills/doc-extract"
 LOG="$TMP/install.log"
 
 run_install() {
@@ -120,8 +122,10 @@ run_install
 [[ -L "$CLAUDE_WIKI" ]] || { echo "expected Claude wiki symlink"; exit 1; }
 [[ -L "$AGENTS_WIKI" ]] || { echo "expected .agents wiki symlink"; exit 1; }
 [[ -L "$GEMINI_WIKI" ]] || { echo "expected Gemini wiki symlink"; exit 1; }
+[[ -L "$QWEN_WIKI" ]] || { echo "expected Qwen wiki symlink"; exit 1; }
 [[ -L "$AGENTS_DOC_EXTRACT" ]] || { echo "expected .agents doc-extract symlink"; exit 1; }
 [[ -L "$GEMINI_DOC_EXTRACT" ]] || { echo "expected Gemini doc-extract symlink"; exit 1; }
+[[ -L "$QWEN_DOC_EXTRACT" ]] || { echo "expected Qwen doc-extract symlink"; exit 1; }
 grep -q '~/.claude/skills — це shared canonical registry' "$LOG" || {
   echo "expected install summary to explain the shared canonical registry"
   exit 1
@@ -142,11 +146,18 @@ grep -q 'не зареєстровано — install-hooks.sh не знайде�
 
 expect_link_target "$AGENTS_WIKI" "$CLAUDE_WIKI"
 expect_link_target "$GEMINI_WIKI" "$CLAUDE_WIKI"
+expect_link_target "$QWEN_WIKI" "$CLAUDE_WIKI"
 expect_link_target "$AGENTS_DOC_EXTRACT" "$CLAUDE_DOC_EXTRACT"
 expect_link_target "$GEMINI_DOC_EXTRACT" "$CLAUDE_DOC_EXTRACT"
+expect_link_target "$QWEN_DOC_EXTRACT" "$CLAUDE_DOC_EXTRACT"
 
 grep -q '^name: wiki$' "$AGENTS_WIKI/SKILL.md" || {
   echo "expected wiki SKILL.md reachable through .agents export"
+  exit 1
+}
+
+grep -q '^name: wiki$' "$QWEN_WIKI/SKILL.md" || {
+  echo "expected wiki SKILL.md reachable through Qwen export"
   exit 1
 }
 
@@ -158,6 +169,7 @@ grep -q '^name: doc-extract$' "$GEMINI_DOC_EXTRACT/SKILL.md" || {
 run_install
 expect_link_target "$AGENTS_WIKI" "$CLAUDE_WIKI"
 expect_link_target "$GEMINI_WIKI" "$CLAUDE_WIKI"
+expect_link_target "$QWEN_WIKI" "$CLAUDE_WIKI"
 
 rm "$AGENTS_WIKI"
 ln -s "$HOME_DIR/missing-wiki-target" "$AGENTS_WIKI"
@@ -181,6 +193,22 @@ grep -q "$GEMINI_WIKI → $OTHER_TARGET" "$CONFLICT_LOG" || {
 }
 grep -q 'частину exports пропущено' "$CONFLICT_LOG" || {
   echo "expected install summary to surface aggregate skip warning"
+  exit 1
+}
+
+OTHER_QWEN_TARGET="$TMP/other-qwen-wiki"
+mkdir -p "$OTHER_QWEN_TARGET"
+rm "$QWEN_WIKI"
+ln -s "$OTHER_QWEN_TARGET" "$QWEN_WIKI"
+QWEN_CONFLICT_LOG="$TMP/install-qwen-export-conflict.log"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/install.sh" >"$QWEN_CONFLICT_LOG" 2>&1
+expect_link_target "$QWEN_WIKI" "$OTHER_QWEN_TARGET"
+grep -q 'пропущено' "$QWEN_CONFLICT_LOG" || {
+  echo "expected install summary to mark conflicting qwen export as skipped"
+  exit 1
+}
+grep -q "$QWEN_WIKI → $OTHER_QWEN_TARGET" "$QWEN_CONFLICT_LOG" || {
+  echo "expected qwen conflict summary to show the real current target"
   exit 1
 }
 
@@ -261,6 +289,7 @@ ln -s "$ROOT" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports.log" 2>&1
 expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+expect_link_target "$HOME_REPAIR_EXPORTS/.qwen/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 [ ! -e "$HOME_REPAIR_EXPORTS/.agents/skills/doc-extract" ] || {
   echo "repair-exports should not create doc-extract export when canonical doc-extract is absent"
   exit 1
@@ -276,10 +305,15 @@ grep -q 'Cross-agent export targets' "$TMP/install-repair-exports.log" || {
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports-2.log" 2>&1
 expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+expect_link_target "$HOME_REPAIR_EXPORTS/.qwen/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 if grep -q 'пропущено' "$TMP/install-repair-exports-2.log"; then
   echo "idempotent repair should not report skipped exports"
   exit 1
 fi
+
+rm "$HOME_REPAIR_EXPORTS/.qwen/skills/wiki"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports-qwen.log" 2>&1
+expect_link_target "$HOME_REPAIR_EXPORTS/.qwen/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 
 HOME_REPAIR_DOC="$TMP/home-repair-doc"
 mkdir -p "$HOME_REPAIR_DOC/.claude/skills" "$HOME_REPAIR_DOC/claude-doc-extract-skill"
@@ -294,10 +328,19 @@ ln -s "$HOME_REPAIR_DOC/claude-doc-extract-skill" "$HOME_REPAIR_DOC/.claude/skil
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_DOC" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-doc.log" 2>&1
 expect_link_target "$HOME_REPAIR_DOC/.agents/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
 expect_link_target "$HOME_REPAIR_DOC/.gemini/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
+expect_link_target "$HOME_REPAIR_DOC/.qwen/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
 grep -q "$HOME_REPAIR_DOC/.agents/skills/doc-extract" "$TMP/install-repair-doc.log" || {
   echo "expected repair summary to include doc-extract exports"
   exit 1
 }
+grep -q "$HOME_REPAIR_DOC/.qwen/skills/doc-extract" "$TMP/install-repair-doc.log" || {
+  echo "expected repair summary to include qwen doc-extract export"
+  exit 1
+}
+
+rm "$HOME_REPAIR_DOC/.qwen/skills/doc-extract"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_DOC" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-doc-qwen.log" 2>&1
+expect_link_target "$HOME_REPAIR_DOC/.qwen/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
 
 HOME_REPAIR_MISSING="$TMP/home-repair-missing"
 mkdir -p "$HOME_REPAIR_MISSING"
@@ -447,6 +490,27 @@ grep -q "partial або corrupt clone" "$TMP/install-fetch-fail.log" || {
   exit 1
 }
 
+HOME_QWEN_REAL_DIR="$TMP/home-qwen-real-dir"
+mkdir -p "$HOME_QWEN_REAL_DIR/.qwen/skills/wiki"
+printf 'foreign qwen content\n' >"$HOME_QWEN_REAL_DIR/.qwen/skills/wiki/foreign-file.txt"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_QWEN_REAL_DIR" bash "$ROOT/install.sh" >"$TMP/install-qwen-real-dir.log" 2>&1
+[[ -L "$HOME_QWEN_REAL_DIR/.claude/skills/wiki" ]] || {
+  echo "expected canonical wiki link even when .qwen/skills/wiki is a real foreign directory"
+  exit 1
+}
+[[ ! -L "$HOME_QWEN_REAL_DIR/.qwen/skills/wiki" ]] || {
+  echo "expected .qwen/skills/wiki real directory to be preserved, not replaced with a symlink"
+  exit 1
+}
+grep -q 'foreign qwen content' "$HOME_QWEN_REAL_DIR/.qwen/skills/wiki/foreign-file.txt" || {
+  echo "expected foreign file inside .qwen/skills/wiki to remain untouched"
+  exit 1
+}
+grep -q "$HOME_QWEN_REAL_DIR/.qwen/skills/wiki .*пропущено" "$TMP/install-qwen-real-dir.log" || {
+  echo "expected .qwen/skills/wiki real-directory conflict to be reported as skipped"
+  exit 1
+}
+
 HOME_BLOCKED_EXPORT="$TMP/home-blocked-export"
 mkdir -p "$HOME_BLOCKED_EXPORT"
 printf 'blocking file\n' >"$HOME_BLOCKED_EXPORT/.agents"
@@ -475,6 +539,8 @@ fi
 HOME_ROUNDTRIP="$TMP/home-roundtrip"
 mkdir -p "$HOME_ROUNDTRIP"
 PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/install.sh" >"$TMP/install-roundtrip-1.log" 2>&1
+expect_link_target "$HOME_ROUNDTRIP/.qwen/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"
+expect_link_target "$HOME_ROUNDTRIP/.qwen/skills/doc-extract" "$HOME_ROUNDTRIP/.claude/skills/doc-extract"
 PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/uninstall.sh" >"$TMP/uninstall-roundtrip.log" 2>&1
 for link in \
   "$HOME_ROUNDTRIP/.claude/skills/wiki" \
@@ -488,8 +554,14 @@ for link in \
     exit 1
   }
 done
+# ~/.qwen/skills exports are not yet handled by uninstall.sh (tracked as a
+# separate, later task); they remain in place after uninstall for now — this
+# does not affect canonical registry cleanliness since they point at the
+# already-removed canonical link and become dangling, not orphaned real dirs.
 PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/install.sh" >"$TMP/install-roundtrip-2.log" 2>&1
 expect_link_target "$HOME_ROUNDTRIP/.agents/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"
+expect_link_target "$HOME_ROUNDTRIP/.qwen/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"
+expect_link_target "$HOME_ROUNDTRIP/.qwen/skills/doc-extract" "$HOME_ROUNDTRIP/.claude/skills/doc-extract"
 expect_link_target "$HOME_ROUNDTRIP/.gemini/skills/doc-extract" "$HOME_ROUNDTRIP/.claude/skills/doc-extract"
 
 echo "install cross-agent links: ok"
