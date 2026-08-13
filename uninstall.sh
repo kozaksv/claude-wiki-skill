@@ -122,21 +122,91 @@ echo "=== Wiki Skill — uninstall ==="
 # marker falls into the orphaned-hooks branch below instead.
 HOOK_UNINSTALLER="$SKILL_DIR/hooks/uninstall-hooks.sh"
 HOOK_MARKER="/skills/wiki/hooks/"
-SETTINGS_JSON="$HOME/.claude/settings.json"
+SETTINGS_FILES=("$HOME/.claude/settings.json" "$HOME/.qwen/settings.json")
+
+# scan_marker: the single three-state check for $HOOK_MARKER inside a
+# settings file. Also invoked by the locked recheck in a follow-up task —
+# this stays the only implementation of the check.
+#   0 — marker found
+#   1 — file read successfully, marker absent
+#   2 — could not verify (not a regular file, unreadable, or the read
+#       deadline below was hit); the caller treats this exactly like "marker
+#       found" (fail-closed): an unreadable settings file must never be
+#       mistaken for "no orphaned hooks".
+MARKER_TIMEOUT="${WIKI_UNINSTALL_MARKER_TIMEOUT:-5}"
+scan_marker() {
+  local f="$1" gpid wpid rc=0
+  # Not a regular file (FIFO, socket, directory, device, dangling symlink)
+  # — never open it. A FIFO/socket here would otherwise hang grep's open()
+  # forever, and this same check runs under two held locks in the
+  # follow-up task, so a hang here would starve every parallel installer.
+  # WIKI_UNINSTALL_TEST_SKIP_TYPE_CHECK disables ONLY this pre-check, so
+  # tests can prove the read-deadline guard below fires on its own.
+  if [ -z "${WIKI_UNINSTALL_TEST_SKIP_TYPE_CHECK:-}" ]; then
+    [ -f "$f" ] || return 2
+  fi
+  grep -q "$HOOK_MARKER" "$f" >/dev/null 2>&1 &
+  gpid=$!
+  ( sleep "$MARKER_TIMEOUT"; kill -TERM "$gpid" 2>/dev/null || true ) &
+  wpid=$!
+  wait "$gpid" || rc=$?
+  kill -TERM "$wpid" 2>/dev/null || true
+  wait "$wpid" 2>/dev/null || true
+  # grep has THREE exit statuses: 0 found, 1 not found, >=2 read error
+  # (permissions, I/O failure, deadline guard killed it with rc=143).
+  # Treating >=2 as "not found" would let an unreadable settings file
+  # green-light deleting $SKILL_DIR while entries may still be there.
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
 if [ -d "$SKILL_DIR/.git" ] && [ -f "$HOOK_UNINSTALLER" ]; then
   if ! bash "$HOOK_UNINSTALLER"; then
     echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$HOOK_UNINSTALLER\""
     HOOKS_FAILED=1
   fi
-elif [ -f "$SETTINGS_JSON" ] && grep -q "$HOOK_MARKER" "$SETTINGS_JSON" 2>/dev/null; then
+elif
   # No usable uninstaller (clone script missing/broken/not executable, or the
-  # canonical symlink is dangling/foreign), yet settings.json still carries
-  # our hook marker — the global hooks are orphaned. Flag HOOKS_FAILED so
-  # --remove-clones does NOT delete the clone that hosts the recovery script,
-  # which would strand those entries with no way to clean them up (agy-кор /
-  # codex-атк P1: the "symlink absent / script missing" case, not just the
-  # "script exits non-zero" case).
-  echo "Увага: скрипт видалення git hooks недоступний ($HOOK_UNINSTALLER), але записи hooks лишились у $SETTINGS_JSON. Відновіть клон і запустіть вручну: bash \"$HOOK_UNINSTALLER\""
+  # canonical symlink is dangling/foreign). Check every settings file we
+  # know about (Claude, Qwen) for orphaned hook entries — an orphan in
+  # EITHER file must block --remove-clones from deleting the clone that
+  # hosts the recovery script, which would otherwise strand those entries
+  # with no way to clean them up (agy-кор / codex-атк P1, extended in
+  # t11-orphan-guard-files to cover ~/.qwen/settings.json too).
+  MARKED_FILES=()
+  UNVERIFIED_FILES=()
+  for f in "${SETTINGS_FILES[@]}"; do
+    # Path absent → no marker here, not an error; keep scanning the rest.
+    # A broken symlink IS present (fails -e, passes -L) — that is "could
+    # not verify", not "absent", so it still goes through scan_marker.
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    rc=0
+    scan_marker "$f" || rc=$?
+    case "$rc" in
+      0) MARKED_FILES+=("$f") ;;
+      1) : ;;
+      *) UNVERIFIED_FILES+=("$f") ;;
+    esac
+  done
+  [ "${#MARKED_FILES[@]}" -gt 0 ] || [ "${#UNVERIFIED_FILES[@]}" -gt 0 ]
+then
+  # UNVERIFIED_FILES is treated exactly like a found marker (HOOKS_FAILED=1,
+  # $SKILL_DIR kept) — the split between "marker found" and "could not
+  # verify" exists only in which warning text prints, never in the outcome.
+  # File contents are never printed in either message.
+  # "${arr[@]+"${arr[@]}"}" rather than plain "${arr[@]}": under bash 3.2
+  # (macOS system /bin/bash), expanding a zero-element array with set -u
+  # raises "unbound variable" even though the array was assigned via `()`.
+  # The +-guarded form yields zero words for an empty array on every bash.
+  for f in "${MARKED_FILES[@]+"${MARKED_FILES[@]}"}"; do
+    echo "Увага: скрипт видалення git hooks недоступний ($HOOK_UNINSTALLER), але записи hooks лишились у $f. Відновіть клон і запустіть вручну: bash \"$HOOK_UNINSTALLER\""
+  done
+  for f in "${UNVERIFIED_FILES[@]+"${UNVERIFIED_FILES[@]}"}"; do
+    echo "Увага: не вдалося прочитати $f — перевірити наявність записів hooks неможливо, клон збережено."
+  done
   HOOKS_FAILED=1
 fi
 

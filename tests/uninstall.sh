@@ -227,4 +227,169 @@ grep -q "записи hooks лишились" "$TMP/uninstall-noexec-hook.log" &
   exit 1
 }
 
+# --- t11-orphan-guard-files: orphan-hook guard checks both claude and qwen
+# settings files, via the single scan_marker three-state check. -----------
+
+HOOK_MARKER_SNIPPET='{"hooks":{"SessionStart":[{"hooks":[{"command":"x /skills/wiki/hooks/session-start.sh"}]}]}}'
+NO_MARKER_SNIPPET='{"hooks":{"SessionStart":[]}}'
+
+# Qwen-only orphan (main regression): marker present ONLY in
+# ~/.qwen/settings.json (~/.claude/settings.json has none), hooks/
+# uninstall-hooks.sh is absent from the clone (default setup_installed_tree
+# state) -> $SKILL_DIR must NOT be removed, and the warning must name the
+# qwen file.
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+printf '%s\n' "$HOOK_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-qwen-orphan.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "$HOME_DIR/.qwen/settings.json" "$TMP/uninstall-qwen-orphan.log" || {
+  echo "expected qwen-only orphan marker to name the qwen settings file"
+  exit 1
+}
+grep -q "записи hooks лишились" "$TMP/uninstall-qwen-orphan.log" || {
+  echo "expected qwen-only orphan marker to hit the existing orphaned-hooks message"
+  exit 1
+}
+
+# Mirror: marker present ONLY in ~/.claude/settings.json,
+# ~/.qwen/settings.json absent entirely -> existing behavior preserved, and
+# the collected log carries no "No such file or directory" (the existence
+# guard must skip the missing path silently, not abort or leak a stat
+# error) and reaches the lines printed after the guard.
+setup_installed_tree
+printf '%s\n' "$HOOK_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-claude-orphan.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "$HOME_DIR/.claude/settings.json" "$TMP/uninstall-claude-orphan.log" || {
+  echo "expected claude-only orphan marker to name the claude settings file"
+  exit 1
+}
+grep -q "No such file or directory" "$TMP/uninstall-claude-orphan.log" && {
+  echo "expected missing qwen settings.json to be skipped silently, not stat-errored"
+  exit 1
+}
+grep -q "Real clone directories" "$TMP/uninstall-claude-orphan.log" || {
+  echo "expected the scan over both settings files to complete and reach the summary section"
+  exit 1
+}
+
+# Guard is not too wide: both files exist and are readable, neither carries
+# the marker -> clone removed as before, and no "could not verify" line
+# appears.
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-no-marker.log" 2>&1
+expect_missing "$HOME_DIR/claude-wiki-skill"
+grep -q "перевірити наявність записів hooks неможливо" "$TMP/uninstall-no-marker.log" && {
+  echo "expected no unverifiable-file line when neither settings file carries the marker"
+  exit 1
+}
+
+# Both files carry the marker -> both are listed in the warning.
+setup_installed_tree
+printf '%s\n' "$HOOK_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+printf '%s\n' "$HOOK_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-both-marked.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "$HOME_DIR/.claude/settings.json" "$TMP/uninstall-both-marked.log" || {
+  echo "expected both-marked case to name the claude settings file"
+  exit 1
+}
+grep -q "$HOME_DIR/.qwen/settings.json" "$TMP/uninstall-both-marked.log" || {
+  echo "expected both-marked case to name the qwen settings file"
+  exit 1
+}
+
+# Unreadable settings file = fail-closed (spec invariant "could not verify
+# = do NOT delete"): a DIRECTORY sits at ~/.qwen/settings.json (not a
+# regular file), no marker in claude's file -> $SKILL_DIR must NOT be
+# removed, the output names the qwen path as unverifiable, and the existing
+# "git hooks removal failed" substring still appears (relied on by the
+# --remove-clones skip message).
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+rm -rf "$HOME_DIR/.qwen/settings.json"
+mkdir -p "$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-unreadable-dir.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "не вдалося прочитати $HOME_DIR/.qwen/settings.json" "$TMP/uninstall-unreadable-dir.log" || {
+  echo "expected directory-at-settings-path to be reported as unverifiable with the qwen path"
+  exit 1
+}
+grep -q "git hooks removal failed" "$TMP/uninstall-unreadable-dir.log" || {
+  echo "expected the existing clone-preserved message to still print for the unverified case"
+  exit 1
+}
+
+# FIFO at the settings path (hang regression): a FIFO with nobody writing to
+# it would hang grep's open() forever without the -f pre-check. Wrapped in
+# an external timeout as a CI safety net; the real assertion is that
+# uninstall.sh itself terminates well within the default read deadline.
+if command -v timeout >/dev/null 2>&1; then
+  _timeout="timeout 20"
+elif command -v gtimeout >/dev/null 2>&1; then
+  _timeout="gtimeout 20"
+else
+  _timeout=""
+fi
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+rm -f "$HOME_DIR/.qwen/settings.json"
+mkfifo "$HOME_DIR/.qwen/settings.json"
+_t0=$(date +%s)
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" $_timeout bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-fifo.log" 2>&1
+_rc=$?
+_t1=$(date +%s)
+[ "$_rc" -ne 124 ] || {
+  echo "expected uninstall.sh to terminate on its own, not be killed by the external timeout wrapper"
+  exit 1
+}
+[ $((_t1 - _t0)) -le 15 ] || {
+  echo "expected uninstall.sh to finish near the default read deadline, took $((_t1 - _t0))s"
+  exit 1
+}
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "не вдалося прочитати $HOME_DIR/.qwen/settings.json" "$TMP/uninstall-fifo.log" || {
+  echo "expected FIFO-at-settings-path to be reported as unverifiable with the qwen path"
+  exit 1
+}
+
+# Read deadline fires (direct test of the second line of defense, not the
+# -f pre-check): the pre-check is disabled via the test seam, so grep
+# genuinely blocks in open() on the FIFO, and the sleep-guard must kill it.
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+rm -f "$HOME_DIR/.qwen/settings.json"
+mkfifo "$HOME_DIR/.qwen/settings.json"
+_t0=$(date +%s)
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" WIKI_UNINSTALL_TEST_SKIP_TYPE_CHECK=1 WIKI_UNINSTALL_MARKER_TIMEOUT=1 \
+  bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-fifo-deadline.log" 2>&1
+_t1=$(date +%s)
+[ $((_t1 - _t0)) -le 8 ] || {
+  echo "expected the read-deadline guard to fire within a few seconds, took $((_t1 - _t0))s"
+  exit 1
+}
+expect_exists "$HOME_DIR/claude-wiki-skill"
+
+# Mirror for permissions: an unreadable (chmod 000) regular file hits the
+# same fail-closed branch via grep's own read-error exit status (>=2), not
+# the -f pre-check. Skipped (not failed) under root, which ignores 000.
+if [ "$(id -u)" != "0" ]; then
+  setup_installed_tree
+  printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+  printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+  chmod 000 "$HOME_DIR/.qwen/settings.json"
+  PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-chmod000.log" 2>&1
+  chmod 644 "$HOME_DIR/.qwen/settings.json" 2>/dev/null || true
+  expect_exists "$HOME_DIR/claude-wiki-skill"
+  grep -q "не вдалося прочитати $HOME_DIR/.qwen/settings.json" "$TMP/uninstall-chmod000.log" || {
+    echo "expected chmod-000 settings file to be reported as unverifiable"
+    exit 1
+  }
+else
+  echo "uninstall: skipping chmod-000 unreadable-file case (running as root)"
+fi
+
 echo "uninstall: ok"
