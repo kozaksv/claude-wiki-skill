@@ -3,7 +3,10 @@
 #
 # Claude Code PostToolUse hook. install-hooks.sh registers this under the
 # PostToolUse event with tool-matcher `Read|Edit|Write|MultiEdit`
-# (docs/superpowers/plans/2026-07-08-v45-hooks.md Task 3). Reads the
+# (docs/superpowers/plans/2026-07-08-v45-hooks.md Task 3). Also runs under
+# Qwen Code, whose tool names differ (`read_file`, `write_file`, `edit`,
+# `replace`, `notebook_edit`) — see the action-gate union below
+# (docs/superpowers/plans/2026-08-13-v46-qwen.md Task 2). Reads the
 # hook's stdin JSON (`tool_name`, `tool_input.file_path` per the official
 # Claude Code hooks stdin schema), and — for a file inside the discovered
 # project wiki — bumps the corresponding `.usage.json` telemetry record
@@ -17,13 +20,15 @@
 # execution: every path ends in `exit 0`.
 #
 # file_path resolution: `tool_input.file_path` is resolved against a
-# project anchor with strict precedence `$CLAUDE_PROJECT_DIR` -> stdin
-# `cwd` (documented hook-input field) -> `pwd`, never against the hook
-# process's own cwd alone — Claude Code hands hooks a project-root-relative
-# file_path while the hook's cwd can be any subdirectory, and
-# CLAUDE_PROJECT_DIR is not guaranteed to be exported; missing both would
-# silently break the guard below and drop telemetry with no signal
-# (plan Task 3 point 3 + wave4 P1).
+# project anchor with strict precedence `$CLAUDE_PROJECT_DIR` ->
+# `$QWEN_PROJECT_DIR` -> stdin `cwd` (documented hook-input field) -> `pwd`,
+# never against the hook process's own cwd alone — Claude Code hands hooks
+# a project-root-relative file_path while the hook's cwd can be any
+# subdirectory, and CLAUDE_PROJECT_DIR is not guaranteed to be exported;
+# missing all three would silently break the guard below and drop
+# telemetry with no signal (plan Task 3 point 3 + wave4 P1; QWEN_PROJECT_DIR
+# rung added by v46-qwen Task 2 — Qwen exports both vars but the hook does
+# not rely on the compat export).
 #
 # MultiEdit shape (fixwave0-3 P1): MultiEdit's tool_input does not
 # reliably carry a single top-level `file_path` the way Edit/Write do — it
@@ -306,23 +311,36 @@ if isinstance(edits, list):
 sys.stdout.write("\0".join([tool_name, cwd] + paths) + "\0")
 ' 2>/dev/null)
 
-  [ "${#file_paths[@]}" -gt 0 ] || exit 0
-
+  # Action-gate FIRST (v46-qwen Task 2, spec "Щоб цей інваріант був
+  # структурним"): the allowlist of matched tool names is the very first
+  # decision made after parsing stdin, BEFORE the empty-file_paths check
+  # below. Union of Claude Code's own tool names (kept first and
+  # unchanged) with Qwen Code's: `read_file` -> view; `write_file`,
+  # `edit`, `replace` (Qwen's legacy alias for `edit`), `notebook_edit` ->
+  # patch. Any other tool name (e.g. Qwen's `run_shell_command`, or
+  # Claude's Grep/Glob/Bash) exits immediately without ever looking at the
+  # extractor's file_paths result — action and exit codes are unchanged,
+  # both branches still exit 0 with no side effects and no stdout.
   local action
   case "$tool_name" in
-    Read) action="view" ;;
-    Edit|Write|MultiEdit) action="patch" ;;
+    Read|read_file) action="view" ;;
+    Edit|Write|MultiEdit|write_file|edit|replace|notebook_edit) action="patch" ;;
     *) exit 0 ;;
   esac
 
-  # Project anchor with strict precedence CLAUDE_PROJECT_DIR -> stdin cwd
-  # -> pwd (wave4 P1: Claude Code does not always export
-  # CLAUDE_PROJECT_DIR, but the hook stdin carries the documented `cwd`;
-  # anchoring at the hook process's own pwd alone mis-resolves relative
-  # file_path when the session sits in a subdirectory and silently drops
-  # telemetry). The same anchor seeds discovery.
+  [ "${#file_paths[@]}" -gt 0 ] || exit 0
+
+  # Project anchor with strict precedence CLAUDE_PROJECT_DIR ->
+  # QWEN_PROJECT_DIR -> stdin cwd -> pwd (wave4 P1: Claude Code does not
+  # always export CLAUDE_PROJECT_DIR, but the hook stdin carries the
+  # documented `cwd`; anchoring at the hook process's own pwd alone
+  # mis-resolves relative file_path when the session sits in a
+  # subdirectory and silently drops telemetry). QWEN_PROJECT_DIR is Qwen
+  # Code's equivalent env var (v46-qwen Task 2); it only applies when
+  # CLAUDE_PROJECT_DIR is unset. The same anchor seeds discovery.
   local anchor
   anchor="${CLAUDE_PROJECT_DIR:-}"
+  [ -n "$anchor" ] || anchor="${QWEN_PROJECT_DIR:-}"
   [ -n "$anchor" ] || anchor="$stdin_cwd"
   [ -n "$anchor" ] || anchor="$(pwd)"
 

@@ -1426,7 +1426,129 @@ printf '{"tool_name":"MultiEdit","tool_input":{"file_path":"%s","edits":[{"file_
 assert_eq "post-tool-use: MultiEdit same path in file_path + edits[] bumps once (no double count)" \
   "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
 
-# 15. Regression: post-tool-use.sh MUST be committed executable. install
+# ---- v46-qwen Task 2: action-gate on Qwen tool names before path
+#      extraction, union with Claude's tool names, QWEN_PROJECT_DIR anchor
+#      rung. Stdin keys (edits[]/notebook_path/path) are NOT touched here
+#      — that is Task 3.
+
+# 16. Qwen `read_file` (absolute tool_input.file_path) bumps view_count
+#     same as Claude's Read.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+_ptu_stdin "read_file" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: qwen read_file exits 0" "0" "$rc"
+assert_eq "post-tool-use: qwen read_file bumps view_count to 1" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# 17. Qwen `edit`, `write_file`, `replace` each bump patch_count same as
+#     Claude's Edit/Write (`replace` is Qwen's legacy alias for `edit`).
+for _qwen_tool in edit write_file replace; do
+  fixture="$(make_fixture)"
+  printf 'body\n' >"$fixture/docs/wiki/foo.md"
+  _ptu_stdin "$_qwen_tool" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+  assert_eq "post-tool-use: qwen $_qwen_tool bumps patch_count to 1" \
+    "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+done
+
+# 18. Qwen `notebook_edit` with a top-level file_path bumps patch_count
+#     (the edits[]/notebook_path variant belongs to Task 3).
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+_ptu_stdin "notebook_edit" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: qwen notebook_edit (file_path) bumps patch_count to 1" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+
+# 19. _hooks.post_tool_use_at is stamped after a qwen tool call too, not
+#     only Claude ones.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+_ptu_stdin "read_file" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+pta="$(python3 -c "
+import json
+d = json.load(open('$fixture/docs/wiki/.usage.json'))
+print(d.get('_hooks', {}).get('post_tool_use_at', ''))
+" 2>/dev/null)"
+if [ -n "$pta" ]; then r=0; else r=1; fi
+assert_eq "post-tool-use: _hooks.post_tool_use_at set after qwen call" "0" "$r"
+
+# 20. Relative file_path resolves against QWEN_PROJECT_DIR when
+#     CLAUDE_PROJECT_DIR is unset and the hook runs from a subdir (anchor
+#     precedence rung 2).
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+mkdir -p "$fixture/some/other/subdir"
+printf '{"tool_name":"read_file","tool_input":{"file_path":"docs/wiki/foo.md"}}' \
+  | ( cd "$fixture/some/other/subdir" && env -u CLAUDE_PROJECT_DIR QWEN_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1 )
+assert_eq "post-tool-use: relative file_path resolves against QWEN_PROJECT_DIR when CLAUDE_PROJECT_DIR unset" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# 21. CLAUDE_PROJECT_DIR and QWEN_PROJECT_DIR set to DIFFERENT fixtures ->
+#     CLAUDE_PROJECT_DIR wins, only its wiki is bumped.
+claude_fixture="$(make_fixture)"
+printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
+qwen_fixture="$(make_fixture)"
+printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
+_ptu_stdin "read_file" "$claude_fixture/docs/wiki/foo.md" \
+  | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR -> claude wiki bumped" \
+  "1" "$(_ptu_field "$claude_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR -> qwen wiki untouched" \
+  "" "$(_ptu_field "$qwen_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# 22. Qwen `run_shell_command` (not in the allowlist) -> exit 0,
+#     .usage.json byte-for-byte unchanged.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+printf '{"tool_name":"run_shell_command","tool_input":{"command":"ls"}}' \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: qwen run_shell_command exits 0" "0" "$rc"
+assert_file_unchanged "post-tool-use: qwen run_shell_command -> .usage.json unchanged" \
+  "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 23. Action-gate-first regression: tool_name run_shell_command with an
+#     EMPTY tool_input (no file_path at all) -> exit 0, empty stdout,
+#     .usage.json unchanged — the allowlist gate must fire on tool_name
+#     alone, not merely as a side effect of file_paths being empty.
+fixture="$(make_fixture)"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+out="$(printf '{"tool_name":"run_shell_command","tool_input":{}}' \
+  | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" 2>&1)"
+rc=$?
+assert_eq "post-tool-use: action-gate-first regression exits 0" "0" "$rc"
+assert_eq "post-tool-use: action-gate-first regression -> empty stdout" "" "$out"
+assert_file_unchanged "post-tool-use: action-gate-first regression -> .usage.json unchanged" \
+  "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 24. Qwen read_file outside the wiki -> .usage.json unchanged
+#     (boundary-guard, same posture as Claude's Read).
+fixture="$(make_fixture)"
+mkdir -p "$fixture/src"
+printf 'body\n' >"$fixture/src/outside.md"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "read_file" "$fixture/src/outside.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_file_unchanged "post-tool-use: qwen read_file out-of-wiki -> .usage.json unchanged" \
+  "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 25. Legacy schema (wiki_version 3.0) + qwen `edit` -> .usage.json
+#     untouched (version-gate, same posture as Claude's Edit).
+fixture="$(make_fixture)"
+cat >"$fixture/docs/wiki/schema.md" <<'EOF'
+---
+wiki_version: "3.0"
+---
+
+# Schema
+EOF
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
+_ptu_stdin "edit" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_file_unchanged "post-tool-use: legacy schema + qwen edit -> .usage.json unchanged" \
+  "$fixture/docs/wiki/.usage.json" "$sha_before"
+
+# 26. Regression: post-tool-use.sh MUST be committed executable. install
 #     registers `test -x <canonical> && <canonical> || exit 0`, so a
 #     non-executable file (git mode 100644) makes the installed hook a silent
 #     no-op — PostToolUse telemetry never fires (codex-атк P1). The blocks
