@@ -23,6 +23,7 @@ SESSION_START_QWEN_HOOK="$ROOT/hooks/session-start-qwen.sh"
 POST_TOOL_USE_HOOK="$ROOT/hooks/post-tool-use.sh"
 INSTALL_HOOKS_SCRIPT="$ROOT/hooks/install-hooks.sh"
 UNINSTALL_HOOKS_SCRIPT="$ROOT/hooks/uninstall-hooks.sh"
+SETTINGS_LOCK_LIB="$ROOT/hooks/lib/settings-lock.sh"
 
 # shellcheck source=../../hooks/lib/discover.sh
 source "$DISCOVER_LIB"
@@ -2007,6 +2008,13 @@ clone_b="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-clone.XXXXXX")"
 track_tmp "$clone_b"
 cp "$INSTALL_HOOKS_SCRIPT" "$clone_a/install-hooks.sh"
 cp "$INSTALL_HOOKS_SCRIPT" "$clone_b/install-hooks.sh"
+# install-hooks.sh sources its sibling hooks/lib/settings-lock.sh
+# (t5-settings-lock-lib) via a BASH_SOURCE-relative path, exactly as it
+# ships in this repo — a "clone" of the installer must carry that lib
+# alongside it too, or the copy is not a faithful clone.
+mkdir -p "$clone_a/lib" "$clone_b/lib"
+cp "$SETTINGS_LOCK_LIB" "$clone_a/lib/settings-lock.sh"
+cp "$SETTINGS_LOCK_LIB" "$clone_b/lib/settings-lock.sh"
 env "${WH_ENV[@]}" HOME="$home" bash "$clone_a/install-hooks.sh" >/dev/null 2>&1
 cmd_a="$(json_get "$f" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
 expected_canon="$home/.claude/skills/wiki/hooks/session-start.sh"
@@ -2216,14 +2224,122 @@ assert_eq "interrupt-under-lock: settings.json ends up valid with 1 SessionStart
 # settings.json with ONE shared mutex (the mkdir lock-directory), never a
 # flock-when-available / mkdir-otherwise split — an flock holder and a
 # concurrent mkdir holder (missing flock, or WIKI_HOOKS_FORCE_MKDIR_LOCK) do
-# not exclude each other. Assert statically that neither script makes an
-# `flock -w` call and that both acquire the mkdir lock unconditionally.
-for sc in "$INSTALL_HOOKS_SCRIPT" "$UNINSTALL_HOOKS_SCRIPT"; do
+# not exclude each other. Assert statically that neither script (nor the
+# shared lock lib itself) makes an `flock -w` call, that both installers
+# acquire the mkdir lock unconditionally via the shared
+# hooks/lib/settings-lock.sh, and that no second mutex implementation
+# (`acquire_mkdir`) remains in either installer (t5-settings-lock-lib).
+for sc in "$INSTALL_HOOKS_SCRIPT" "$UNINSTALL_HOOKS_SCRIPT" "$SETTINGS_LOCK_LIB"; do
   n="$(basename "$sc")"
   assert_eq "lock-unify: $n makes no flock -w call" "0" "$(grep -c 'flock -w' "$sc")"
-  assert_eq "lock-unify: $n acquires the mkdir lock unconditionally" "yes" \
-    "$(grep -qE '^acquire_mkdir \|\| fail' "$sc" && echo yes || echo no)"
 done
+for sc in "$INSTALL_HOOKS_SCRIPT" "$UNINSTALL_HOOKS_SCRIPT"; do
+  n="$(basename "$sc")"
+  assert_eq "lock-unify: $n acquires the mkdir lock unconditionally" "yes" \
+    "$(grep -qE 'wiki_lock_acquire [^|]*\|\| *fail' "$sc" && echo yes || echo no)"
+  assert_eq "lock-unify: $n sources the shared lock lib" "yes" \
+    "$(grep -q 'lib/settings-lock.sh' "$sc" && echo yes || echo no)"
+  assert_eq "lock-unify: $n carries no second mutex implementation" "0" "$(grep -c 'acquire_mkdir' "$sc")"
+done
+
+# ---- hooks/lib/settings-lock.sh: direct unit tests (t5-settings-lock-lib) ----
+#
+# Each scenario sources the lib inside its OWN bash process (never in this
+# harness's own process) because wiki_lock_acquire installs an EXIT/INT/TERM
+# trap in whatever shell calls it — sourcing it in-process here would
+# clobber this harness's own `trap cleanup EXIT` (line 42).
+
+# U1. Acquire on a free lockdir -> 0, dir exists, recorded pid is the
+#     acquiring process's own pid.
+home="$(make_fake_home)"
+lockdir="$home/u1.lockdir"
+bash -c '
+  set -uo pipefail
+  source "'"$SETTINGS_LOCK_LIB"'"
+  wiki_lock_acquire "'"$lockdir"'" || exit 1
+  sleep 5
+' &
+u1_pid=$!
+wait_start="$(date +%s)"
+while [ ! -s "$lockdir/pid" ]; do
+  now="$(date +%s)"
+  if [ $((now - wait_start)) -ge 5 ]; then
+    break
+  fi
+done
+assert_eq "settings-lock lib: U1 acquire creates the lock dir" "yes" "$([ -d "$lockdir" ] && echo yes || echo no)"
+assert_eq "settings-lock lib: U1 recorded pid is the acquiring process" "$u1_pid" "$(cat "$lockdir/pid" 2>/dev/null)"
+kill -TERM "$u1_pid" 2>/dev/null || true
+wait "$u1_pid" 2>/dev/null || true
+assert_eq "settings-lock lib: U1 trap removes the lock dir on exit" "" "$([ -d "$lockdir" ] && echo present)"
+
+# U2. A second process racing for the SAME lockdir with a short
+#     WIKI_HOOKS_LOCK_TIMEOUT times out (1) while the live owner's lockdir
+#     is left untouched.
+home="$(make_fake_home)"
+lockdir="$home/u2.lockdir"
+bash -c '
+  set -uo pipefail
+  source "'"$SETTINGS_LOCK_LIB"'"
+  wiki_lock_acquire "'"$lockdir"'" || exit 1
+  sleep 5
+' &
+u2_owner_pid=$!
+wait_start="$(date +%s)"
+while [ ! -s "$lockdir/pid" ]; do
+  now="$(date +%s)"
+  if [ $((now - wait_start)) -ge 5 ]; then
+    break
+  fi
+done
+owner_pid_recorded="$(cat "$lockdir/pid" 2>/dev/null)"
+rc=0
+env WIKI_HOOKS_LOCK_TIMEOUT=1 WIKI_HOOKS_LOCK_POLL=0.1 bash -c '
+  set -uo pipefail
+  source "'"$SETTINGS_LOCK_LIB"'"
+  wiki_lock_acquire "'"$lockdir"'"
+' || rc=$?
+assert_eq "settings-lock lib: U2 contender times out (1) on a live foreign lock" "1" "$rc"
+assert_eq "settings-lock lib: U2 foreign lockdir survives the timed-out contender" "yes" "$([ -d "$lockdir" ] && echo yes || echo no)"
+assert_eq "settings-lock lib: U2 foreign lockdir pid unchanged" "$owner_pid_recorded" "$(cat "$lockdir/pid" 2>/dev/null)"
+kill -TERM "$u2_owner_pid" 2>/dev/null || true
+wait "$u2_owner_pid" 2>/dev/null || true
+
+# U3. wiki_lock_release removes a lock dir ONLY when its recorded pid is
+#     the caller's own ($$) — a lockdir whose pid file was rewritten to a
+#     foreign pid (simulating a race the caller must defensively tolerate)
+#     is left in place.
+home="$(make_fake_home)"
+lockdir="$home/u3.lockdir"
+release_out="$(bash -c '
+  set -uo pipefail
+  source "'"$SETTINGS_LOCK_LIB"'"
+  wiki_lock_acquire "'"$lockdir"'" || exit 1
+  echo 999999 >"'"$lockdir"'/pid"
+  wiki_lock_release "'"$lockdir"'"
+  [ -d "'"$lockdir"'" ] && echo STILL_PRESENT || echo REMOVED
+  rm -f "'"$lockdir"'/pid" 2>/dev/null
+  rmdir "'"$lockdir"'" 2>/dev/null
+' 2>&1)"
+assert_eq "settings-lock lib: U3 release refuses to remove a foreign-owned lock dir" "STILL_PRESENT" "$release_out"
+
+# U4. Two different lockdirs held at once by the SAME process -> both
+#     acquired successfully, and after the process exits (trap) NEITHER
+#     remains (T8/T12 rely on exactly this: claude+qwen or two clients
+#     locked concurrently within one script run).
+home="$(make_fake_home)"
+lockdir_a="$home/u4-a.lockdir"
+lockdir_b="$home/u4-b.lockdir"
+out="$(bash -c '
+  set -uo pipefail
+  source "'"$SETTINGS_LOCK_LIB"'"
+  wiki_lock_acquire "'"$lockdir_a"'" || exit 1
+  wiki_lock_acquire "'"$lockdir_b"'" || exit 1
+  echo BOTH_ACQUIRED
+' 2>&1)"
+assert_eq "settings-lock lib: U4 both distinct lockdirs acquired in one process" "BOTH_ACQUIRED" "$out"
+assert_eq "settings-lock lib: U4 first lockdir removed after exit" "" "$([ -d "$lockdir_a" ] && echo present)"
+assert_eq "settings-lock lib: U4 second lockdir removed after exit" "" "$([ -d "$lockdir_b" ] && echo present)"
 
 # ---- summary ----
 echo "" >&2

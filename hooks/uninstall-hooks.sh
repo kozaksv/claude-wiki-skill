@@ -65,140 +65,15 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 0
 fi
 
-LOCK_ACQUIRED_MKDIR=0
-
-on_exit() {
-  local ec=$? owner=""
-  if [ "$LOCK_ACQUIRED_MKDIR" = "1" ]; then
-    # Tear down the lock ONLY when the pid file names us ($$) — NEVER on an
-    # empty/absent pid (agy-атк P0, wave4). An empty pid here is ambiguous:
-    # it can be our own mid-acquire window, but it can just as well be a NEW
-    # owner's mid-acquire window after an mtime-age reclaim of our stalled
-    # lock (we slept between mkdir and echo, B reclaimed and mkdir'ed, B has
-    # not written its pid yet, we wake up and exit). Deleting on empty pid
-    # would destroy B's live lock and let a third process corrupt
-    # settings.json concurrently. The trade-off of never deleting an
-    # empty-pid lock: if we crash in our own mkdir→echo window, our lock dir
-    # lingers until the next client's mtime-age fallback reclaims it
-    # (self-healing, bounded by LOCK_TIMEOUT) — correctness over speed.
-    owner="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
-    if [ "$owner" = "$$" ]; then
-      rm -f "$LOCK_DIR/pid" 2>/dev/null
-      rmdir "$LOCK_DIR" 2>/dev/null
-    fi
-  fi
-  exit "$ec"
-}
-trap on_exit EXIT INT TERM
-
-is_pid_alive() {
-  [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null
-}
-
-dir_age_seconds() {
-  local d="$1" mtime now
-  # BSD `stat -f %m` (macOS) vs GNU `stat -c %Y` (Linux) are mutually
-  # rejected by each other's stat — EXCEPT GNU stat also accepts `-f`
-  # (its own, unrelated --file-system flag) without erroring, so
-  # `stat -f %m "$d"` on Linux does not fail cleanly: it silently emits
-  # non-numeric filesystem-status text instead of an mtime. Validate each
-  # candidate's output is a plain integer before trusting it, rather than
-  # trusting "non-empty" as if it meant "correct".
-  mtime="$(stat -f %m "$d" 2>/dev/null)"
-  case "$mtime" in
-    ''|*[!0-9]*) mtime="" ;;
-  esac
-  if [ -z "$mtime" ]; then
-    mtime="$(stat -c %Y "$d" 2>/dev/null)"
-    case "$mtime" in
-      ''|*[!0-9]*) mtime="" ;;
-    esac
-  fi
-  [ -z "$mtime" ] && return 1
-  now="$(date +%s)"
-  echo $((now - mtime))
-}
-
-reclaim_lock() {
-  # Atomically CLAIM the stale lock before destroying it (fixwave0-1 P0,
-  # TOCTOU) — mirrors install-hooks.sh reclaim_lock exactly: rename(2) lets
-  # exactly ONE of several same-verdict claimers win; losers re-loop
-  # instead of tearing down the winner's freshly re-acquired live lock.
-  local claim="$LOCK_DIR.claim.$$"
-  if mv "$LOCK_DIR" "$claim" 2>/dev/null; then
-    rm -rf "$claim" 2>/dev/null
-  fi
-}
-
-# mkdir-based fallback lock: same contract as install-hooks.sh
-# acquire_mkdir — pid file written first, directory removed second (see
-# on_exit above), so a bare `rmdir` on a nonempty dir never hangs cleanup.
-acquire_mkdir() {
-  local start elapsed pid age now
-  start="$(date +%s)"
-  while true; do
-    if mkdir "$LOCK_DIR" 2>/dev/null; then
-      # Flip the cleanup flag BEFORE writing the pid file: if a signal
-      # lands in the narrow window between `mkdir` succeeding and the pid
-      # write below, on_exit must still know it owns (and must remove)
-      # this lock dir, even pid-less.
-      LOCK_ACQUIRED_MKDIR=1
-      echo $$ >"$LOCK_DIR/pid" 2>/dev/null
-      return 0
-    fi
-    if [ -f "$LOCK_DIR/pid" ]; then
-      pid="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
-    else
-      pid=""
-    fi
-    if [ -n "$pid" ]; then
-      # PID-recycle deadlock guard (P1, fixwave0-2) — mirrors
-      # install-hooks.sh: liveness of a stored pid is never, on its own,
-      # grounds to wait forever (the OS may have recycled a crashed
-      # holder's pid onto an unrelated long-running process). Age is
-      # checked FIRST and wins unconditionally past LOCK_MAX_AGE.
-      age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
-      if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_MAX_AGE" ]; then
-        reclaim_lock
-        continue
-      elif is_pid_alive "$pid"; then
-        : # live owner within the max-age bound — never steal, just wait.
-      else
-        # Non-empty pid naming a dead/unreadable process -> genuinely
-        # stale lock; atomically claim + destroy and retry immediately.
-        reclaim_lock
-        continue
-      fi
-    else
-      # Empty OR absent pid file. An empty pid file is NOT a dead owner: it
-      # is the winner's mid-acquire race window — `mkdir` has succeeded and
-      # `echo $$` has created but not yet filled the pid file. Force-clearing
-      # here would steal a lock whose owner is a live process about to run
-      # under it, defeating mutual exclusion (agy-атк P1). Treat empty
-      # EXACTLY like absent: fall back to mtime age as the ONLY reclaim
-      # signal, so only a genuinely abandoned lock is ever reclaimed
-      # (atomic claim-then-destroy — see reclaim_lock).
-      age="$(dir_age_seconds "$LOCK_DIR" 2>/dev/null)"
-      if [ -n "${age:-}" ] && [ "$age" -gt "$LOCK_TIMEOUT" ]; then
-        reclaim_lock
-        continue
-      fi
-    fi
-    now="$(date +%s)"
-    elapsed=$((now - start))
-    if [ "$elapsed" -ge "$LOCK_TIMEOUT" ]; then
-      return 1
-    fi
-    sleep "$LOCK_POLL"
-  done
-}
+# shellcheck source=lib/settings-lock.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/settings-lock.sh"
 
 # Single, universal mutex: the mkdir lock-directory, for every invocation —
 # the SAME primitive install-hooks.sh uses, so install and uninstall exclude
 # each other. Deliberately NOT flock-when-available/mkdir-otherwise (codex-атк
 # P1). WIKI_HOOKS_FORCE_MKDIR_LOCK is retained only for backward-compatible
 # test invocations and is now a no-op since mkdir is always used.
-acquire_mkdir || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
+wiki_lock_acquire "$LOCK_DIR" || fail "could not acquire lock on $SETTINGS_FILE within ${LOCK_TIMEOUT}s"
 
 # Test-only seam: hold the lock open for a bit so tests can exercise
 # interrupt/trap-cleanup behavior deterministically. No-op by default.
