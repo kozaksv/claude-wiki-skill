@@ -122,7 +122,33 @@ echo "=== Wiki Skill — uninstall ==="
 # marker falls into the orphaned-hooks branch below instead.
 HOOK_UNINSTALLER="$SKILL_DIR/hooks/uninstall-hooks.sh"
 HOOK_MARKER="/skills/wiki/hooks/"
-SETTINGS_FILES=("$HOME/.claude/settings.json" "$HOME/.qwen/settings.json")
+# Old qwen wrapper-script path install-hooks.sh registers-then-migrates away
+# from. It is a SECOND marker of our own entries, and hooks/
+# uninstall-hooks.sh strips it for the qwen client alongside $HOOK_MARKER —
+# so the orphan guard here must DETECT it too (codex-атк P1, wave3).
+# Scanning only $HOOK_MARKER meant a not-yet-migrated Qwen-only install
+# looked marker-free, and --remove-clones happily deleted the clone hosting
+# the only script that can ever remove that stranded entry.
+# Marker sets are per-client and mirror deregister_from's exactly:
+#   claude → $HOOK_MARKER;  qwen → $HOOK_MARKER + $LEGACY_QWEN_MARKER.
+LEGACY_QWEN_MARKER="/.qwen/hooks/wiki-session-start.sh"
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+QWEN_SETTINGS="$HOME/.qwen/settings.json"
+SETTINGS_FILES=("$CLAUDE_SETTINGS" "$QWEN_SETTINGS")
+
+# Shared settings mutex (hooks/lib/settings-lock.sh) — the SAME primitive
+# install-hooks.sh and hooks/uninstall-hooks.sh take, which is the only
+# reason the critical section below is mutually exclusive with a concurrent
+# installer. Sourced from THIS script's own directory: uninstall.sh always
+# ships inside the clone, so the lib sits next to it.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCK_LIB="$SELF_DIR/hooks/lib/settings-lock.sh"
+LOCK_LIB_OK=0
+if [ -f "$LOCK_LIB" ]; then
+  # shellcheck source=hooks/lib/settings-lock.sh
+  source "$LOCK_LIB"
+  LOCK_LIB_OK=1
+fi
 
 # scan_marker: the single three-state check for $HOOK_MARKER inside a
 # settings file. Also invoked by the locked recheck in a follow-up task —
@@ -136,6 +162,7 @@ SETTINGS_FILES=("$HOME/.claude/settings.json" "$HOME/.qwen/settings.json")
 MARKER_TIMEOUT="${WIKI_UNINSTALL_MARKER_TIMEOUT:-5}"
 scan_marker() {
   local f="$1" gpid wpid rc=0
+  local -a pats
   # Not a regular file (FIFO, socket, directory, device, dangling symlink)
   # — never open it. A FIFO/socket here would otherwise hang grep's open()
   # forever, and this same check runs under two held locks in the
@@ -145,7 +172,15 @@ scan_marker() {
   if [ -z "${WIKI_UNINSTALL_TEST_SKIP_TYPE_CHECK:-}" ]; then
     [ -f "$f" ] || return 2
   fi
-  grep -q "$HOOK_MARKER" "$f" >/dev/null 2>&1 &
+  # Per-client marker set, identical to what hooks/uninstall-hooks.sh would
+  # strip for that client. -F (fixed strings): $LEGACY_QWEN_MARKER contains
+  # regex metacharacters (`.`), so a basic-regex match would be both wider
+  # than intended and misleading.
+  pats=(-e "$HOOK_MARKER")
+  if [ "$f" = "$QWEN_SETTINGS" ]; then
+    pats+=(-e "$LEGACY_QWEN_MARKER")
+  fi
+  grep -Fq "${pats[@]}" "$f" >/dev/null 2>&1 &
   gpid=$!
   ( sleep "$MARKER_TIMEOUT"; kill -TERM "$gpid" 2>/dev/null || true ) &
   wpid=$!
@@ -163,51 +198,16 @@ scan_marker() {
   esac
 }
 
+# Step 1 (OUTSIDE the locks below): run the clone's own hook uninstaller.
+# It takes both settings locks itself, so calling it inside the critical
+# section would be a guaranteed self-deadlock.
+UNINSTALLER_RAN=0
 if [ -d "$SKILL_DIR/.git" ] && [ -f "$HOOK_UNINSTALLER" ]; then
+  UNINSTALLER_RAN=1
   if ! bash "$HOOK_UNINSTALLER"; then
     echo "Увага: не вдалося прибрати git hooks. Запустіть вручну: bash \"$HOOK_UNINSTALLER\""
     HOOKS_FAILED=1
   fi
-elif
-  # No usable uninstaller (clone script missing/broken/not executable, or the
-  # canonical symlink is dangling/foreign). Check every settings file we
-  # know about (Claude, Qwen) for orphaned hook entries — an orphan in
-  # EITHER file must block --remove-clones from deleting the clone that
-  # hosts the recovery script, which would otherwise strand those entries
-  # with no way to clean them up (agy-кор / codex-атк P1, extended in
-  # t11-orphan-guard-files to cover ~/.qwen/settings.json too).
-  MARKED_FILES=()
-  UNVERIFIED_FILES=()
-  for f in "${SETTINGS_FILES[@]}"; do
-    # Path absent → no marker here, not an error; keep scanning the rest.
-    # A broken symlink IS present (fails -e, passes -L) — that is "could
-    # not verify", not "absent", so it still goes through scan_marker.
-    [ -e "$f" ] || [ -L "$f" ] || continue
-    rc=0
-    scan_marker "$f" || rc=$?
-    case "$rc" in
-      0) MARKED_FILES+=("$f") ;;
-      1) : ;;
-      *) UNVERIFIED_FILES+=("$f") ;;
-    esac
-  done
-  [ "${#MARKED_FILES[@]}" -gt 0 ] || [ "${#UNVERIFIED_FILES[@]}" -gt 0 ]
-then
-  # UNVERIFIED_FILES is treated exactly like a found marker (HOOKS_FAILED=1,
-  # $SKILL_DIR kept) — the split between "marker found" and "could not
-  # verify" exists only in which warning text prints, never in the outcome.
-  # File contents are never printed in either message.
-  # "${arr[@]+"${arr[@]}"}" rather than plain "${arr[@]}": under bash 3.2
-  # (macOS system /bin/bash), expanding a zero-element array with set -u
-  # raises "unbound variable" even though the array was assigned via `()`.
-  # The +-guarded form yields zero words for an empty array on every bash.
-  for f in "${MARKED_FILES[@]+"${MARKED_FILES[@]}"}"; do
-    echo "Увага: скрипт видалення git hooks недоступний ($HOOK_UNINSTALLER), але записи hooks лишились у $f. Відновіть клон і запустіть вручну: bash \"$HOOK_UNINSTALLER\""
-  done
-  for f in "${UNVERIFIED_FILES[@]+"${UNVERIFIED_FILES[@]}"}"; do
-    echo "Увага: не вдалося прочитати $f — перевірити наявність записів hooks неможливо, клон збережено."
-  done
-  HOOKS_FAILED=1
 fi
 
 # Remove exports first so canonical links do not become dangling during a
@@ -226,6 +226,109 @@ rmdir "$GEMINI_SKILLS_ROOT" 2>/dev/null || true
 rmdir "$QWEN_SKILLS_ROOT" 2>/dev/null || true
 rmdir "$SKILLS_ROOT" 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# CRITICAL SECTION (t12-orphan-guard-locks / codex-атк P1, wave3)
+#
+# The orphan-marker recheck and the $SKILL_DIR deletion that depends on it
+# must be ONE atomic decision. Previously the scan ran up top, then export
+# removal and rmdir ran, then the clone was deleted — a wide TOCTOU window
+# in which a concurrent install-hooks.sh could write hook entries into a
+# settings file already scanned as clean, leaving them stranded the moment
+# the clone (and with it the recovery script) disappeared.
+#
+# Both locks are held simultaneously, always in the global order
+# claude → qwen — the SAME order hooks/uninstall-hooks.sh takes them in, and
+# install-hooks.sh only ever holds ONE at a time, so no wait cycle can exist
+# in any pair of processes. Do not "tidy" the order in one place only.
+#
+# Locks are taken only for clients whose parent directory already exists: a
+# missing ~/.qwen means no settings file to protect, and creating the dir
+# just to host a lockdir would turn every Claude-only machine into a
+# permanent fail-closed.
+HELD_LOCKS=()
+GUARD_LOCKED=0
+RERUN_FLAG=""
+if [ "$REMOVE_CLONES" -eq 1 ]; then
+  RERUN_FLAG=" --remove-clones"
+fi
+if [ "$LOCK_LIB_OK" -eq 1 ]; then
+  GUARD_LOCKED=1
+  for f in "${SETTINGS_FILES[@]}"; do
+    if [ ! -d "$(dirname "$f")" ]; then
+      continue
+    fi
+    if wiki_lock_acquire "$f.lockdir"; then
+      HELD_LOCKS+=("$f.lockdir")
+    else
+      # "Could not take the lock" is never read as "nothing to protect".
+      echo "Увага: не вдалося взяти лок на $f за ${WIKI_HOOKS_LOCK_TIMEOUT:-10}с — перевірити записи hooks неможливо, клон збережено. Повторіть пізніше: bash \"$SELF_DIR/uninstall.sh\"$RERUN_FLAG"
+      GUARD_LOCKED=0
+      HOOKS_FAILED=1
+      break
+    fi
+  done
+else
+  # Script running detached from its clone (copied elsewhere): the shared
+  # mutex is unavailable, so a locked recheck is impossible. Conservative
+  # skip rather than an unsynchronized check.
+  echo "Увага: $LOCK_LIB недоступний — перевірити записи hooks під локом неможливо, клон збережено."
+  HOOKS_FAILED=1
+fi
+
+if [ "$GUARD_LOCKED" -eq 1 ]; then
+  # Test-only seam (mirrors WIKI_HOOKS_TEST_SLEEP_AFTER_LOCK): hold both
+  # locks open inside the section so tests can prove a concurrent installer
+  # cannot write during the window. No-op by default.
+  if [ "${WIKI_UNINSTALL_TEST_SLEEP_IN_GUARD:-0}" != "0" ]; then
+    sleep "${WIKI_UNINSTALL_TEST_SLEEP_IN_GUARD}"
+  fi
+
+  # Recheck every settings file we know about (Claude, Qwen) for orphaned
+  # hook entries — an orphan in EITHER file must block --remove-clones from
+  # deleting the clone that hosts the recovery script, which would otherwise
+  # strand those entries with no way to clean them up (agy-кор / codex-атк
+  # P1, t11-orphan-guard-files). Same single scan_marker three-state check
+  # as ever; the -f pre-check and read deadline inside it matter doubly here
+  # — a grep hung on a FIFO would hold BOTH locks forever and starve every
+  # parallel installer.
+  MARKED_FILES=()
+  UNVERIFIED_FILES=()
+  for f in "${SETTINGS_FILES[@]}"; do
+    # Path absent → no marker here, not an error; keep scanning the rest.
+    # A broken symlink IS present (fails -e, passes -L) — that is "could
+    # not verify", not "absent", so it still goes through scan_marker.
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    rc=0
+    scan_marker "$f" || rc=$?
+    case "$rc" in
+      0) MARKED_FILES+=("$f") ;;
+      1) : ;;
+      *) UNVERIFIED_FILES+=("$f") ;;
+    esac
+  done
+
+  # UNVERIFIED_FILES is treated exactly like a found marker (HOOKS_FAILED=1,
+  # $SKILL_DIR kept) — the split between "marker found" and "could not
+  # verify" exists only in which warning text prints, never in the outcome.
+  # File contents are never printed in either message.
+  # "${arr[@]+"${arr[@]}"}" rather than plain "${arr[@]}": under bash 3.2
+  # (macOS system /bin/bash), expanding a zero-element array with set -u
+  # raises "unbound variable" even though the array was assigned via `()`.
+  # The +-guarded form yields zero words for an empty array on every bash.
+  for f in "${MARKED_FILES[@]+"${MARKED_FILES[@]}"}"; do
+    if [ "$UNINSTALLER_RAN" -eq 1 ]; then
+      echo "Увага: після запуску $HOOK_UNINSTALLER записи hooks усе ще лишились у $f. Запустіть вручну: bash \"$HOOK_UNINSTALLER\""
+    else
+      echo "Увага: скрипт видалення git hooks недоступний ($HOOK_UNINSTALLER), але записи hooks лишились у $f. Відновіть клон і запустіть вручну: bash \"$HOOK_UNINSTALLER\""
+    fi
+    HOOKS_FAILED=1
+  done
+  for f in "${UNVERIFIED_FILES[@]+"${UNVERIFIED_FILES[@]}"}"; do
+    echo "Увага: не вдалося прочитати $f — перевірити наявність записів hooks неможливо, клон збережено."
+    HOOKS_FAILED=1
+  done
+fi
+
 if [ "$REMOVE_CLONES" -eq 1 ]; then
   echo ""
   echo "Real clone directories:"
@@ -238,7 +341,28 @@ if [ "$REMOVE_CLONES" -eq 1 ]; then
     SKIPPED=1
   else
     remove_clone_dir "$SKILL_DIR"
+    if [ ! -e "$SKILL_DIR" ]; then
+      # Boundary of the invariant, stated where it is enforced: the locks
+      # guarantee no entry existed at deletion time. They do NOT guarantee
+      # none appears afterwards — an installer that was waiting for the lock
+      # gets it right after release and legitimately writes its entries.
+      # That is the mutex working, not a race. Such entries are inert by
+      # construction (`test -x "…" && "…" || exit 0` exits 0 silently once
+      # the canonical path is gone). Widening the section to "wait them out"
+      # would mean holding both locks indefinitely — forbidden.
+      echo "Примітка: паралельний інсталер міг дописати записи hooks уже після видалення клону. Вони інертні; приберіть їх запуском hooks/uninstall-hooks.sh з репозиторію або переінстальованого скіла."
+    fi
   fi
+fi
+
+# Release in reverse acquisition order (qwen → claude). Everything below is
+# outside the critical section.
+for (( _i = ${#HELD_LOCKS[@]} - 1; _i >= 0; _i-- )); do
+  wiki_lock_release "${HELD_LOCKS[$_i]}"
+done
+# ---------------------------------------------------------------------------
+
+if [ "$REMOVE_CLONES" -eq 1 ]; then
   remove_clone_dir "$DOC_EXTRACT_DIR"
 else
   echo ""

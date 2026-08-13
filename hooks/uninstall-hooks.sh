@@ -33,8 +33,14 @@
 #
 # Exit-code contract (per client file, and overall): exits 0 only when
 # there is verifiably nothing to do for every client file that exists:
-# settings.json does not exist for that client, OR python3 is unavailable
-# but no client's settings.json carries a hook marker anyway. Any real
+# settings.json does not exist AT ALL for that client (no entry, not even a
+# dangling symlink), OR python3 is unavailable but no client's settings.json
+# carries a hook marker anyway. A settings path that EXISTS but cannot be
+# read as settings JSON — directory, FIFO, dangling symlink, unreadable
+# regular file — is never "nothing to do": it is unverifiable, and
+# unverifiable is treated exactly like "marker still present" (fail-closed,
+# codex-атк P1 wave3), because uninstall.sh reads exit 0 as permission to
+# delete the clone that hosts this script. Any real
 # failure for ANY client file — including python3 being unavailable WHILE a
 # marker is still present in ANY client file, since removal can then never
 # be verified — (unreadable/corrupt settings.json, lock timeout, write
@@ -79,12 +85,41 @@ if ! command -v python3 >/dev/null 2>&1; then
   # JSON-aware) but that is exactly the same "marker in command string" test
   # the python merge step below uses, so it is precise enough to
   # distinguish "nothing to do" from "removal needed but impossible".
+  #
+  # Three states, never two (codex-атк P1, wave3): grep exits 0 = found,
+  # 1 = read successfully and absent, >=2 = could NOT be read (permissions,
+  # I/O error). The old `grep -Fq … 2>/dev/null || …` collapsed >=2 into
+  # "absent", so an unreadable settings.json exited 0 = "verifiably nothing
+  # to do" — and uninstall.sh trusts that exit code to green-light deleting
+  # the clone that hosts THIS recovery script. "Could not verify" must have
+  # exactly the same consequence as "found": hard failure. Same rule as
+  # uninstall.sh's scan_marker and as deregister_from's non-regular-file
+  # guard below — one fail-closed contract, three call sites.
   marker_present=0
   for f in "$CLAUDE_SETTINGS" "$QWEN_SETTINGS"; do
-    [ -f "$f" ] || continue
-    if grep -Fq "$MARKER" "$f" 2>/dev/null || grep -Fq "$LEGACY_QWEN_MARKER" "$f" 2>/dev/null; then
-      marker_present=1
+    # Truly absent (fails BOTH -e and -L) → nothing was ever registered for
+    # this client; skip. A dangling symlink, directory or FIFO at the path
+    # IS present yet unreadable as settings JSON → unverifiable → fail.
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    if [ ! -f "$f" ]; then
+      fail "python3 not found and $f is not a regular file — cannot verify hook markers"
     fi
+    # Marker set is per-client, exactly mirroring what deregister_from
+    # would strip below (claude: canonical only; qwen: canonical + the
+    # legacy wrapper path). Scanning for a marker this script could never
+    # remove for that client would fail hard on something removal was never
+    # responsible for.
+    grep_pats=(-e "$MARKER")
+    if [ "$f" = "$QWEN_SETTINGS" ]; then
+      grep_pats+=(-e "$LEGACY_QWEN_MARKER")
+    fi
+    grep_rc=0
+    grep -Fq "${grep_pats[@]}" "$f" >/dev/null 2>&1 || grep_rc=$?
+    case "$grep_rc" in
+      0) marker_present=1 ;;
+      1) : ;;
+      *) fail "python3 not found and $f could not be read — cannot verify hook markers" ;;
+    esac
   done
   if [ "$marker_present" = "1" ]; then
     fail "python3 not found — cannot remove hook entries (marker still present)"
@@ -116,9 +151,23 @@ deregister_from() {
   local client="$1" settings_file="$2" legacy_marker="$3"
   local lock_dir ts backup_file
 
-  if [ ! -f "$settings_file" ]; then
-    # Nothing installed for this client, nothing to remove.
+  # "Absent" means ABSENT, not merely "not a regular file" (codex-атк P1,
+  # wave3). `[ ! -f ]` alone answered "nothing installed here" for a
+  # DIRECTORY, a FIFO or a dangling symlink at the settings path too, and
+  # returned 0 = "verifiably clean" — which is precisely the signal
+  # uninstall.sh gates clone deletion on, so a settings path in any of
+  # those states would have let --remove-clones destroy the recovery clone.
+  # Split into the two genuinely different cases:
+  if [ ! -e "$settings_file" ] && [ ! -L "$settings_file" ]; then
+    # Truly absent — nothing was ever installed for this client.
     return 0
+  fi
+  if [ ! -f "$settings_file" ]; then
+    # Present but not a regular file: unreadable/unwritable as settings
+    # JSON, and opening a FIFO here would block forever WHILE HOLDING the
+    # lock. Fail closed; never touch it.
+    echo "uninstall-hooks: $client: $settings_file exists but is not a regular file — hook entries can be neither verified nor removed" >&2
+    return 1
   fi
 
   lock_dir="$settings_file.lockdir"
@@ -142,8 +191,17 @@ import tempfile
 
 client, settings_file, backup_file, marker, legacy_marker = sys.argv[1:6]
 
-if not os.path.exists(settings_file):
+if not os.path.exists(settings_file) and not os.path.islink(settings_file):
     sys.exit(0)
+
+# Re-assert the shell-side guard under the lock: the path may have been
+# swapped for a directory/FIFO/dangling symlink between the check and now.
+# Same fail-closed rule — never report "clean" for something unreadable.
+if not os.path.isfile(settings_file):
+    sys.stderr.write(
+        "uninstall-hooks: %s: %s is not a regular file\n" % (client, settings_file)
+    )
+    sys.exit(1)
 
 try:
     with open(settings_file, "r", encoding="utf-8") as fh:

@@ -1981,6 +1981,64 @@ rc=$?
 assert_eq "uninstall: no python3 + no marker -> exit 0 (nothing to do)" "0" "$rc"
 assert_file_unchanged "uninstall: no python3 + no marker -> settings.json untouched" "$f" "$sha_before"
 
+#     6c3 (wave3, codex-атк P1): no python3 AND a settings path that EXISTS
+#     but is not a regular file (directory here). grep cannot read it, so
+#     "no marker found" is unverifiable, not proven — and uninstall.sh reads
+#     exit 0 as permission to delete the clone hosting this script. Must be
+#     a hard failure instead.
+home="$(make_fake_home)"
+mkdir -p "$home/.qwen/settings.json"
+err="$(env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" PATH="$curated_path_dir" bash "$UNINSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "uninstall: no python3 + non-regular settings path -> non-zero exit" "1" "$rc"
+assert_contains "uninstall: no python3 + non-regular settings path -> stderr says why" "$err" "not a regular file"
+
+#     6c4: no python3 AND an unreadable REGULAR settings file — grep exits
+#     >=2 (read error), which must not collapse into "marker absent".
+#     Skipped under root, which ignores chmod 000.
+if [ "$(id -u)" != "0" ]; then
+  home="$(make_fake_home)"
+  f="$home/.claude/settings.json"
+  printf '{}\n' >"$f"
+  chmod 000 "$f"
+  err="$(env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" PATH="$curated_path_dir" bash "$UNINSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+  rc=$?
+  chmod 644 "$f" 2>/dev/null || true
+  assert_eq "uninstall: no python3 + unreadable settings file -> non-zero exit" "1" "$rc"
+  assert_contains "uninstall: no python3 + unreadable settings file -> stderr says why" "$err" "could not be read"
+else
+  echo "hooks: skipping no-python3 unreadable-file case (running as root)" >&2
+fi
+
+# 6d. deregister_from fail-closed on a non-regular settings path (wave3,
+#     codex-атк P1), WITH python3 available: `[ ! -f ]` alone reported every
+#     directory / FIFO / dangling symlink as "nothing installed here" and
+#     returned success — the exact signal uninstall.sh gates clone deletion
+#     on. Each shape must exit non-zero instead. A FIFO is included because
+#     the old path would additionally have blocked forever in open() while
+#     holding the lock.
+for _shape in dir dangling fifo; do
+  home="$(make_fake_home)"
+  mkdir -p "$home/.qwen"
+  case "$_shape" in
+    dir) mkdir -p "$home/.qwen/settings.json" ;;
+    dangling) ln -s "$home/.qwen/nonexistent-target.json" "$home/.qwen/settings.json" ;;
+    fifo) mkfifo "$home/.qwen/settings.json" ;;
+  esac
+  err="$(env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+  rc=$?
+  assert_eq "uninstall: non-regular settings path ($_shape) -> non-zero exit" "1" "$rc"
+  assert_contains "uninstall: non-regular settings path ($_shape) -> stderr names the shape" "$err" "not a regular file"
+done
+
+# 6e. The tightening above must not turn a genuinely ABSENT client file into
+#     a failure: ~/.qwen exists but holds no settings.json -> still exit 0.
+home="$(make_fake_home)"
+mkdir -p "$home/.qwen"
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+rc=$?
+assert_eq "uninstall: absent client settings file -> exit 0 (genuine no-op)" "0" "$rc"
+
 # 7. Fail-open: the registered command wraps the canonical script in
 #    `test -x ... && ... || exit 0`. Once that script is missing (as it
 #    always is under a throwaway fake HOME with no real skill clone),

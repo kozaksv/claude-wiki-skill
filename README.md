@@ -453,7 +453,9 @@ bash ~/claude-wiki-skill/uninstall.sh
 
 За замовчуванням real clone-директорії `~/claude-wiki-skill` і `~/claude-doc-extract-skill` лишаються на диску, щоб не видалити локальні зміни випадково.
 
-Якщо на цій машині встановлені global session hooks (v4.5+), `uninstall.sh` перед видаленням symlink'ів best-effort прибирає й їхні записи з `~/.claude/settings.json` через `hooks/uninstall-hooks.sh`. Провал цього кроку не блокує решту видалення — скрипт покаже команду для ручного повтору.
+Якщо на цій машині встановлені global session hooks (v4.5+), `uninstall.sh` перед видаленням symlink'ів best-effort прибирає й їхні записи з `~/.claude/settings.json` і `~/.qwen/settings.json` через `hooks/uninstall-hooks.sh`. Провал цього кроку не блокує решту видалення — скрипт покаже команду для ручного повтору.
+
+Перед `--remove-clones` скрипт ще раз перевіряє обидва settings-файли на залишкові записи hooks, і робить це під тими самими локами, що бере інсталер (`hooks/lib/settings-lock.sh`), щоб паралельний `install-hooks.sh` не встиг дописати entries у вікні між перевіркою й видаленням. Якщо запис лишився, файл не вдалося прочитати, лок не вдалося взяти або сам lock-lib недоступний — `~/claude-wiki-skill` **не** видаляється (інакше зник би єдиний скрипт, здатний ці записи прибрати), і скрипт друкує причину.
 
 Щоб прибрати й real clones, якщо вони є clean git repos:
 

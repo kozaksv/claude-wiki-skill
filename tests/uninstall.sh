@@ -392,4 +392,159 @@ else
   echo "uninstall: skipping chmod-000 unreadable-file case (running as root)"
 fi
 
+# --- wave3: legacy Qwen wrapper marker is ALSO an orphan marker (codex-атк
+# P1). hooks/uninstall-hooks.sh strips `/.qwen/hooks/wiki-session-start.sh`
+# for the qwen client alongside the canonical marker, so a not-yet-migrated
+# Qwen-only install must block --remove-clones exactly like a canonical one.
+LEGACY_QWEN_SNIPPET='{"hooks":{"SessionStart":[{"hooks":[{"command":"test -x \"/home/u/.qwen/hooks/wiki-session-start.sh\" && \"/home/u/.qwen/hooks/wiki-session-start.sh\" || exit 0"}]}]}}'
+
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+printf '%s\n' "$LEGACY_QWEN_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-legacy-qwen.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "$HOME_DIR/.qwen/settings.json" "$TMP/uninstall-legacy-qwen.log" || {
+  echo "expected legacy qwen wrapper marker to be detected as an orphan in the qwen settings file"
+  exit 1
+}
+grep -q "git hooks removal failed" "$TMP/uninstall-legacy-qwen.log" || {
+  echo "expected legacy qwen wrapper marker to preserve the clone under --remove-clones"
+  exit 1
+}
+
+# Marker sets are PER CLIENT, mirroring deregister_from: the legacy qwen
+# wrapper path in ~/.claude/settings.json is not a claude marker (uninstall-
+# hooks.sh would never strip it there), so it must NOT block removal forever.
+setup_installed_tree
+printf '%s\n' "$LEGACY_QWEN_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-legacy-in-claude.log" 2>&1
+expect_missing "$HOME_DIR/claude-wiki-skill"
+
+# --- wave3 / t12: marker recheck + clone deletion run under the SAME
+# settings locks install-hooks.sh takes (codex-атк P1). -------------------
+
+# Locks are released on the way out — no lockdir may survive any run.
+expect_no_lockdirs() {
+  local label="$1" leftover
+  leftover="$(find "$HOME_DIR" -maxdepth 3 -name '*.lockdir' 2>/dev/null | head -1)"
+  [ -z "$leftover" ] || {
+    echo "$label: expected no leftover settings lockdir, found $leftover"
+    exit 1
+  }
+}
+expect_no_lockdirs "no-marker run"
+
+# A. TOCTOU regression, the main proof: install-hooks.sh takes the locks
+#    FIRST and writes its entries while uninstall.sh waits. Without a shared
+#    mutex the guard's scan would run before those writes, see a clean file,
+#    and delete the clone with live entries left behind — exactly the orphan
+#    this closes. Deterministic: uninstall can only acquire each lock after
+#    install has written that client's file and released it.
+if command -v python3 >/dev/null 2>&1; then
+  setup_installed_tree
+  printf '{}\n' >"$HOME_DIR/.claude/settings.json"
+  printf '{}\n' >"$HOME_DIR/.qwen/settings.json"
+  ( HOME="$HOME_DIR" WIKI_HOOKS_TEST_SLEEP_AFTER_LOCK=2 WIKI_HOOKS_LOCK_TIMEOUT=20 WIKI_HOOKS_LOCK_POLL=0.1 \
+      bash "$ROOT/hooks/install-hooks.sh" >"$TMP/toctou-install.log" 2>&1 ) &
+  _install_pid=$!
+  sleep 0.3
+  PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" WIKI_HOOKS_LOCK_TIMEOUT=20 WIKI_HOOKS_LOCK_POLL=0.1 \
+    bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/toctou-uninstall.log" 2>&1
+  wait "$_install_pid" || true
+  expect_exists "$HOME_DIR/claude-wiki-skill"
+  grep -q "git hooks removal failed" "$TMP/toctou-uninstall.log" || {
+    echo "expected concurrently-written hook entries to preserve the clone"
+    exit 1
+  }
+  # Asserted on the claude file only, deliberately: the claude lock handoff
+  # is deterministic (uninstall can only take it after install wrote and
+  # released it), whereas which process wins the qwen lock afterwards is
+  # scheduler-dependent — and the mutex does not promise an order there.
+  grep -q '/skills/wiki/hooks/' "$HOME_DIR/.claude/settings.json" || {
+    echo "expected the concurrent installer to have written its marker into the claude settings file"
+    exit 1
+  }
+  grep -q "$HOME_DIR/.claude/settings.json" "$TMP/toctou-uninstall.log" || {
+    echo "expected the locked recheck to report the orphan marker in the claude settings file"
+    exit 1
+  }
+  grep -q "не вдалося взяти лок" "$TMP/toctou-uninstall.log" && {
+    echo "expected honest lock waiting, not a lock-acquisition failure"
+    exit 1
+  }
+  grep -q "could not acquire lock" "$TMP/toctou-install.log" && {
+    echo "expected the installer not to be starved by the uninstall guard"
+    exit 1
+  }
+  expect_no_lockdirs "toctou scenario"
+else
+  echo "uninstall: skipping lock TOCTOU case (python3 unavailable)"
+fi
+
+# B. A foreign holder of either lock is never bypassed: the guard cannot
+#    verify, so the clone stays. The qwen variant also proves the FIRST
+#    (claude) lock is released before bailing out.
+_hold_lock_and_run() {
+  local lockdir="$1" log="$2"
+  sleep 30 &
+  local sleeper=$!
+  mkdir -p "$lockdir"
+  printf '%s\n' "$sleeper" >"$lockdir/pid"
+  PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" WIKI_HOOKS_LOCK_TIMEOUT=1 WIKI_HOOKS_LOCK_POLL=0.1 \
+    bash "$ROOT/uninstall.sh" --remove-clones >"$log" 2>&1
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  rm -rf "$lockdir"
+}
+
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+_hold_lock_and_run "$HOME_DIR/.claude/settings.json.lockdir" "$TMP/uninstall-locked-claude.log"
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "не вдалося взяти лок на $HOME_DIR/.claude/settings.json" "$TMP/uninstall-locked-claude.log" || {
+  echo "expected a held claude lock to be reported and the clone preserved"
+  exit 1
+}
+
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+_hold_lock_and_run "$HOME_DIR/.qwen/settings.json.lockdir" "$TMP/uninstall-locked-qwen.log"
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "не вдалося взяти лок на $HOME_DIR/.qwen/settings.json" "$TMP/uninstall-locked-qwen.log" || {
+  echo "expected a held qwen lock to be reported and the clone preserved"
+  exit 1
+}
+expect_missing "$HOME_DIR/.claude/settings.json.lockdir"
+
+# C. Lock lib unavailable (script copied out of its clone) -> the locked
+#    recheck is impossible, so the clone is conservatively kept.
+setup_installed_tree
+mkdir -p "$TMP/detached"
+cp "$ROOT/uninstall.sh" "$TMP/detached/uninstall.sh"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$TMP/detached/uninstall.sh" --remove-clones >"$TMP/uninstall-nolib.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+grep -q "перевірити записи hooks під локом неможливо" "$TMP/uninstall-nolib.log" || {
+  echo "expected a missing settings-lock lib to be reported as an explicit conservative skip"
+  exit 1
+}
+
+# D. Claude-only machine: no ~/.qwen at all -> only the claude lock is
+#    taken, ~/.qwen is NOT created just to host a lockdir, and the clean
+#    clone is still removed.
+setup_installed_tree
+rm -rf "$HOME_DIR/.qwen"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-claude-only.log" 2>&1
+expect_missing "$HOME_DIR/claude-wiki-skill"
+expect_missing "$HOME_DIR/.qwen"
+grep -q "не вдалося взяти лок" "$TMP/uninstall-claude-only.log" && {
+  echo "expected no lock failure on a claude-only machine"
+  exit 1
+}
+expect_no_lockdirs "claude-only run"
+
 echo "uninstall: ok"
