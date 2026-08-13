@@ -2382,6 +2382,159 @@ u5_next="$(env WIKI_HOOKS_LOCK_TIMEOUT=1 WIKI_HOOKS_LOCK_POLL=0.1 bash -c '
 assert_eq "settings-lock lib: U5 next client reclaims the abandoned empty-pid lock (self-healing)" "ACQUIRED_AFTER" "$u5_next"
 chmod -R u+rwX "$home" 2>/dev/null || true
 
+# ---- t6-register-into: hooks/install-hooks.sh parameterized into
+#      register_into(client) (docs/superpowers/plans/2026-08-13-v46-qwen.md
+#      Task 6). All tests above this point exercise the pre-T6 behavior
+#      unmodified and stay green byte-for-byte — that is the identity proof
+#      that the claude branch through register_into is unchanged. The
+#      cases below cover what's NEW in T6: per-existing-file permission
+#      preservation, the client-prefixed messages, the read-under-lock
+#      TOCTOU guard (FIFO), and the re-check-under-lock vanished-clone
+#      guard (spec R12). ----
+
+# t6_stat_mode <file> -> octal permission bits, portable BSD (`stat -f
+# %OLp`) first with a GNU (`stat -c %a`) fallback — mirrors the
+# _wiki_lock_dir_age_seconds BSD/GNU dance in hooks/lib/settings-lock.sh
+# (GNU coreutils' `-f` is the unrelated --file-system flag and emits
+# non-numeric text instead of failing cleanly, so the BSD-form output must
+# be validated as pure octal digits before being trusted).
+t6_stat_mode() {
+  local f="$1" m
+  m="$(stat -f %OLp "$f" 2>/dev/null || true)"
+  case "$m" in
+    ''|*[!0-7]*) m="" ;;
+  esac
+  if [ -z "$m" ]; then
+    m="$(stat -c %a "$f" 2>/dev/null || true)"
+    case "$m" in
+      ''|*[!0-7]*) m="" ;;
+    esac
+  fi
+  echo "$m"
+}
+
+# T6a. Existing settings.json with mode 0644 -> install preserves 0644
+# (an unconditional os.replace would otherwise silently narrow it to
+# whatever mkstemp picked, 0600).
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+printf '{}' >"$f"
+chmod 644 "$f"
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "t6: existing 0644 settings.json keeps 0644 after install" "644" "$(t6_stat_mode "$f")"
+
+# T6b. Brand-new settings.json (no file at all beforehand) -> 0600 (these
+# files can carry secrets under other keys, e.g. env/mcpServers).
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+assert_eq "t6: freshly-created settings.json is 0600" "600" "$(t6_stat_mode "$f")"
+
+# T6c. Success message on stderr carries the client prefix.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+err="$(env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+assert_contains "t6: success stderr carries client prefix" "$err" "install-hooks: claude:"
+
+# T6d. Corrupt JSON -> non-zero, file byte-identical, client-prefixed
+# stderr (distinct from test 4 above, which only asserts a bare
+# "install-hooks" substring — this checks the new "<client>:" segment).
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+printf '{ not valid json' >"$f"
+sha_before="$(_sha "$f")"
+err="$(env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "t6: corrupt JSON -> non-zero exit" "1" "$rc"
+assert_file_unchanged "t6: corrupt JSON -> settings.json byte-identical" "$f" "$sha_before"
+assert_contains "t6: corrupt JSON -> stderr carries client prefix" "$err" "install-hooks: claude:"
+
+# T6e. FIFO in place of settings.json -> refused without hanging (the
+# read-under-lock TOCTOU guard: os.open(O_RDONLY|O_NOFOLLOW|O_NONBLOCK) +
+# fstat/S_ISREG), and the lockdir is not left behind. A background watchdog
+# kills the installer if it is still alive past a generous bound so a
+# regression here fails this assertion instead of wedging the whole suite
+# forever — that bound is also the wall-clock assertion itself.
+if command -v mkfifo >/dev/null 2>&1; then
+  home="$(make_fake_home)"
+  f="$home/.claude/settings.json"
+  rm -f "$f"
+  mkfifo "$f"
+  start_ts="$(date +%s)"
+  env "${WH_ENV[@]}" HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
+  fifo_pid=$!
+  (
+    waited=0
+    while kill -0 "$fifo_pid" 2>/dev/null; do
+      sleep 1
+      waited=$((waited + 1))
+      if [ "$waited" -ge 8 ]; then
+        kill -TERM "$fifo_pid" 2>/dev/null
+        break
+      fi
+    done
+  ) &
+  watchdog_pid=$!
+  rc=0
+  wait "$fifo_pid" || rc=$?
+  end_ts="$(date +%s)"
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+  elapsed=$((end_ts - start_ts))
+  assert_eq "t6: FIFO settings.json -> non-zero exit (no hang)" "1" "$rc"
+  if [ "$elapsed" -lt 8 ]; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL: t6: FIFO settings.json -> wall-clock too slow (${elapsed}s, suspected hang)" >&2
+  fi
+  assert_eq "t6: FIFO settings.json -> no lockdir left" "" "$([ -d "$f.lockdir" ] && echo present)"
+  rm -f "$f" 2>/dev/null || true
+fi
+
+# T6f. Clone vanished while waiting for the lock (spec R12): a settings.json
+# with our canonical scripts present+executable, a lockdir pre-held by a
+# genuinely live foreign process so this install blocks waiting for it;
+# while it waits, the canonical scripts are deleted (simulating
+# `uninstall.sh --remove-clones` tearing down $SKILL_DIR mid-wait); the
+# foreign lock is then released. The waiting installer must re-check under
+# its own lock, see the scripts gone, and refuse -> non-zero with "skill
+# clone vanished", settings.json left byte-identical, no lockdir leftover.
+home="$(make_fake_home)"
+f="$home/.claude/settings.json"
+printf '{}' >"$f"
+sha_before="$(_sha "$f")"
+skill_hooks_dir="$home/.claude/skills/wiki/hooks"
+mkdir -p "$skill_hooks_dir"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$skill_hooks_dir/session-start.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$skill_hooks_dir/post-tool-use.sh"
+chmod +x "$skill_hooks_dir/session-start.sh" "$skill_hooks_dir/post-tool-use.sh"
+
+lockdir="$f.lockdir"
+( sleep 30 ) &
+foreign_pid=$!
+mkdir -p "$lockdir"
+echo "$foreign_pid" >"$lockdir/pid"
+
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=8 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>"t6f_err.$$" &
+waiter_pid=$!
+
+sleep 0.5
+rm -f "$skill_hooks_dir/session-start.sh" "$skill_hooks_dir/post-tool-use.sh"
+rm -rf "$lockdir"
+
+rc=0
+wait "$waiter_pid" || rc=$?
+kill "$foreign_pid" 2>/dev/null || true
+wait "$foreign_pid" 2>/dev/null || true
+
+t6f_err="$(cat "t6f_err.$$" 2>/dev/null)"
+rm -f "t6f_err.$$"
+assert_eq "t6: clone vanished under lock -> non-zero exit" "1" "$rc"
+assert_contains "t6: clone vanished under lock -> stderr mentions vanished clone" "$t6f_err" "skill clone vanished"
+assert_file_unchanged "t6: clone vanished under lock -> settings.json byte-identical" "$f" "$sha_before"
+assert_eq "t6: clone vanished under lock -> no lockdir left" "" "$([ -d "$lockdir" ] && echo present)"
+
 # ---- summary ----
 echo "" >&2
 echo "pass: $PASS  fail: $FAIL" >&2
