@@ -130,7 +130,7 @@ only in commit history and shell aliases, not the wiki.
 3. Agent investigates via other channels (git log, `package.json` scripts,
    ad-hoc grep) and synthesizes the answer.
 4. Agent **flags this as a crystallization candidate**. After answering, the
-   reflection block (if it fires) lists this in the `Автоматизував:` field as
+   reflection block (if it fires) lists this in the `Кристалізація:` field as
    a wiki proposal: «wiki: concepts/postgres-staging-backup.md».
 
 ### Manual verification

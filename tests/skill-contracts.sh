@@ -442,8 +442,13 @@ grep -q 'never emit a separate РЕФЛЕКСІЯ block' "$ROOT/references/opera
 # old name covers tests/, so this file must not contain the contiguous literal
 # (a repo-wide or tests/-wide scope would also make this guard match itself).
 legacy_reflection_field="Автомат""изував"
-grep -rq "$legacy_reflection_field" "$ROOT/references/" "$ROOT/SKILL.md" &&
-  fail "legacy reflection field name must not appear in references/ or SKILL.md (renamed to Кристалізація: in 4.7.0)"
+grep -rq "$legacy_reflection_field" "$ROOT/references/" "$ROOT/SKILL.md" "$ROOT/tests/scenarios/" &&
+  fail "legacy reflection field name must not appear in references/, SKILL.md or tests/scenarios/ (renamed to Кристалізація: in 4.7.0)"
+
+# The rename is agent-visible, so the scenario contracts must print the new field
+# name in their expected РЕФЛЕКСІЯ output — not merely avoid the old one.
+grep -rq 'Кристалізація:' "$ROOT/tests/scenarios/reflection-triggers.md" ||
+  fail "reflection-triggers scenarios must show the Кристалізація: field in expected block output"
 
 grep -q '~/.gemini/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" ||
   fail "doc-extract fallback must include Gemini direct export"
@@ -571,8 +576,8 @@ if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
   fail "no-code project detection must not invent people/documents categories"
 fi
 
-grep -q 'version: "4.6.1"' "$ROOT/SKILL.md" ||
-  fail "SKILL.md frontmatter must be bumped to 4.6.1"
+grep -q 'version: "4.7.0"' "$ROOT/SKILL.md" ||
+  fail "SKILL.md frontmatter must be bumped to 4.7.0"
 
 grep -q '| Qwen Code |' "$ROOT/SKILL.md" ||
   fail "Platform Compatibility table must include a Qwen Code column"
@@ -615,6 +620,9 @@ grep -qF '~/.qwen/skills' "$ROOT/references/operation-init.md" ||
 
 grep -q '### 4.6.0' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery-versioning.md Migration Log must have a ### 4.6.0 entry"
+
+grep -q '### 4.7.0' "$ROOT/references/discovery-versioning.md" ||
+  fail "discovery-versioning.md Migration Log must have a ### 4.7.0 entry"
 
 skill_version="$(sed -n 's/^version: "\([0-9][0-9]*\)\..*/\1/p' "$ROOT/SKILL.md" | head -1)"
 init_schema_major="$(grep -E 'wiki_version: "[0-9]+\.' "$ROOT/references/operation-init.md" | sed -n 's/.*wiki_version: "\([0-9][0-9]*\)\..*/\1/p' | head -1)"

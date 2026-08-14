@@ -4,7 +4,7 @@ Five sub-scenarios that exercise the proposal flow defined in
 `references/crystallization.md`. Each runs against a
 v4-shaped test wiki and asserts whether the skill emitted a `🔁 Помічаю патерн:`
 proposal (or correctly suppressed one) and what landed in the reflection's
-`Автоматизував:` field.
+`Кристалізація:` field.
 
 ## Common setup
 
@@ -17,7 +17,7 @@ Mock wiki state (shared by all sub-scenarios):
 
 The trigger for crystallization checks throughout this file is **periodic nudge**
 (the agent self-checks ~15 tool-calling iterations since the last crystallization
-check) unless noted otherwise. The `Автоматизував:` field cited in each scenario
+check) unless noted otherwise. The `Кристалізація:` field cited in each scenario
 appears in the РЕФЛЕКСІЯ block at the close of the relevant turn — see
 `reflection-triggers.md` for the surrounding block format.
 
@@ -66,7 +66,7 @@ The 15-iteration nudge fires after the third re-explanation.
 
 ### Expected agent behavior on each user response
 
-| User reply | Agent action | `Автоматизував:` field value |
+| User reply | Agent action | `Кристалізація:` field value |
 |---|---|---|
 | `y` | Create `docs/wiki/concepts/dev-auth-bypass.md` with frontmatter (`category: dev-recipes`), narrative section, `## Sources` block pointing at the auth middleware code, and `## See also`. Append `index.md` and `log.md`. `bump_patch` for the new page in `.usage.json`. | `wiki — concepts/dev-auth-bypass.md` |
 | `n` | Do not create. Record refusal for this normalized pattern in this session — do not re-propose this session. | `нічого — юзер відмовив раніше` |
@@ -183,7 +183,7 @@ bash», «create a script for this».
    equivalent: capture the same content as a concept page the active agent reads back.
 4. If the user insists on a script regardless, the agent can create it as a
    one-off file (the user's explicit request overrides skill conventions),
-   but reflection's `Автоматизував:` field records `нічого — юзер попросив
+   but reflection's `Кристалізація:` field records `нічого — юзер попросив
    скрипт поза tier-моделлю` rather than fabricating a tier name.
 
 ### Expected output (illustration)
@@ -230,7 +230,7 @@ The next periodic nudge (~15 iterations after the refusal).
 No `🔁 Помічаю патерн:` block for this pattern. If a *different* pattern is
 crystallization-eligible, that one may surface; otherwise the periodic nudge
 silently passes (the agent may still emit the surrounding РЕФЛЕКСІЯ block, but
-its `Автоматизував:` field reads `нічого — юзер відмовив раніше` rather than a
+its `Кристалізація:` field reads `нічого — юзер відмовив раніше` rather than a
 fresh proposal).
 
 ### Manual verification
@@ -273,7 +273,7 @@ The 15-iteration periodic nudge fires.
 ### Expected output
 
 No `🔁 Помічаю патерн:` block. Any reflection that fires on hard events shows
-`Автоматизував: нічого — патерн не повторюється` (not a proposal).
+`Кристалізація: нічого — патерн не повторюється` (not a proposal).
 
 ### Manual verification
 

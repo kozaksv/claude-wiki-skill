@@ -48,7 +48,7 @@ run `git commit`.
 Дізнався: knowing prices live as a separate variant attribute clarifies why receive-flow doesn't recompute discounts.
 Чому це краще: discount logic stays inside the purchase document, variants stay clean — fewer cross-cutting concerns.
 Зберіг у wiki: [[purchase-flow]], [[intake-stock]]
-Автоматизував: нічого — операція разова
+Кристалізація: нічого — операція разова
 
 Перевірив:
   ✅ index.md — entries для двох сторінок не змінились (були вже актуальні)
@@ -94,7 +94,7 @@ follows — the user just wants to stop here.
 
 Дізнався: нічого нового — стандартна реалізація за патерном [[purchase-flow]].
 Зберіг у wiki: [[purchase-flow]]
-Автоматизував: нічого — операція разова
+Кристалізація: нічого — операція разова
 
 Перевірив:
   ✅ index.md — оновлено опис [[purchase-flow]]
@@ -181,7 +181,7 @@ signal exists.
 
 Because this is `trigger: pre-commit` AND a passive drift signal is present,
 the block gets a single non-interactive pointer line appended after
-`Автоматизував:` (or `Перевірив:` when present):
+`Кристалізація:` (or `Перевірив:` when present):
 
 ```
 📚 РЕФЛЕКСІЯ — 2026-05-01 14:32 — trigger: pre-commit
@@ -189,7 +189,7 @@ the block gets a single non-interactive pointer line appended after
 Дізнався: knowing prices live as a separate variant attribute clarifies why receive-flow doesn't recompute discounts.
 Чому це краще: discount logic stays inside the purchase document, variants stay clean — fewer cross-cutting concerns.
 Зберіг у wiki: [[purchase-flow]], [[intake-stock]]
-Автоматизував: нічого — операція разова
+Кристалізація: нічого — операція разова
 
 Перевірив:
   ✅ index.md — entries для двох сторінок не змінились (були вже актуальні)

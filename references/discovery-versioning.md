@@ -453,6 +453,20 @@ treat the partial state according to what actually exists (`schema.md`,
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
 
+### 4.7.0 (2026-08-14)
+- No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki migrations
+  required for existing wikis. The РЕФЛЕКСІЯ block's crystallization field is
+  renamed to `Кристалізація:` (it previously carried the automation-era name).
+  This is an agent-visible contract only: the block is printed into the turn and
+  never persisted — `{wiki}/log.md` keeps its own entry format — so nothing on
+  disk is rewritten. The crystallization reference is stripped of scaffolding
+  left by the tier model removed in 4.1 and 4.4. The dead active-state filter is
+  dropped from the lint and `wiki status` subsets: the subset is now filtered by
+  `protected == false` only, and the page counts printed in the lint heads-up are
+  unchanged because that filter always passed everything. The `.usage.json`
+  record shape is unchanged — `state`, `protected` and `archived_at` are still
+  present in every record.
+
 ### 4.6.0 (2026-08-13)
 - No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki migrations
   required for existing wikis. Native Qwen Code support added: agent-neutral
