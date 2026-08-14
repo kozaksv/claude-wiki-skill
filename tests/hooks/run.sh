@@ -2980,6 +2980,359 @@ assert_eq "t7: no leftover claude settings.json.lockdir" "" \
 assert_eq "t7: no leftover qwen settings.json.lockdir" "" \
   "$([ -d "$home/.qwen/settings.json.lockdir" ] && echo present)"
 
+# ---- t8-uninstall-hooks: hooks/uninstall-hooks.sh strips BOTH clients'
+#      wiki hook entries via a single python3 process that plans both
+#      clients before committing either (docs/superpowers/plans/
+#      2026-08-13-v46-qwen.md Task 8; settled decisions s3-s7 in the paired
+#      ledger file). All tests above this point exercise the pre-T8,
+#      claude-only uninstall behavior unmodified and stay green
+#      byte-for-byte — the identity proof that the single-client path is
+#      unchanged by the rewrite. ----
+
+# t8_marker_json <command-substring> -> a minimal valid settings.json whose
+# SessionStart carries one command containing <command-substring>. Real,
+# fully-realistic command strings are already exercised by the
+# install-hooks.sh roundtrip (t8a below); these fixtures only need to trip
+# has_marker(), same technique the pre-existing mixed-entry tests use.
+t8_marker_json() {
+  local cmd="$1"
+  printf '{"hooks":{"SessionStart":[{"matcher":"m","hooks":[{"type":"command","command":"%s"}]}]}}' "$cmd"
+}
+
+# T8a. Both clients installed via a REAL install-hooks.sh roundtrip ->
+# uninstall strips both to 0 wiki entries, foreign hooks on EACH survive,
+# both remain valid JSON.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+qf="$home/.qwen/settings.json"
+mkdir -p "$home/.qwen"
+printf '{"hooks":{"Stop":[{"matcher":"*","hooks":[{"type":"command","command":"/foreign/claude-stop.sh"}]}]}}' >"$cf"
+printf '{"hooks":{"Stop":[{"matcher":"*","hooks":[{"type":"command","command":"/foreign/qwen-stop.sh"}]}]}}' >"$qf"
+env "${WH_ENV[@]}" HOME="$home" PATH="$qwen_stub_dir:$NO_QWEN_PATH" bash "$INSTALL_HOOKS_SCRIPT" >/dev/null 2>&1
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8a: install-both + uninstall -> exit 0" "0" "$rc"
+assert_eq "t8a: claude has no SessionStart left" "False" "$(json_get "$cf" "'SessionStart' in d.get('hooks', {})")"
+assert_eq "t8a: qwen has no SessionStart left" "False" "$(json_get "$qf" "'SessionStart' in d.get('hooks', {})")"
+assert_eq "t8a: claude foreign Stop hook survives" "/foreign/claude-stop.sh" "$(json_get "$cf" "d['hooks']['Stop'][0]['hooks'][0]['command']")"
+assert_eq "t8a: qwen foreign Stop hook survives" "/foreign/qwen-stop.sh" "$(json_get "$qf" "d['hooks']['Stop'][0]['hooks'][0]['command']")"
+assert_eq "t8a: claude settings.json still valid JSON" "dict" "$(json_get "$cf" "type(d).__name__")"
+assert_eq "t8a: qwen settings.json still valid JSON" "dict" "$(json_get "$qf" "type(d).__name__")"
+
+# T8b. Only the qwen file carries a marker (claude file genuinely absent)
+# -> stripped, exit 0.
+home="$(make_fake_home)"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8b: qwen-only marker -> exit 0" "0" "$rc"
+assert_eq "t8b: qwen marker stripped" "False" "$(json_get "$qf" "'SessionStart' in d.get('hooks', {})")"
+
+# T8c. Mirror: only the claude file carries a marker, ~/.qwen does not
+# exist at all -> stripped, exit 0, ~/.qwen never created.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+t8_marker_json "/skills/wiki/hooks/session-start.sh" >"$cf"
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8c: claude-only marker (no ~/.qwen at all) -> exit 0" "0" "$rc"
+assert_eq "t8c: claude marker stripped" "False" "$(json_get "$cf" "'SessionStart' in d.get('hooks', {})")"
+assert_eq "t8c: no ~/.qwen created" "" "$([ -e "$home/.qwen" ] && echo present)"
+
+# T8d. Legacy qwen wrapper entry with no canonical marker alongside it ->
+# stripped, exit 0.
+home="$(make_fake_home)"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+t8_marker_json "/.qwen/hooks/wiki-session-start.sh" >"$qf"
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8d: legacy-only qwen marker -> exit 0" "0" "$rc"
+assert_eq "t8d: legacy qwen marker stripped" "False" "$(json_get "$qf" "'SessionStart' in d.get('hooks', {})")"
+
+# T8e. No python3 on PATH + marker present ONLY in the qwen file -> the
+# WHOLE run is non-zero, BOTH files untouched, stderr mentions python3.
+# curated_path_dir (bash+grep, no python3) is defined earlier in this file
+# by the T6c no-python3 tests.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+printf '{}' >"$cf"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+sha_c="$(_sha "$cf")"
+sha_q="$(_sha "$qf")"
+err="$(env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" PATH="$curated_path_dir" bash "$UNINSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "t8e: no python3 + marker only in qwen -> non-zero" "1" "$rc"
+assert_file_unchanged "t8e: claude unchanged" "$cf" "$sha_c"
+assert_file_unchanged "t8e: qwen unchanged" "$qf" "$sha_q"
+assert_contains "t8e: stderr mentions python3" "$err" "python3"
+
+# T8f. No python3 on PATH and no marker anywhere in either client -> exit 0.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+printf '{"hooks":{"Stop":[{"matcher":"*","hooks":[{"type":"command","command":"/foreign/x.sh"}]}]}}' >"$cf"
+printf '{}' >"$qf"
+rc=0
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=3 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" PATH="$curated_path_dir" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8f: no python3 + no marker anywhere -> exit 0" "0" "$rc"
+
+# T8g. ATOMICITY, the main case for this task: valid claude file with our
+# entries + a corrupt (JSONC `//` comment) qwen file -> non-zero; claude is
+# byte-identical (hash comparison), its entries are still in place, NO
+# settings.json.bak-wiki-hooks-* was created anywhere, no tmp remnant, and
+# stderr names the qwen client specifically.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+cat >"$cf" <<'EOF'
+{
+  "otherKey": true,
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "startup|clear|compact", "hooks": [{"type": "command", "command": "/x/skills/wiki/hooks/session-start.sh"}]}
+    ]
+  }
+}
+EOF
+printf '{ // comment\n "a": 1 }' >"$qf"
+sha_c="$(_sha "$cf")"
+err="$(env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" 2>&1 >/dev/null)"
+rc=$?
+assert_eq "t8g: atomicity — corrupt qwen -> non-zero" "1" "$rc"
+assert_file_unchanged "t8g: claude byte-identical" "$cf" "$sha_c"
+assert_eq "t8g: claude entries still in place" "1" "$(json_get "$cf" "len(d['hooks']['SessionStart'])")"
+assert_eq "t8g: no .bak-wiki-hooks-* anywhere" "0" "$(find "$home" -name '*.bak-wiki-hooks-*' | wc -l | tr -d ' ')"
+assert_eq "t8g: no tmp remnant" "0" "$(find "$home" -name '.settings.json.*' | wc -l | tr -d ' ')"
+assert_contains "t8g: stderr mentions uninstall-hooks: qwen:" "$err" "uninstall-hooks: qwen:"
+assert_eq "t8g: no leftover claude lockdir" "" "$([ -d "$cf.lockdir" ] && echo present)"
+assert_eq "t8g: no leftover qwen lockdir" "" "$([ -d "$qf.lockdir" ] && echo present)"
+
+# T8h. Mirror of T8g: corrupt claude + valid qwen (with a marker) ->
+# non-zero, qwen left completely untouched.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+printf '{ not valid json' >"$cf"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+sha_q="$(_sha "$qf")"
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8h: mirror — corrupt claude -> non-zero" "1" "$rc"
+assert_file_unchanged "t8h: qwen unchanged" "$qf" "$sha_q"
+
+# T8i. Non-object top-level value ([]) in the qwen file -> non-zero, BOTH
+# files untouched.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+printf '{}' >"$cf"
+printf '[]' >"$qf"
+sha_c="$(_sha "$cf")"
+sha_q="$(_sha "$qf")"
+rc=0
+env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8i: non-object qwen file -> non-zero" "1" "$rc"
+assert_file_unchanged "t8i: claude unchanged" "$cf" "$sha_c"
+assert_file_unchanged "t8i: qwen unchanged" "$qf" "$sha_q"
+
+# T8j. FIFO in place of the qwen settings.json -> refused without hanging
+# (same TOCTOU-closing open+fstat guard as install-hooks.sh), BOTH files
+# untouched. Wall-clock bound + background watchdog so a regression here
+# fails this assertion instead of wedging the whole suite.
+if command -v mkfifo >/dev/null 2>&1; then
+  home="$(make_fake_home)"
+  cf="$home/.claude/settings.json"
+  printf '{}' >"$cf"
+  mkdir -p "$home/.qwen"
+  qf="$home/.qwen/settings.json"
+  mkfifo "$qf"
+  sha_c="$(_sha "$cf")"
+  start_ts="$(date +%s)"
+  env "${WH_ENV[@]}" HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
+  fifo_pid=$!
+  (
+    waited=0
+    while kill -0 "$fifo_pid" 2>/dev/null; do
+      sleep 1
+      waited=$((waited + 1))
+      if [ "$waited" -ge 8 ]; then
+        kill -TERM "$fifo_pid" 2>/dev/null
+        break
+      fi
+    done
+  ) &
+  watchdog_pid=$!
+  rc=0
+  wait "$fifo_pid" || rc=$?
+  end_ts="$(date +%s)"
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+  elapsed=$((end_ts - start_ts))
+  assert_eq "t8j: FIFO qwen settings.json -> non-zero exit (no hang)" "1" "$rc"
+  if [ "$elapsed" -lt 8 ]; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL: t8j: FIFO qwen settings.json -> wall-clock too slow (${elapsed}s, suspected hang)" >&2
+  fi
+  assert_file_unchanged "t8j: claude unchanged" "$cf" "$sha_c"
+  assert_eq "t8j: no leftover claude lockdir" "" "$([ -d "$cf.lockdir" ] && echo present)"
+  assert_eq "t8j: no leftover qwen lockdir" "" "$([ -d "$qf.lockdir" ] && echo present)"
+  rm -f "$qf" 2>/dev/null || true
+fi
+
+# T8k. Signal (TERM) in the window between the two commits (residual,
+# vertict s4): WIKI_HOOKS_TEST_SLEEP_BETWEEN_COMMITS=2 sleeps right after
+# claude's commit lands and right before qwen's starts. Both files carry a
+# marker so both are "planned". A TERM sent ~0.5s in lands inside that
+# window -> exit code is EXACTLY 143 (never 0, never a stale code), stderr
+# advises a re-run, no lockdir/tmp survives. A second, un-signaled run then
+# converges: exit 0, zero wiki entries left in either file (proof the
+# script is idempotent and the half-done state above is recoverable, NOT a
+# bug — there is deliberately no "claude rolled back" assertion here, an
+# automatic signal-triggered rollback is forbidden by plan point 13).
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+t8_marker_json "/skills/wiki/hooks/session-start.sh" >"$cf"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=10 WIKI_HOOKS_LOCK_POLL=0.1 WIKI_HOOKS_TEST_SLEEP_BETWEEN_COMMITS=2 \
+  HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >"t8k_out.$$" 2>"t8k_err.$$" &
+sig_pid=$!
+sleep 0.5
+kill -TERM "$sig_pid" 2>/dev/null || true
+rc=0
+wait "$sig_pid" || rc=$?
+t8k_err="$(cat "t8k_err.$$" 2>/dev/null)"
+rm -f "t8k_out.$$" "t8k_err.$$"
+assert_eq "t8k: signal between commits -> exit exactly 143" "143" "$rc"
+assert_contains "t8k: stderr advises a re-run" "$t8k_err" "re-run"
+assert_eq "t8k: no leftover claude lockdir" "" "$([ -d "$cf.lockdir" ] && echo present)"
+assert_eq "t8k: no leftover qwen lockdir" "" "$([ -d "$qf.lockdir" ] && echo present)"
+assert_eq "t8k: no tmp remnant" "0" "$(find "$home" -name '.settings.json.*' | wc -l | tr -d ' ')"
+rc=0
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=10 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 || rc=$?
+assert_eq "t8k: re-run after signal -> exit 0 (converges)" "0" "$rc"
+assert_eq "t8k: re-run -> claude SessionStart gone" "False" "$(json_get "$cf" "'SessionStart' in d.get('hooks', {})")"
+assert_eq "t8k: re-run -> qwen SessionStart gone" "False" "$(json_get "$qf" "'SessionStart' in d.get('hooks', {})")"
+
+# T8l. Backup survives the signal (regression on wave-5 P1, vertict s7):
+# same seam, TERM after claude is already committed -> exactly ONE
+# settings.json.bak-wiki-hooks-* for claude exists, holding the
+# PRE-commit content, and no tmp remnant.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+t8_marker_json "/skills/wiki/hooks/session-start.sh" >"$cf"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+claude_before="$(cat "$cf")"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=10 WIKI_HOOKS_LOCK_POLL=0.1 WIKI_HOOKS_TEST_SLEEP_BETWEEN_COMMITS=2 \
+  HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>"t8l_err.$$" &
+sig_pid=$!
+sleep 0.5
+kill -TERM "$sig_pid" 2>/dev/null || true
+wait "$sig_pid" 2>/dev/null || true
+rm -f "t8l_err.$$"
+backups="$(find "$home/.claude" -name 'settings.json.bak-wiki-hooks-*' 2>/dev/null)"
+backup_count="$(printf '%s\n' "$backups" | grep -c . || true)"
+assert_eq "t8l: exactly one claude backup survives the signal" "1" "$backup_count"
+backup_file="$(printf '%s\n' "$backups" | head -1)"
+assert_eq "t8l: backup holds the pre-commit claude content" "$claude_before" "$(cat "$backup_file" 2>/dev/null)"
+assert_eq "t8l: no tmp remnant after signal" "0" "$(find "$home" -name '.settings.json.*' | wc -l | tr -d ' ')"
+
+# T8m. Mirror of T8k/T8l: a signal arriving BEFORE the first replace, so
+# neither a backup nor any write ever happens. Made deterministic by
+# holding a live FOREIGN lock on qwen's lockdir so this run acquires
+# claude's lock, then blocks waiting for qwen's — TERM sent into that wait
+# lands strictly before any python process (and therefore any replace) has
+# even started. Both files stay byte-identical, no backup, no tmp, no
+# leftover claude lockdir; the foreign qwen lockdir is cleaned up by this
+# test itself since uninstall never owned it.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+t8_marker_json "/skills/wiki/hooks/session-start.sh" >"$cf"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+sha_c="$(_sha "$cf")"
+sha_q="$(_sha "$qf")"
+qwen_lockdir="$qf.lockdir"
+( sleep 30 ) &
+foreign_pid=$!
+mkdir -p "$qwen_lockdir"
+echo "$foreign_pid" >"$qwen_lockdir/pid"
+start_ts="$(date +%s)"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=8 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
+waiter_pid=$!
+sleep 0.5
+kill -TERM "$waiter_pid" 2>/dev/null || true
+wait "$waiter_pid" 2>/dev/null || true
+end_ts="$(date +%s)"
+kill "$foreign_pid" 2>/dev/null || true
+wait "$foreign_pid" 2>/dev/null || true
+rm -rf "$qwen_lockdir"
+elapsed=$((end_ts - start_ts))
+if [ "$elapsed" -lt 8 ]; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  echo "FAIL: t8m: signal before first replace -> wall-clock too slow (${elapsed}s)" >&2
+fi
+assert_file_unchanged "t8m: claude byte-identical (no replace happened)" "$cf" "$sha_c"
+assert_file_unchanged "t8m: qwen byte-identical" "$qf" "$sha_q"
+assert_eq "t8m: no .bak-wiki-hooks-* created" "0" "$(find "$home" -name '*.bak-wiki-hooks-*' | wc -l | tr -d ' ')"
+assert_eq "t8m: no tmp remnant" "0" "$(find "$home" -name '.settings.json.*' | wc -l | tr -d ' ')"
+assert_eq "t8m: no leftover claude lockdir" "" "$([ -d "$cf.lockdir" ] && echo present)"
+
+# T8n. Static assert: claude's wiki_lock_acquire call appears at an earlier
+# line than qwen's — machine-checked proof of the global claude -> qwen
+# lock order.
+claude_lock_line="$(grep -n 'wiki_lock_acquire "\$CLAUDE_SETTINGS.lockdir"' "$UNINSTALL_HOOKS_SCRIPT" | head -1 | cut -d: -f1)"
+qwen_lock_line="$(grep -n 'wiki_lock_acquire "\$QWEN_SETTINGS.lockdir"' "$UNINSTALL_HOOKS_SCRIPT" | head -1 | cut -d: -f1)"
+assert_eq "t8n: both claude/qwen wiki_lock_acquire call sites found" "yes" \
+  "$([ -n "$claude_lock_line" ] && [ -n "$qwen_lock_line" ] && echo yes || echo no)"
+assert_eq "t8n: claude wiki_lock_acquire precedes qwen's (static lock order)" "yes" \
+  "$([ "${claude_lock_line:-0}" -lt "${qwen_lock_line:-0}" ] && echo yes || echo no)"
+
+# T8o. Two parallel uninstall-hooks.sh runs under the SAME fake HOME with a
+# generous WIKI_HOOKS_LOCK_TIMEOUT -> both exit 0, neither output mentions
+# a lock timeout, both files end up valid and entry-free.
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+t8_marker_json "/skills/wiki/hooks/session-start.sh" >"$cf"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=10 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >"t8o_out1.$$" 2>&1 &
+p1=$!
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=10 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >"t8o_out2.$$" 2>&1 &
+p2=$!
+rc1=0; rc2=0
+wait "$p1" || rc1=$?
+wait "$p2" || rc2=$?
+out1="$(cat "t8o_out1.$$" 2>/dev/null)"
+out2="$(cat "t8o_out2.$$" 2>/dev/null)"
+rm -f "t8o_out1.$$" "t8o_out2.$$"
+assert_eq "t8o: parallel run 1 exit 0" "0" "$rc1"
+assert_eq "t8o: parallel run 2 exit 0" "0" "$rc2"
+assert_not_contains "t8o: run 1 no lock-timeout message" "$out1" "could not acquire lock"
+assert_not_contains "t8o: run 2 no lock-timeout message" "$out2" "could not acquire lock"
+assert_eq "t8o: claude entries stripped" "False" "$(json_get "$cf" "'SessionStart' in d.get('hooks', {})")"
+assert_eq "t8o: qwen entries stripped" "False" "$(json_get "$qf" "'SessionStart' in d.get('hooks', {})")"
+assert_eq "t8o: no leftover claude lockdir" "" "$([ -d "$cf.lockdir" ] && echo present)"
+assert_eq "t8o: no leftover qwen lockdir" "" "$([ -d "$qf.lockdir" ] && echo present)"
+
 # ---- summary ----
 echo "" >&2
 echo "pass: $PASS  fail: $FAIL" >&2
