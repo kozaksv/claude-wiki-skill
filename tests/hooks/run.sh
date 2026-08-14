@@ -1593,18 +1593,93 @@ printf '{"tool_name":"read_file","tool_input":{"file_path":"docs/wiki/foo.md"}}'
 assert_eq "post-tool-use: relative file_path resolves against QWEN_PROJECT_DIR when CLAUDE_PROJECT_DIR unset" \
   "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
 
-# 21. CLAUDE_PROJECT_DIR and QWEN_PROJECT_DIR set to DIFFERENT fixtures ->
-#     CLAUDE_PROJECT_DIR wins, only its wiki is bumped.
+# 21 / P1 (v461-anchor-precedence Task 1, updated in place — the anchor
+#     env-rung order is now client-aware by tool_name, not a fixed
+#     CLAUDE_PROJECT_DIR-first precedence; a Qwen tool now tries
+#     QWEN_PROJECT_DIR FIRST, so this case's expected winner flips from
+#     the old fixed-precedence behavior): CLAUDE_PROJECT_DIR and
+#     QWEN_PROJECT_DIR set to DIFFERENT fixtures, Qwen tool `read_file`,
+#     path inside the qwen fixture -> the qwen wiki is bumped, the claude
+#     wiki is untouched.
 claude_fixture="$(make_fixture)"
 printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
 qwen_fixture="$(make_fixture)"
 printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
-_ptu_stdin "read_file" "$claude_fixture/docs/wiki/foo.md" \
+_ptu_stdin "read_file" "$qwen_fixture/docs/wiki/foo.md" \
   | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
-assert_eq "post-tool-use: CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR -> claude wiki bumped" \
+assert_eq "post-tool-use: qwen tool -> QWEN_PROJECT_DIR wins over CLAUDE_PROJECT_DIR -> qwen wiki bumped" \
+  "1" "$(_ptu_field "$qwen_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: qwen tool -> QWEN_PROJECT_DIR wins over CLAUDE_PROJECT_DIR -> claude wiki untouched" \
+  "" "$(_ptu_field "$claude_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# P2: mirror of P1 with a Claude tool `Read` -> own client's rung
+#     (CLAUDE_PROJECT_DIR) wins, path inside the claude fixture -> the
+#     claude wiki is bumped, the qwen wiki is untouched (regression-zero
+#     for Claude: byte-for-byte the pre-existing precedence when the
+#     firing tool is Claude's own).
+claude_fixture="$(make_fixture)"
+printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
+qwen_fixture="$(make_fixture)"
+printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
+_ptu_stdin "Read" "$claude_fixture/docs/wiki/foo.md" \
+  | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: claude tool -> CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR -> claude wiki bumped" \
   "1" "$(_ptu_field "$claude_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
-assert_eq "post-tool-use: CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR -> qwen wiki untouched" \
+assert_eq "post-tool-use: claude tool -> CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR -> qwen wiki untouched" \
   "" "$(_ptu_field "$qwen_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# P8: WIKI_HOOK_CLIENT in the environment has NO effect on post-tool-use.sh
+#     — client is derived solely from tool_name, never from that var (this
+#     hook structurally never reads WIKI_HOOK_CLIENT). Claude tool `Read`,
+#     both project-dir envs set, WIKI_HOOK_CLIENT=qwen in the environment,
+#     path inside the claude fixture -> the claude wiki is STILL bumped
+#     (tool_name, not the env var, decides the client), qwen untouched.
+claude_fixture="$(make_fixture)"
+printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
+qwen_fixture="$(make_fixture)"
+printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
+_ptu_stdin "Read" "$claude_fixture/docs/wiki/foo.md" \
+  | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" WIKI_HOOK_CLIENT=qwen \
+    bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+assert_eq "post-tool-use: WIKI_HOOK_CLIENT=qwen does not override tool_name-derived client -> claude wiki bumped" \
+  "1" "$(_ptu_field "$claude_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+assert_eq "post-tool-use: WIKI_HOOK_CLIENT=qwen does not override tool_name-derived client -> qwen wiki untouched" \
+  "" "$(_ptu_field "$qwen_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# P9: unmatched tool names from either client (`run_shell_command`,
+#     `Grep`), each with a valid path inside its own fixture's wiki, both
+#     project-dir envs set -> action-gate rejects before the anchor is
+#     ever consulted, so BOTH .usage.json files stay byte-for-byte
+#     unchanged, stdout is empty, exit 0.
+claude_fixture="$(make_fixture)"
+printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
+qwen_fixture="$(make_fixture)"
+printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
+claude_sha_before="$(_sha "$claude_fixture/docs/wiki/.usage.json")"
+qwen_sha_before="$(_sha "$qwen_fixture/docs/wiki/.usage.json")"
+out="$(printf '{"tool_name":"run_shell_command","tool_input":{"file_path":"%s"}}' \
+  "$qwen_fixture/docs/wiki/foo.md" \
+  | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" 2>&1)"
+rc=$?
+assert_eq "post-tool-use: P9 run_shell_command exits 0" "0" "$rc"
+assert_eq "post-tool-use: P9 run_shell_command -> empty stdout" "" "$out"
+assert_file_unchanged "post-tool-use: P9 run_shell_command -> claude .usage.json unchanged" \
+  "$claude_fixture/docs/wiki/.usage.json" "$claude_sha_before"
+assert_file_unchanged "post-tool-use: P9 run_shell_command -> qwen .usage.json unchanged" \
+  "$qwen_fixture/docs/wiki/.usage.json" "$qwen_sha_before"
+
+claude_sha_before="$(_sha "$claude_fixture/docs/wiki/.usage.json")"
+qwen_sha_before="$(_sha "$qwen_fixture/docs/wiki/.usage.json")"
+out="$(printf '{"tool_name":"Grep","tool_input":{"path":"%s"}}' \
+  "$claude_fixture/docs/wiki/foo.md" \
+  | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" 2>&1)"
+rc=$?
+assert_eq "post-tool-use: P9 Grep exits 0" "0" "$rc"
+assert_eq "post-tool-use: P9 Grep -> empty stdout" "" "$out"
+assert_file_unchanged "post-tool-use: P9 Grep -> claude .usage.json unchanged" \
+  "$claude_fixture/docs/wiki/.usage.json" "$claude_sha_before"
+assert_file_unchanged "post-tool-use: P9 Grep -> qwen .usage.json unchanged" \
+  "$qwen_fixture/docs/wiki/.usage.json" "$qwen_sha_before"
 
 # 22. Qwen `run_shell_command` (not in the allowlist) -> exit 0,
 #     .usage.json byte-for-byte unchanged.

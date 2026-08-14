@@ -20,15 +20,18 @@
 # execution: every path ends in `exit 0`.
 #
 # file_path resolution: `tool_input.file_path` is resolved against a
-# project anchor with strict precedence `$CLAUDE_PROJECT_DIR` ->
-# `$QWEN_PROJECT_DIR` -> stdin `cwd` (documented hook-input field) -> `pwd`,
-# never against the hook process's own cwd alone — Claude Code hands hooks
-# a project-root-relative file_path while the hook's cwd can be any
+# project anchor built from two env rungs — `$CLAUDE_PROJECT_DIR` and
+# `$QWEN_PROJECT_DIR` — whose check order is client-aware (which rung is
+# tried first depends on which client's tool fired), falling back to
+# stdin `cwd` (documented hook-input field) -> `pwd`, never against the
+# hook process's own cwd alone — Claude Code hands hooks a
+# project-root-relative file_path while the hook's cwd can be any
 # subdirectory, and CLAUDE_PROJECT_DIR is not guaranteed to be exported;
-# missing all three would silently break the guard below and drop
-# telemetry with no signal (plan Task 3 point 3 + wave4 P1; QWEN_PROJECT_DIR
-# rung added by v46-qwen Task 2 — Qwen exports both vars but the hook does
-# not rely on the compat export).
+# missing both env rungs and stdin `cwd` would silently break the guard
+# below and drop telemetry with no signal (plan Task 3 point 3 + wave4 P1;
+# QWEN_PROJECT_DIR rung added by v46-qwen Task 2; client-aware ordering
+# added by v461-anchor-precedence Task 1 — see rationale at the anchor
+# block below).
 #
 # Path extraction (fixwave0-3 P1 + v46-qwen Task 3): the stdin parser
 # below runs two independent extraction modes.
@@ -360,27 +363,52 @@ sys.stdout.write("\0".join([tool_name, cwd] + paths) + "\0")
   # patch. Any other tool name (e.g. Qwen's `run_shell_command`, or
   # Claude's Grep/Glob/Bash) exits immediately without ever looking at the
   # extractor's file_paths result — action and exit codes are unchanged,
-  # both branches still exit 0 with no side effects and no stdout.
-  local action
+  # both branches still exit 0 with no side effects and no stdout. Each
+  # matched branch also records which client owns that tool name
+  # (v461-anchor-precedence Task 1) — `client` drives the anchor env-rung
+  # order below; it is derived solely from `tool_name`, the same signal
+  # the action-gate already keys on, so no second tool-name allowlist is
+  # introduced.
+  local action client
   case "$tool_name" in
-    Read|read_file) action="view" ;;
-    Edit|Write|MultiEdit|write_file|edit|replace|notebook_edit) action="patch" ;;
+    Read)                          action="view";  client="claude" ;;
+    read_file)                     action="view";  client="qwen"  ;;
+    Edit|Write|MultiEdit)          action="patch"; client="claude" ;;
+    write_file|edit|replace|notebook_edit)
+                                   action="patch"; client="qwen"  ;;
     *) exit 0 ;;
   esac
 
   [ "${#file_paths[@]}" -gt 0 ] || exit 0
 
-  # Project anchor with strict precedence CLAUDE_PROJECT_DIR ->
-  # QWEN_PROJECT_DIR -> stdin cwd -> pwd (wave4 P1: Claude Code does not
+  # Project anchor, env-rung order client-aware by `$client`
+  # (v461-anchor-precedence Task 1, docs/superpowers/specs/
+  # 2026-08-14-v461-anchor-precedence.md): a Qwen Code session launched
+  # inside a Claude Code session is a real, observed shape (empirical run
+  # 2026-08-14, Qwen Code 0.21.11) — both CLAUDE_PROJECT_DIR and
+  # QWEN_PROJECT_DIR end up exported at once, pointing at two DIFFERENT
+  # project roots (the outer Claude project and the inner Qwen project).
+  # A fixed CLAUDE_PROJECT_DIR-first precedence would silently anchor a
+  # Qwen tool call at the wrong (outer) project's wiki. Trying the rung
+  # that belongs to the firing tool's own client first — falling back to
+  # the other client's rung only when that one is unset — resolves each
+  # call against the project it actually ran in. The `else` branch below
+  # is byte-for-byte the prior Claude-only precedence (regression-free for
+  # Claude). The stdin-cwd -> pwd tail (wave4 P1: Claude Code does not
   # always export CLAUDE_PROJECT_DIR, but the hook stdin carries the
   # documented `cwd`; anchoring at the hook process's own pwd alone
   # mis-resolves relative file_path when the session sits in a
-  # subdirectory and silently drops telemetry). QWEN_PROJECT_DIR is Qwen
-  # Code's equivalent env var (v46-qwen Task 2); it only applies when
-  # CLAUDE_PROJECT_DIR is unset. The same anchor seeds discovery.
+  # subdirectory and silently drops telemetry) is shared by both clients
+  # and applies exactly once, outside the branch. The same anchor seeds
+  # discovery.
   local anchor
-  anchor="${CLAUDE_PROJECT_DIR:-}"
-  [ -n "$anchor" ] || anchor="${QWEN_PROJECT_DIR:-}"
+  if [ "$client" = "qwen" ]; then
+    anchor="${QWEN_PROJECT_DIR:-}"
+    [ -n "$anchor" ] || anchor="${CLAUDE_PROJECT_DIR:-}"
+  else
+    anchor="${CLAUDE_PROJECT_DIR:-}"
+    [ -n "$anchor" ] || anchor="${QWEN_PROJECT_DIR:-}"
+  fi
   [ -n "$anchor" ] || anchor="$stdin_cwd"
   [ -n "$anchor" ] || anchor="$(pwd)"
 
