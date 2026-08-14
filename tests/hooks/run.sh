@@ -3277,13 +3277,24 @@ env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=8 WIKI_HOOKS_LOCK_POLL
 waiter_pid=$!
 sleep 0.5
 kill -TERM "$waiter_pid" 2>/dev/null || true
-wait "$waiter_pid" 2>/dev/null || true
+t8m_rc=0
+wait "$waiter_pid" 2>/dev/null || t8m_rc=$?
 end_ts="$(date +%s)"
 kill "$foreign_pid" 2>/dev/null || true
 wait "$foreign_pid" 2>/dev/null || true
 rm -rf "$qwen_lockdir"
 elapsed=$((end_ts - start_ts))
-if [ "$elapsed" -lt 8 ]; then
+# The exit CODE is the whole point of this case (codex-кор P1, wave1): the
+# signal lands while the script is still blocked acquiring qwen's lock, i.e.
+# before its own traps used to be installed, so settings-lock.sh's shared
+# INT/TERM trap handled it and re-exited with a stale `$?` — the poll
+# `sleep`'s 0. uninstall.sh reads that 0 as "verifiably nothing left to do"
+# and deletes the clone hosting this very script, while in truth NOTHING was
+# written. 143, not 0, and not a generic 1 either.
+assert_eq "t8m: signal during the second-lock wait -> exit exactly 143" "143" "$t8m_rc"
+# Prompt, too: bailing out at the signal rather than waiting out the full
+# 8s lock timeout and reporting a generic acquisition failure.
+if [ "$elapsed" -lt 3 ]; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
@@ -3332,6 +3343,95 @@ assert_eq "t8o: claude entries stripped" "False" "$(json_get "$cf" "'SessionStar
 assert_eq "t8o: qwen entries stripped" "False" "$(json_get "$qf" "'SessionStart' in d.get('hooks', {})")"
 assert_eq "t8o: no leftover claude lockdir" "" "$([ -d "$cf.lockdir" ] && echo present)"
 assert_eq "t8o: no leftover qwen lockdir" "" "$([ -d "$qf.lockdir" ] && echo present)"
+
+# T8p. The forwarded signal must reach PYTHON, not a wrapper shell
+# (codex-кор P1, wave1). Same seam as T8k, but long enough to outlive the
+# script: TERM lands after claude's commit, while python sits in the
+# between-commits sleep. If the pid the script kills is the backgrounded
+# shell wrapping the python3 invocation rather than python3 itself, the
+# shell dies, the script exits 143 and its locks are considered released —
+# and python3 keeps running unsupervised, committing qwen SECONDS LATER,
+# outside every lock. So: after the script is gone and the seam has fully
+# elapsed, qwen must STILL carry its marker (python really died), while
+# claude's already-landed commit stays committed (the declared s4 residual).
+home="$(make_fake_home)"
+cf="$home/.claude/settings.json"
+mkdir -p "$home/.qwen"
+qf="$home/.qwen/settings.json"
+t8_marker_json "/skills/wiki/hooks/session-start.sh" >"$cf"
+t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+sha_q="$(_sha "$qf")"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=10 WIKI_HOOKS_LOCK_POLL=0.1 WIKI_HOOKS_TEST_SLEEP_BETWEEN_COMMITS=4 \
+  HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>&1 &
+t8p_pid=$!
+sleep 0.7
+kill -TERM "$t8p_pid" 2>/dev/null || true
+t8p_rc=0
+wait "$t8p_pid" 2>/dev/null || t8p_rc=$?
+assert_eq "t8p: signal in the between-commits window -> exit exactly 143" "143" "$t8p_rc"
+assert_eq "t8p: claude commit already landed before the signal" "False" "$(json_get "$cf" "'SessionStart' in d.get('hooks', {})")"
+# Past the far end of the seam: a surviving python3 would have committed
+# qwen by now.
+sleep 5
+assert_file_unchanged "t8p: qwen untouched after the seam elapsed (python died with the script, not orphaned)" "$qf" "$sha_q"
+assert_eq "t8p: no tmp remnant" "0" "$(find "$home" -name '.settings.json.*' | wc -l | tr -d ' ')"
+assert_eq "t8p: no leftover claude lockdir" "" "$([ -d "$cf.lockdir" ] && echo present)"
+assert_eq "t8p: no leftover qwen lockdir" "" "$([ -d "$qf.lockdir" ] && echo present)"
+
+# T8q. Static assert (companion to t8n): uninstall-hooks.sh's OWN INT/TERM
+# traps are installed at an earlier line than the FIRST wiki_lock_acquire
+# call. Lock acquisition can block for the whole WIKI_HOOKS_LOCK_TIMEOUT, so
+# a trap installed after it leaves that entire window governed by
+# settings-lock.sh's stale-`$?` handler — the false-success t8m pins
+# dynamically. This assert pins the ordering itself, so the regression
+# cannot come back by "just moving the trap block down".
+term_trap_line="$(grep -n '^trap _uninstall_on_term TERM$' "$UNINSTALL_HOOKS_SCRIPT" | head -1 | cut -d: -f1)"
+int_trap_line="$(grep -n '^trap _uninstall_on_int INT$' "$UNINSTALL_HOOKS_SCRIPT" | head -1 | cut -d: -f1)"
+first_lock_line="$(grep -n 'wiki_lock_acquire "\$CLAUDE_SETTINGS.lockdir"' "$UNINSTALL_HOOKS_SCRIPT" | head -1 | cut -d: -f1)"
+assert_eq "t8q: INT/TERM trap install sites found" "yes" \
+  "$([ -n "$term_trap_line" ] && [ -n "$int_trap_line" ] && echo yes || echo no)"
+assert_eq "t8q: TERM trap installed before the first wiki_lock_acquire" "yes" \
+  "$([ "${term_trap_line:-0}" -lt "${first_lock_line:-0}" ] && echo yes || echo no)"
+assert_eq "t8q: INT trap installed before the first wiki_lock_acquire" "yes" \
+  "$([ "${int_trap_line:-0}" -lt "${first_lock_line:-0}" ] && echo yes || echo no)"
+
+# T8r. The SECOND client's tmp-file creation fails -> the FIRST client is
+# rolled back (codex-кор P1, wave1). commit_client's tempfile.mkstemp() used
+# to sit outside the surrounding try, so an ENOSPC/EACCES/EROFS there
+# escaped as an exception instead of the False return main() keys rollback
+# on: claude stayed stripped, qwen stayed untouched, and the two config
+# files were left half-committed with a traceback for a diagnosis.
+# Reproduced deterministically with the between-commits seam: ~/.qwen is
+# made unwritable AFTER both locks were taken and claude was committed, so
+# only qwen's mkstemp fails. Skipped when running as root (mode bits do not
+# constrain uid 0).
+if [ "$(id -u)" != "0" ]; then
+  home="$(make_fake_home)"
+  cf="$home/.claude/settings.json"
+  mkdir -p "$home/.qwen"
+  qf="$home/.qwen/settings.json"
+  t8_marker_json "/skills/wiki/hooks/session-start.sh" >"$cf"
+  t8_marker_json "/skills/wiki/hooks/session-start-qwen.sh" >"$qf"
+  sha_c="$(_sha "$cf")"
+  sha_q="$(_sha "$qf")"
+  env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=10 WIKI_HOOKS_LOCK_POLL=0.1 WIKI_HOOKS_TEST_SLEEP_BETWEEN_COMMITS=3 \
+    HOME="$home" bash "$UNINSTALL_HOOKS_SCRIPT" >/dev/null 2>"t8r_err.$$" &
+  t8r_pid=$!
+  sleep 0.7
+  chmod 555 "$home/.qwen"
+  t8r_rc=0
+  wait "$t8r_pid" || t8r_rc=$?
+  chmod 755 "$home/.qwen"
+  t8r_err="$(cat "t8r_err.$$" 2>/dev/null)"
+  rm -f "t8r_err.$$"
+  assert_eq "t8r: second client's mkstemp failure -> non-zero" "1" "$t8r_rc"
+  assert_file_unchanged "t8r: claude rolled back to its pre-strip bytes" "$cf" "$sha_c"
+  assert_file_unchanged "t8r: qwen never written" "$qf" "$sha_q"
+  assert_contains "t8r: stderr reports the rollback" "$t8r_err" "rolled back"
+  assert_not_contains "t8r: no python traceback escaped commit_client" "$t8r_err" "Traceback"
+  assert_eq "t8r: no tmp remnant" "0" "$(find "$home" -name '.settings.json.*' | wc -l | tr -d ' ')"
+  rm -rf "$qf.lockdir" 2>/dev/null || true
+fi
 
 # ---- summary ----
 echo "" >&2

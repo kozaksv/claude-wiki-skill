@@ -222,6 +222,13 @@ wiki_lock_acquire() {
   local lock_max_age="${WIKI_HOOKS_LOCK_MAX_AGE:-3600}"
   local start elapsed pid age now
 
+  # One-shot, and deliberately skippable: a caller that needs INT/TERM to
+  # mean something more precise than "re-exit with whatever $? happens to
+  # be" — hooks/uninstall-hooks.sh, whose exit code gates deleting the clone
+  # it lives in — installs its own traps BEFORE its first acquire and
+  # pre-sets this flag so the ones below never replace them. Such a caller
+  # owns EXIT too and is responsible for reaching _wiki_lock_release_all
+  # from it.
   if [ "$_WIKI_LOCK_TRAP_INSTALLED" != "1" ]; then
     trap _wiki_lock_release_all EXIT INT TERM
     _WIKI_LOCK_TRAP_INSTALLED=1

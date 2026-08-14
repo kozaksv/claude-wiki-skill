@@ -56,18 +56,45 @@
 #   manual recovery.
 #
 #   Signal (INT/TERM) handling: this script installs its OWN INT/TERM traps
-#   (overriding, for those two signals only, the combined EXIT/INT/TERM trap
-#   settings-lock.sh installs on the first wiki_lock_acquire call — EXIT
-#   stays wired to that shared trap, so lock cleanup on the way out is
-#   unaffected) right before launching the python process in the
-#   background. Each trap records the honest exit code (130 for INT, 143
-#   for TERM) in a variable and forwards the same signal to the python
-#   child, then returns; control resumes right after the interrupted `wait`
-#   builtin, and the script exits with that RECORDED code explicitly —
-#   never by letting the shared trap read a stale `$?` (which could easily
-#   be 0 from some earlier successful command and falsely report success to
+#   BEFORE the first wiki_lock_acquire call — i.e. before ANY window in
+#   which a signal can arrive while this script is running — and pre-arms
+#   settings-lock.sh's `_WIKI_LOCK_TRAP_INSTALLED` guard so that library
+#   never replaces them mid-run (EXIT stays wired to lock cleanup, see
+#   below). Installing them later, right before the python launch as an
+#   earlier round of this task did, left the ENTIRE lock-acquisition phase
+#   governed by the library's combined EXIT/INT/TERM trap, which re-exits
+#   with a stale `$?`: a TERM arriving while this script was still waiting
+#   for the SECOND (qwen) lock exited **0** — a false success handed to
 #   uninstall.sh, which treats exit 0 as permission to delete the clone
-#   hosting this very recovery script). No automatic rollback runs on a
+#   hosting this very recovery script, even though nothing was ever
+#   written (codex-кор P1, wave1).
+#   Each trap records the honest exit code (130 for INT, 143 for TERM) and
+#   then either
+#     - forwards the same signal to the python child and RETURNS, when that
+#       child exists — control resumes right after the interrupted `wait`
+#       builtin and the script exits with the recorded code; or
+#     - exits with the recorded code IMMEDIATELY, when no python child
+#       exists yet (still acquiring locks, or between phases): there is no
+#       `wait` to resume and no work in flight, so waiting out the full
+#       lock timeout just to return a generic 1 would be both slower and
+#       less honest.
+#   The one moment the child's pid is not yet known but the child may
+#   already exist — between `run_uninstall_py … &` and `_UNINSTALL_PY_PID=$!`
+#   — is covered by _UNINSTALL_PY_LAUNCHING: the handler returns there
+#   rather than exiting, so the script always reaches its `wait` and never
+#   abandons a running python child.
+#   The forwarded signal reaches PYTHON, not a wrapper: run_uninstall_py
+#   `exec`s python3, so the pid `$!` records IS the python process. Without
+#   that exec, `$!` is the pid of the backgrounded shell running the
+#   function body, and killing it would leave python3 running unsupervised
+#   past the point this script considers its locks released (codex-кор P1,
+#   wave1).
+#   Finally, the EXIT trap is this script's own `_uninstall_on_exit`, which
+#   seeds the recorded signal code (when there is one) and then hands off
+#   to settings-lock.sh's `_wiki_lock_release_all` for the actual lock
+#   teardown. That makes the honest code win on EVERY exit path, including
+#   a signal that lands after the explicit check below but before the final
+#   `exit` runs. No automatic rollback runs on a
 #   signal (s4): the trap's job is exactly "clean tmp + locks, report an
 #   honest non-zero, ask for a re-run" — nothing more. A signal landing
 #   between the two commits leaves the already-committed client committed
@@ -186,6 +213,86 @@ fi
 # shellcheck source=lib/settings-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/settings-lock.sh"
 
+# ---------------------------------------------------------------------------
+# Signal handling — installed BEFORE the first wiki_lock_acquire, because the
+# lock-acquisition phase is itself a window a signal can land in (a contended
+# qwen lock blocks here for up to WIKI_HOOKS_LOCK_TIMEOUT seconds).
+#
+# settings-lock.sh installs `trap _wiki_lock_release_all EXIT INT TERM` on its
+# first wiki_lock_acquire call. That handler reads a STALE `$?` on INT/TERM —
+# whatever the last command happened to return, not "were we interrupted" —
+# and re-`exit`s with it. In the second-lock wait that value is the poll
+# `sleep`'s status, i.e. 0: a TERM there exited 0 and told uninstall.sh it was
+# safe to delete the clone hosting this very script, with nothing written
+# (codex-кор P1, wave1). So our handlers go in FIRST and the library's
+# one-shot guard is pre-armed below so wiki_lock_acquire will not replace
+# them; EXIT is ours too, but only as a thin wrapper that seeds the honest
+# code and delegates the actual lock teardown to _wiki_lock_release_all.
+#
+# A handler never rolls anything back (s4): its job is exactly "clean tmp +
+# locks, report an honest non-zero, ask for a re-run".
+_UNINSTALL_SIG_CODE=""
+_UNINSTALL_PY_PID=""
+# Set to 1 for the single command window in which the python child may
+# already exist while its pid is not yet recorded — see _uninstall_on_signal.
+_UNINSTALL_PY_LAUNCHING=0
+
+_uninstall_report_interrupt() {
+  echo "uninstall-hooks: interrupted — please re-run bash uninstall-hooks.sh" >&2
+}
+
+# _uninstall_on_signal <exit-code> <signal-name>
+_uninstall_on_signal() {
+  _UNINSTALL_SIG_CODE="$1"
+  if [ -n "$_UNINSTALL_PY_PID" ]; then
+    # Child known: forward the SAME signal to it (this is python3 itself,
+    # thanks to the exec in run_uninstall_py) so it dies promptly instead of
+    # finishing an unrelated amount of work first, and RETURN — the
+    # interrupted `wait` below resumes and the script exits with the code
+    # recorded above.
+    kill -"$2" "$_UNINSTALL_PY_PID" 2>/dev/null
+    return 0
+  fi
+  if [ "$_UNINSTALL_PY_LAUNCHING" = "1" ]; then
+    # The child may already be running but `$!` has not been assigned yet.
+    # Exiting here would abandon a live python3 process holding no
+    # supervision and, moments later, no locks. Return instead: the script
+    # proceeds into `wait` and exits with the recorded code afterwards.
+    return 0
+  fi
+  # No python child exists (still acquiring locks / between phases): nothing
+  # is in flight, so report and exit NOW with the honest code. The EXIT trap
+  # releases whatever locks are held.
+  _uninstall_report_interrupt
+  exit "$_UNINSTALL_SIG_CODE"
+}
+
+_uninstall_on_term() { _uninstall_on_signal 143 TERM; }
+_uninstall_on_int() { _uninstall_on_signal 130 INT; }
+
+# EXIT: seed the recorded signal code (when there is one) so that
+# _wiki_lock_release_all — which preserves whatever `$?` it sees — cannot
+# report success for an interrupted run. `( exit "$ec" )` is the only
+# portable way to hand a chosen `$?` to the next command; the subshell does
+# nothing else.
+_uninstall_on_exit() {
+  local ec=$?
+  if [ -n "$_UNINSTALL_SIG_CODE" ]; then
+    ec="$_UNINSTALL_SIG_CODE"
+  fi
+  ( exit "$ec" )
+  _wiki_lock_release_all
+}
+
+trap _uninstall_on_exit EXIT
+trap _uninstall_on_term TERM
+trap _uninstall_on_int INT
+# Pre-arm settings-lock.sh's one-shot guard: its wiki_lock_acquire installs
+# `trap _wiki_lock_release_all EXIT INT TERM` only while this is not "1", so
+# setting it here is what keeps the traps above in place for the whole run.
+# (Deliberate, documented coupling — see the guard in lib/settings-lock.sh.)
+_WIKI_LOCK_TRAP_INSTALLED=1
+
 # Locks are acquired ONLY for a client whose settings directory already
 # exists (plan point 9): a missing ~/.qwen means a missing settings.json,
 # unconditionally nochange, and this script never creates ~/.claude or
@@ -207,43 +314,6 @@ if [ -d "$QWEN_DIR" ]; then
   QWEN_LOCKED=1
 fi
 
-# ---------------------------------------------------------------------------
-# Signal handling for the window this single python invocation spans.
-#
-# settings-lock.sh's wiki_lock_acquire above already installed a combined
-# `trap _wiki_lock_release_all EXIT INT TERM` (on its first call). That
-# handler reads a STALE `$?` on INT/TERM — whatever the last command
-# happened to return, not "were we interrupted" — and re-`exit`s with it,
-# which could easily be 0. uninstall.sh treats exit 0 as permission to
-# delete the clone hosting this very script, so a signal must never be
-# allowed to masquerade as success.
-#
-# Overriding INT and TERM here (deliberately NOT EXIT, which stays wired to
-# the shared lock-cleanup trap) makes each of our handlers record the
-# HONEST code for the signal it caught and forward that same signal to the
-# python child so it can die promptly instead of finishing an unrelated
-# amount of work first. The handler does not itself `exit` — it returns,
-# the interrupted `wait` builtin resumes, and the script below explicitly
-# `exit`s with the recorded code, which is what finally fires the shared
-# EXIT trap and releases both locks.
-_UNINSTALL_SIG_CODE=""
-_UNINSTALL_PY_PID=""
-
-_uninstall_on_term() {
-  _UNINSTALL_SIG_CODE=143
-  [ -n "$_UNINSTALL_PY_PID" ] && kill -TERM "$_UNINSTALL_PY_PID" 2>/dev/null
-  true
-}
-
-_uninstall_on_int() {
-  _UNINSTALL_SIG_CODE=130
-  [ -n "$_UNINSTALL_PY_PID" ] && kill -INT "$_UNINSTALL_PY_PID" 2>/dev/null
-  true
-}
-
-trap _uninstall_on_term TERM
-trap _uninstall_on_int INT
-
 # Test-only seam (plan Task 8 point 4/13a): sleep AFTER the first planned
 # client's commit has fully landed and BEFORE the second one starts, so a
 # signal delivered in that window lands where the "signal between commits"
@@ -260,8 +330,18 @@ UNINSTALL_SEAM="${WIKI_HOOKS_TEST_SLEEP_BETWEEN_COMMITS:-0}"
 # nothing written] -> commit(planned clients, in argv order). A client
 # whose <lockedN> is "0" is never opened at all — this script holds no
 # lock on it, so nothing about it may be read or written (plan point 9).
+#
+# `exec` is load-bearing, not a micro-optimisation (codex-кор P1, wave1):
+# this function is ONLY ever invoked as a background job, and `$!` records
+# the pid of the subshell bash forks for it — NOT the pid of python3, which
+# without exec is a separate child of that subshell. Forwarding a caught
+# signal to `$!` would then kill the wrapping shell while python3 kept
+# running unsupervised, past the point this script's locks are considered
+# released. exec replaces the subshell with python3 itself, so `$!` IS the
+# python pid and `wait` reaps the process that does the work. Never call
+# this function in the foreground — it would replace THIS shell.
 run_uninstall_py() {
-  python3 - "$@" <<'PYEOF'
+  exec python3 - "$@" <<'PYEOF'
 import errno
 import json
 import os
@@ -425,7 +505,18 @@ def commit_client(p, ts):
     settings_file = p["settings_file"]
     dir_name = os.path.dirname(settings_file) or "."
 
-    tfd, tmp_path = tempfile.mkstemp(prefix=".settings.json.", dir=dir_name)
+    # mkstemp is INSIDE its own try (codex-кор P1, wave1): it can raise
+    # (ENOSPC, EACCES, EROFS, …) exactly like the write below, and an
+    # exception escaping commit_client would skip main()'s False-return path
+    # — the one that rolls the FIRST client back when the SECOND fails —
+    # leaving the two settings files in a half-committed state. Every failure
+    # in this function must leave by `return False`, never by propagating.
+    try:
+        tfd, tmp_path = tempfile.mkstemp(prefix=".settings.json.", dir=dir_name)
+    except OSError as exc:
+        sys.stderr.write("uninstall-hooks: %s: write failed: %s\n" % (client, exc))
+        return False
+
     try:
         if p["mode"] is not None and hasattr(os, "fchmod"):
             os.fchmod(tfd, p["mode"])
@@ -593,17 +684,25 @@ main()
 PYEOF
 }
 
+# _UNINSTALL_PY_LAUNCHING covers the one-command window between the launch
+# and the `$!` assignment: a signal there must NOT take the "exit
+# immediately" branch, or it would abandon a live python3 child.
+_UNINSTALL_PY_LAUNCHING=1
 run_uninstall_py "$MARKER" "$UNINSTALL_SEAM" \
   claude "$CLAUDE_SETTINGS" "" "$CLAUDE_LOCKED" \
   qwen "$QWEN_SETTINGS" "$LEGACY_QWEN_MARKER" "$QWEN_LOCKED" &
 _UNINSTALL_PY_PID=$!
+_UNINSTALL_PY_LAUNCHING=0
+# A signal delivered from here on is forwarded to the python child by the
+# traps above; this `wait` is interrupted, resumes, and the recorded code
+# wins below.
 wait "$_UNINSTALL_PY_PID"
 PY_RC=$?
 
 # A caught signal always wins over whatever python's own exit status
 # happened to be — see the signal-handling note above.
 if [ -n "$_UNINSTALL_SIG_CODE" ]; then
-  echo "uninstall-hooks: interrupted — please re-run bash uninstall-hooks.sh" >&2
+  _uninstall_report_interrupt
   exit "$_UNINSTALL_SIG_CODE"
 fi
 
