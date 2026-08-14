@@ -432,6 +432,14 @@ done
 grep -q 'never emit a separate РЕФЛЕКСІЯ block' "$ROOT/references/operation-lint.md" ||
   fail "lint reference must preserve anti-recursion rule"
 
+# t2: the legacy reflection field name must not return to skill contract text.
+# The pattern is assembled from two halves ON PURPOSE — the Done-when grep for the
+# old name covers tests/, so this file must not contain the contiguous literal
+# (a repo-wide or tests/-wide scope would also make this guard match itself).
+legacy_reflection_field="Автомат""изував"
+grep -rq "$legacy_reflection_field" "$ROOT/references/" "$ROOT/SKILL.md" &&
+  fail "legacy reflection field name must not appear in references/ or SKILL.md (renamed to Кристалізація: in 4.7.0)"
+
 grep -q '~/.gemini/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" ||
   fail "doc-extract fallback must include Gemini direct export"
 
