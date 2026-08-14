@@ -101,12 +101,13 @@ Exports created by install.sh:
     fallback either way. Nothing on disk changed — `wiki_version` stays
     `"4.0"` and there is no migration to run. Implementation: the
     client-aware branch lives in `hooks/post-tool-use.sh` (keys off the
-    firing tool name) and `hooks/lib/discover.sh` (keys off the
+    firing tool name to pick `$QWEN_PROJECT_DIR` or `$CLAUDE_PROJECT_DIR`
+    first) and in `discover_wiki` in `hooks/lib/discover.sh` (keys off the
     `WIKI_HOOK_CLIENT` transport signal), with
-    `hooks/session-start-qwen.sh` setting that signal when it wraps the
-    canonical `SessionStart` hook — landed together with this doc update
-    in the v461-anchor-precedence branch (tasks t1/t3/t4), not in a
-    later change.
+    `hooks/session-start-qwen.sh` passing `WIKI_HOOK_CLIENT=qwen` (command-
+    prefixed, not `export`ed) to the canonical `SessionStart` hook it wraps. Coverage for the full client ×
+    anchor-chain matrix is in `tests/hooks/run.sh`; the walkthrough is
+    scenario 3q3 in `tests/scenarios/cross-agent-discovery.md`.
 
 ### Migrating to v4.6 if you already use Qwen Code
 
