@@ -18,15 +18,86 @@ Canonical entrypoint:
 Exports created by install.sh:
   ~/.agents/skills/wiki  -> ~/.claude/skills/wiki
   ~/.gemini/skills/wiki  -> ~/.claude/skills/wiki
+  ~/.qwen/skills/wiki    -> ~/.claude/skills/wiki
 ```
 
 Назва директорії `claude-wiki-skill` — історичний артефакт першої публікації,
 а не вимога Claude Code. Функціонально це shared cross-agent canonical install,
-який однаково використовують Claude, Codex і Gemini.
+який однаково використовують Claude, Codex, Gemini і Qwen Code.
+
+Після встановлення: Qwen Code читає `~/.qwen/skills/wiki`.
 
 `doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `51f720ff620478688abf7d906d18112d45e28a90`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
+
+## What's new in v4.6
+
+- **Native Qwen Code support.** Qwen Code joins Claude, Codex, and Gemini as
+  a first-class cross-agent client. `wiki_version` lишається `"4.0"` —
+  behavior-only change, on-disk schema untouched.
+  - **Telemetry recognizes Qwen's tool names.** `hooks/post-tool-use.sh`
+    now unions Qwen's tool-call vocabulary (`read_file`, `edit`,
+    `write_file`, `notebook_edit`, `replace`) alongside Claude's
+    (`Read`, `Edit`, `Write`, `MultiEdit`) in one action-gate — `read_file`
+    counts as a view, the rest count as a patch. No `if … else` branching
+    per client: it's a plain union list plus a first-match-wins
+    precedence chain, same shape as before Qwen existed.
+  - **`hooks/session-start-qwen.sh` — an envelope-wrapper, not a
+    reimplementation.** Qwen Code's SessionStart hook contract expects a
+    single line of JSON on stdout
+    (`{"continue":true,"hookSpecificOutput":{...}}`), not Claude's
+    raw-stdout text. This wrapper calls the existing canonical
+    `hooks/session-start.sh` unchanged and repackages whatever it printed
+    into that envelope — wiki discovery and injection logic are not
+    duplicated.
+  - **`QWEN.md` joins discovery.** Agent-neutral pointer discovery
+    (`hooks/lib/discover.sh`, `references/discovery-versioning.md`) now
+    also reads `QWEN.md`, appended last in the priority chain after
+    `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — it only adds a lower-priority
+    fallback pointer source, it never masks or outranks an existing file.
+    `QWEN_PROJECT_DIR` is also recognized as a project-root anchor,
+    lowest-priority after `CLAUDE_PROJECT_DIR`.
+  - **Global hooks register into `~/.qwen/settings.json` too.**
+    `hooks/install-hooks.sh` performs a second, sequential registration
+    pass for Qwen — gated on Qwen actually being present (`qwen` on
+    `PATH`, or an existing `~/.qwen/settings.json`) — using the exact
+    same lock → read → backup → merge → atomic-write protocol already
+    used for Claude, not a second implementation of it.
+  - **Export to `~/.qwen/skills`.** `install.sh` creates
+    `~/.qwen/skills/wiki` (and `~/.qwen/skills/doc-extract`) as symlink
+    exports pointing at the canonical entrypoint, the same way it already
+    does for `~/.agents/skills` and `~/.gemini/skills`.
+  - **Shared mutex, `hooks/lib/settings-lock.sh`.** Every writer of a
+    client `settings.json` — `install-hooks.sh`, `uninstall-hooks.sh`,
+    and the orphan-guard recheck in `uninstall.sh` — sources one
+    `mkdir`-based lock library. Adding Qwen as a second settings file did
+    not add a second locking primitive: the same mutex now serializes
+    writes to `~/.qwen/settings.json` exactly as it already serialized
+    writes to `~/.claude/settings.json`.
+  - **Strengthened orphan-guard.** The `--remove-clones` orphan-hook
+    recheck in `uninstall.sh` now scans *both* `~/.claude/settings.json`
+    and `~/.qwen/settings.json` (plus the legacy Qwen wrapper-script
+    marker) before allowing clone deletion — an orphaned hook entry in
+    either file blocks removal, not just Claude's.
+
+### Migrating to v4.6 if you already use Qwen Code
+
+Якщо ви вже мали `~/.qwen/hooks/wiki-session-start.sh` як окремий,
+раніше вручну встановлений wrapper-скрипт:
+
+1. Оновіть скіл і виконайте `bash hooks/install-hooks.sh` (або просто
+   оновіть скіл — `install.sh` викликає це сам, best-effort, наприкінці
+   встановлення). Це реєструє канонічні
+   `~/.claude/skills/wiki/hooks/session-start-qwen.sh` і
+   `hooks/post-tool-use.sh` у `~/.qwen/settings.json` і **автоматично
+   знімає** legacy-entry, що вказував на старий wrapper.
+2. **Вручну видаліть** зовнішній файл
+   `~/.qwen/hooks/wiki-session-start.sh` — інсталер знімає лише
+   *посилання* на нього в `settings.json`, сам файл лежить поза canonical
+   install-топологією (чужий файл у чужому каталозі), тож видаляти його
+   автоматично небезпечно. Порожню `~/.qwen/hooks/` після цього можна
+   прибрати теж.
 
 ## What's new in v4.5
 
@@ -95,6 +166,15 @@ Exports created by install.sh:
    ```bash
    bash ~/.claude/skills/wiki/hooks/uninstall-hooks.sh
    ```
+
+**Другий settings-файл (v4.6+).** `hooks/install-hooks.sh` реєструє хуки не
+лише в `~/.claude/settings.json`, а й, другим послідовним проходом, у
+`~/.qwen/settings.json` — тим самим lock → read → backup → merge →
+atomic-write протоколом. Цей другий прохід **gated**: якщо на машині немає
+`qwen` на `PATH` і немає наявного `~/.qwen/settings.json`, крок для Qwen
+пропускається з info-рядком у stderr (`qwen not detected — skipping`) —
+**це не помилка**, install-hooks.sh все одно завершується успішно для
+Claude. Codex і Gemini лишаються text-only (там hook-реєстрації немає).
 
 Перевірити, що хуки реально активні: у новій сесії Claude Code в
 wiki-проєкті контекст має містити блок
@@ -284,8 +364,9 @@ curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/in
 - Claude читає `~/.claude/skills/wiki`
 - Codex читає `~/.agents/skills/wiki` → symlink на `~/.claude/skills/wiki`
 - Gemini CLI читає `~/.agents/skills/wiki` або `~/.gemini/skills/wiki` → symlink на `~/.claude/skills/wiki`
+- Qwen Code читає `~/.qwen/skills/wiki` → symlink на `~/.claude/skills/wiki`
 
-Усі ці entrypoints ведуть до одного canonical install. Оновлювати окремо Codex/Gemini не треба.
+Усі ці entrypoints ведуть до одного canonical install. Оновлювати окремо Codex/Gemini/Qwen не треба.
 
 Якщо canonical entrypoint уже є, але Codex/Gemini exports зникли, можна
 полагодити тільки symlinks без fetch/checkout:
@@ -325,6 +406,24 @@ pointer-файли і global skill exports, і якщо щось потребу�
 Якщо `~/.claude/skills/wiki` уже існує як plain file або real directory,
 installer не буде його перезаписувати. Перейменуйте або видаліть цей шлях
 вручну після перевірки вмісту, потім запустіть install повторно.
+
+Якщо `~/.qwen/settings.json` містить JSONC-коментарі (`//`, `/* */`) або
+трейлінг-коми, merge впаде: `hooks/install-hooks.sh` парсить settings.json
+як строгий JSON і fail-closed нічого не пише, якщо файл не парситься — жодних
+часткових/пошкоджених записів. Лікування: приберіть коментарі й трейлінг-коми
+вручну (або тимчасово перейменуйте/приберіть файл, дайте Qwen Code
+перестворити чистий `settings.json`), потім перезапустіть
+`hooks/install-hooks.sh`.
+
+Якщо orphan-guard у `uninstall.sh --remove-clones` повідомляє «could not
+acquire lock» на `~/.claude/settings.json.lockdir` або
+`~/.qwen/settings.json.lockdir` — це означає, що інший процес (паралельний
+`install-hooks.sh`/`uninstall-hooks.sh`) саме тримає той самий mutex, і
+guard навмисно відмовився видаляти clone-директорії, поки не зможе
+достовірно перевірити відсутність orphan-записів. Це не пошкодження стану;
+`~/claude-wiki-skill` лишається на місці. Повторний запуск безпечний —
+mkdir-мутекс ідемпотентний, і як тільки конкурентний held-lock звільниться,
+наступна спроба пройде.
 
 ## Ініціалізація wiki у проєкті
 
@@ -464,7 +563,22 @@ bash ~/claude-wiki-skill/uninstall.sh --remove-clones
 ```
 
 `uninstall.sh` ідемпотентний: missing symlink показує як already absent, plain file / real directory не перезаписує і не видаляє, а clone з локальними змінами пропускає.
-Foreign symlink'и у відомих слотах теж не видаляються: скрипт прибирає тільки ті entrypoints/exports, які вказують на expected canonical topology. Порожні `*/skills` підпапки може прибрати через `rmdir`, але parent-директорії `~/.claude`, `~/.agents`, `~/.gemini` лишаються на місці.
+Foreign symlink'и у відомих слотах теж не видаляються: скрипт прибирає тільки ті entrypoints/exports, які вказують на expected canonical topology. Порожні `*/skills` підпапки може прибрати через `rmdir`, але parent-директорії `~/.claude`, `~/.agents`, `~/.gemini`, `~/.qwen` лишаються на місці.
+
+**Що саме прибирається з `~/.qwen`.** Рівно два класи артефактів: symlink
+export `~/.qwen/skills/wiki` (і `~/.qwen/skills/doc-extract`, якщо
+встановлений), та наші hook-entries всередині `~/.qwen/settings.json`
+(SessionStart/PostToolUse записи, що вказують на
+`.../skills/wiki/hooks/`, плюс legacy-marker
+`~/.qwen/hooks/wiki-session-start.sh`, якщо він там ще лишався). Решта
+`~/.qwen/settings.json` — чужі ключі, налаштування самого Qwen Code,
+записи інших skills/hooks — **не чіпається**: merge і strip працюють на
+рівні окремих entries, не файлу цілком. Сам `~/.qwen/settings.json` як
+файл ніколи не видаляється, навіть якщо після strip у ньому не лишилось
+жодного нашого запису. Зовнішній `~/.qwen/hooks/wiki-session-start.sh`
+(файл, не запис у settings.json) `uninstall.sh` теж не видаляє — той самий
+принцип, що й для install: чужий файл у чужому каталозі прибирається
+вручну.
 
 ## Тести
 

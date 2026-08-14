@@ -186,6 +186,98 @@ create, query, lint, or cleanup a wiki.
   files, so Claude and Gemini receive the same resident wiki hint without extra
   user setup.
 
+## Scenario 3q: Qwen-only fresh project (pointer lives only in `QWEN.md`)
+
+### Setup
+
+- Project has no `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md`.
+- Session is clearly running under Qwen Code.
+- No `docs/wiki/` exists.
+
+### Expected behavior
+
+- Init proposes fresh bootstrap, exactly as it would for Codex-only or
+  Gemini-only (`QWEN.md` is an agent-neutral discovery target, not a
+  special case).
+- After confirmation, wiki files are created under `docs/wiki/`.
+- `QWEN.md` is created with the one-line `## Wiki` pointer.
+- `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` are also created as minimal
+  cross-agent pointer files, so Claude, Codex, and Gemini receive the same
+  resident wiki hint without extra user setup.
+- Before this scenario, the ONLY resident pointer to the wiki is the one
+  in `QWEN.md` — this is what the scenario name means by "pointer lives
+  only in `QWEN.md`": discovery must not require a `CLAUDE.md`/
+  `AGENTS.md`/`GEMINI.md` pointer to exist for a Qwen-only project to be
+  found on a re-run (e.g. `wiki status` immediately after this Init,
+  before the cross-agent sync files are read back) — `QWEN.md`'s own
+  `## Wiki` section resolves the wiki on its own, same as any other
+  instruction file.
+
+## Scenario 3q2: `CLAUDE.md` wins over `QWEN.md` when both point at valid, distinct wikis
+
+### Setup
+
+- Session is clearly running under Qwen Code.
+- `CLAUDE.md` points at `docs/wiki/schema.md`; `docs/wiki/index.md` and
+  `docs/wiki/schema.md` exist and are current.
+- `QWEN.md` ALSO exists and points at a different, also-valid location:
+  `docs/qwen-wiki/schema.md`; `docs/qwen-wiki/index.md` and
+  `docs/qwen-wiki/schema.md` exist and are current too (an unusual but
+  possible state — e.g. two independent inits happened at different
+  times).
+- User asks: `wiki status` (or any wiki operation).
+
+### Expected behavior
+
+- Discovery consults instruction files in the fixed priority order
+  `CLAUDE.md` → `AGENTS.md` → `GEMINI.md` → `QWEN.md`
+  (`hooks/lib/discover.sh` / `references/discovery-versioning.md`) and
+  picks the FIRST pointer that validates — not the file matching the
+  currently-running agent.
+- Because `CLAUDE.md`'s pointer to `docs/wiki/` validates (its
+  `index.md` resolves inside the repo boundary), it wins even though the
+  session is running under Qwen Code, not Claude. `QWEN.md`'s pointer to
+  `docs/qwen-wiki/` is never consulted for this resolution.
+- The wiki resolves to `docs/wiki/`, not `docs/qwen-wiki/`. No second wiki
+  is created, and `QWEN.md`'s own (separately valid) pointer is left
+  unchanged — it is not an error, merely lower-priority.
+- This mirrors the existing precedence for `CLAUDE.md` vs `AGENTS.md`/
+  `GEMINI.md`: agent-neutral discovery order is fixed and does not depend
+  on which agent is asking.
+
+## Scenario 3q3: `QWEN_PROJECT_DIR` as a project-root anchor
+
+### Setup
+
+- The wiki hooks (`hooks/session-start.sh` / `hooks/post-tool-use.sh` via
+  `hooks/lib/discover.sh`'s `discover_wiki`) run under Qwen Code, which
+  sets the environment variable `QWEN_PROJECT_DIR` to the project root
+  but does **not** set `CLAUDE_PROJECT_DIR` (that variable is Claude
+  Code-specific).
+- The hook process's own working directory is NOT the project root (e.g.
+  it inherited a shell `cwd` from somewhere else, or the harness invokes
+  the hook from a different directory than the project).
+- `$QWEN_PROJECT_DIR` itself is a valid project root: it contains `.git/`
+  and `docs/wiki/index.md`.
+
+### Expected behavior
+
+- `discover_wiki`'s start-directory fallback chain is
+  `$CLAUDE_PROJECT_DIR` → `$QWEN_PROJECT_DIR` → `pwd`. Since
+  `CLAUDE_PROJECT_DIR` is unset, it falls through to `QWEN_PROJECT_DIR`
+  and starts the walk-up there, NOT at the process's actual `pwd`.
+- The wiki at `$QWEN_PROJECT_DIR/docs/wiki/` is found and injected /
+  telemetry-updated correctly, even though `pwd` alone would have looked
+  in the wrong directory.
+- If BOTH `CLAUDE_PROJECT_DIR` and `QWEN_PROJECT_DIR` happen to be set
+  (unusual, but the chain is a plain fallback, not an exclusive
+  either/or), `CLAUDE_PROJECT_DIR` wins — it is checked first in the
+  chain regardless of which agent is actually running.
+- Any other stdin-provided anchor (e.g. a `cwd` field passed on the hook's
+  stdin JSON payload) is a separate, lower-priority fallback used only
+  when neither env var is set; `QWEN_PROJECT_DIR` is not conditioned on
+  that field being present or absent.
+
 ## Scenario 3c: Claude init prepares Codex discovery
 
 ### Setup

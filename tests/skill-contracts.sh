@@ -707,6 +707,16 @@ grep -qF '~/.qwen' "$ROOT/references/operation-doctor.md" ||
 grep -q 'QWEN.md' "$ROOT/references/operation-ingest-source.md" ||
   fail "operation-ingest-source.md must cover QWEN.md as an agent instruction file"
 
+# t16-readme-scenarios: README must document Qwen Code support.
+grep -q "What's new in v4.6" "$ROOT/README.md" ||
+  fail "README.md must document Qwen Code support under a What's new in v4.6 heading"
+
+grep -q '~/.qwen/skills' "$ROOT/README.md" ||
+  fail "README.md must document the ~/.qwen/skills export"
+
+grep -q 'wiki-session-start.sh' "$ROOT/README.md" ||
+  fail "README must document the manual legacy-wrapper removal step"
+
 # Wire the executable hooks test suite into the project gate — it must run
 # as the last step so all of the above static guards fail fast first.
 bash "$ROOT/tests/hooks/run.sh" || fail "hooks executable tests failed"
