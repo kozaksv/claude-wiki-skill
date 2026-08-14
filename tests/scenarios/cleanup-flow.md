@@ -62,8 +62,8 @@ User: `wiki status`.
 1. Skill prints status (no `view_count` bumps for surveyed pages — `wiki
    status` is a meta-operation). User picks `[a]` Top-5 most edited.
 2. Delegates to `## Operation: Lint` content-verification. Sort `report()` by
-   `patch_count desc, last_patched_at asc`. Filter `state == "active"` and
-   `protected == false`. Top entry: `template-course-flow.md`.
+   `patch_count desc, last_patched_at asc`. Filter `protected == false`. Top
+   entry: `template-course-flow.md`.
 3. **Read** `concepts/template-course-flow.md` in full → bumps
    `view_count` to its prior value + 1.
 4. Verify each claim:

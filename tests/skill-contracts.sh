@@ -412,9 +412,10 @@ fi
 grep -q 'set_skill_link' "$ROOT/references/crystallization.md" &&
   fail "crystallization must not reference installer skill helpers (skill tier removed in 4.4)"
 
-# t3: the dead subset filter must not come back into the reference text.
-# Scope is references/ only — a tests/-wide scope would match this guard itself.
-grep -rq 'state == "active"' "$ROOT/references/" &&
+# t3/t6: the dead subset filter must not come back into the reference or
+# scenario text. Scope is references/ and tests/scenarios/ only — a
+# tests/-wide (or repo-wide) scope would match this guard itself.
+grep -rq 'state == "active"' "$ROOT/references/" "$ROOT/tests/scenarios/" &&
   fail "lint / wiki status subsets must filter on protected == false only (dead state filter removed in 4.7.0)"
 
 grep -rq '🧹' "$ROOT/references/" &&
@@ -737,6 +738,13 @@ grep -q '~/.qwen/skills' "$ROOT/README.md" ||
 
 grep -q 'wiki-session-start.sh' "$ROOT/README.md" ||
   fail "README must document the manual legacy-wrapper removal step"
+
+# t6: the inherited misspelling of «кристалізація» must not come back (r8).
+# Two-half literal ON PURPOSE — the Done-when grep covers tests/, and a
+# tests/-wide scope would make this guard match itself.
+legacy_spelling="крихт""аліз"
+grep -rqi "$legacy_spelling" "$ROOT/SKILL.md" "$ROOT/README.md" "$ROOT/references/" "$ROOT/tests/scenarios/" &&
+  fail "use «кристалізація» — the inherited misspelling must not appear in skill or scenario text (r8)"
 
 # Wire the executable hooks test suite into the project gate — it must run
 # as the last step so all of the above static guards fail fast first.

@@ -184,12 +184,12 @@ bash», «create a script for this».
 4. If the user insists on a script regardless, the agent can create it as a
    one-off file (the user's explicit request overrides skill conventions),
    but reflection's `Кристалізація:` field records `нічого — юзер попросив
-   скрипт поза tier-моделлю` rather than fabricating a tier name.
+   скрипт, а скрипти не кристалізуються` rather than fabricating a tier name.
 
 ### Expected output (illustration)
 
 ```
-Скіл більше не пропонує user-runnable скрипти як крихталізацію — вони перекидають mechanical work назад на тебе. Замість того ось рівноцінний варіант:
+Скіл більше не пропонує user-runnable скрипти як кристалізацію — вони перекидають mechanical work назад на тебе. Замість того ось рівноцінний варіант:
 
 🔁 Помічаю патерн: ...
    wiki: docs/wiki/concepts/{name}.md (з готовим bash-блоком всередині, який активний агент читає і виконує сам наступного разу)

@@ -68,8 +68,8 @@ User: `wiki lint швидко`.
 ### Expected skill behavior
 
 1. Sort `report()` by `patch_count desc, last_patched_at asc`. Filter to
-   `state == "active"` and `protected == false`, then take the top 10. Top
-   entry: `purchase-flow.md` (only candidate here).
+   `protected == false`, then take the top 10. Top entry:
+   `purchase-flow.md` (only candidate here).
 2. **Read** `concepts/purchase-flow.md` in full → bumps `view_count` to 4
    (this is a real consultation, not a meta-op).
 3. Verify each claim:
