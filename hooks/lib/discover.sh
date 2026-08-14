@@ -145,15 +145,26 @@ _wiki_disc_candidate() {
 }
 
 discover_wiki() {
-  # $1 = optional start_dir. Fallback precedence: $CLAUDE_PROJECT_DIR, then
-  # $QWEN_PROJECT_DIR, then pwd. CLAUDE_PROJECT_DIR always wins when both
-  # are set (spec edge 11) — this is a plain if-chain, no command
-  # substitution feeds an assignment directly, so it stays safe under
-  # `set -euo pipefail` (an unset/empty var under `:-` never trips set -e).
+  # $1 = optional start_dir. WIKI_HOOK_CLIENT is a private transport signal
+  # from the canonical hook to this lib — NOT a user-facing setting — and is
+  # accepted only on exact equality with "qwen". It orders exactly the two
+  # env fallback rungs below (both read from the same environment); both
+  # stay in the chain as each other's mutual fallback. Default (no signal,
+  # or any value other than exact "qwen"): $CLAUDE_PROJECT_DIR, then
+  # $QWEN_PROJECT_DIR. With WIKI_HOOK_CLIENT=qwen: $QWEN_PROJECT_DIR, then
+  # $CLAUDE_PROJECT_DIR. Either way pwd is the final fallback — this is a
+  # plain if-chain, no command substitution feeds an assignment directly, so
+  # it stays safe under `set -euo pipefail` (an unset/empty var under `:-`
+  # never trips set -e).
   local start="${1:-}"
   if [ -z "$start" ]; then
-    start="${CLAUDE_PROJECT_DIR:-}"
-    [ -n "$start" ] || start="${QWEN_PROJECT_DIR:-}"
+    if [ "${WIKI_HOOK_CLIENT:-}" = "qwen" ]; then
+      start="${QWEN_PROJECT_DIR:-}"
+      [ -n "$start" ] || start="${CLAUDE_PROJECT_DIR:-}"
+    else
+      start="${CLAUDE_PROJECT_DIR:-}"
+      [ -n "$start" ] || start="${QWEN_PROJECT_DIR:-}"
+    fi
     [ -n "$start" ] || start="$(pwd)"
   fi
   [ -d "$start" ] || return 0

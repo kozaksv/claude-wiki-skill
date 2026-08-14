@@ -566,16 +566,85 @@ out="$(
 )"
 assert_eq "QWEN_PROJECT_DIR anchors discovery when CLAUDE_PROJECT_DIR is unset" "$expected" "$out"
 
+# D1. WIKI_HOOK_CLIENT=qwen with both CLAUDE_PROJECT_DIR and QWEN_PROJECT_DIR
+#     set to DIFFERENT fixtures: the private transport signal flips the
+#     fallback order so QWEN_PROJECT_DIR anchors discovery instead.
+claude_fixture_d1="$(make_fixture)"
+qwen_fixture_d1="$(make_fixture)"
+expected="$(real "$qwen_fixture_d1/docs/wiki")"
+out="$(
+  env WIKI_HOOK_CLIENT=qwen CLAUDE_PROJECT_DIR="$claude_fixture_d1" QWEN_PROJECT_DIR="$qwen_fixture_d1" \
+    bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
+)"
+assert_eq "WIKI_HOOK_CLIENT=qwen: QWEN_PROJECT_DIR wins over CLAUDE_PROJECT_DIR when both are set" "$expected" "$out"
+
 # 18. both CLAUDE_PROJECT_DIR and QWEN_PROJECT_DIR set to DIFFERENT
-#     fixtures: CLAUDE_PROJECT_DIR wins (spec edge 11).
+#     fixtures: CLAUDE_PROJECT_DIR wins (v4.6.1 default-гілка: без
+#     транспортного сигналу порядок незмінний).
 claude_fixture="$(make_fixture)"
 qwen_fixture="$(make_fixture)"
 expected="$(real "$claude_fixture/docs/wiki")"
 out="$(
-  CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" \
+  env -u WIKI_HOOK_CLIENT CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" \
     bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
 )"
-assert_eq "CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR when both are set" "$expected" "$out"
+assert_eq "CLAUDE_PROJECT_DIR wins over QWEN_PROJECT_DIR when both are set and WIKI_HOOK_CLIENT is not set" "$expected" "$out"
+
+# D3. WIKI_HOOK_CLIENT accepts only the exact string "qwen" -- any other
+#     value (wrong case, trailing whitespace, extra suffix, empty, or
+#     unset) falls through to the default CLAUDE_PROJECT_DIR-first order.
+claude_fixture_d3="$(make_fixture)"
+qwen_fixture_d3="$(make_fixture)"
+expected="$(real "$claude_fixture_d3/docs/wiki")"
+for _d3_case in "Qwen" "QWEN" "qwen " "qwen2" "" "__UNSET__"; do
+  if [ "$_d3_case" = "__UNSET__" ]; then
+    out="$(
+      env -u WIKI_HOOK_CLIENT CLAUDE_PROJECT_DIR="$claude_fixture_d3" QWEN_PROJECT_DIR="$qwen_fixture_d3" \
+        bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
+    )"
+    assert_eq "WIKI_HOOK_CLIENT unset falls back to default CLAUDE_PROJECT_DIR-first order" "$expected" "$out"
+  else
+    out="$(
+      env WIKI_HOOK_CLIENT="$_d3_case" CLAUDE_PROJECT_DIR="$claude_fixture_d3" QWEN_PROJECT_DIR="$qwen_fixture_d3" \
+        bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
+    )"
+    assert_eq "WIKI_HOOK_CLIENT=[$_d3_case] (not exact \"qwen\") falls back to default CLAUDE_PROJECT_DIR-first order" "$expected" "$out"
+  fi
+done
+
+# D4. WIKI_HOOK_CLIENT=qwen with QWEN_PROJECT_DIR unset and only
+#     CLAUDE_PROJECT_DIR set: the qwen-first order falls through to
+#     CLAUDE_PROJECT_DIR as its own fallback rung.
+claude_fixture_d4="$(make_fixture)"
+expected="$(real "$claude_fixture_d4/docs/wiki")"
+out="$(
+  env -u QWEN_PROJECT_DIR WIKI_HOOK_CLIENT=qwen CLAUDE_PROJECT_DIR="$claude_fixture_d4" \
+    bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
+)"
+assert_eq "WIKI_HOOK_CLIENT=qwen with only CLAUDE_PROJECT_DIR set: falls back to CLAUDE_PROJECT_DIR" "$expected" "$out"
+
+# D5. WIKI_HOOK_CLIENT=qwen with both project-dir env vars unset: discovery
+#     falls all the way through to pwd, unchanged by the transport signal.
+fixture_d5="$(make_fixture)"
+expected="$(real "$fixture_d5/docs/wiki")"
+out="$(
+  cd "$fixture_d5" && env -u CLAUDE_PROJECT_DIR -u QWEN_PROJECT_DIR WIKI_HOOK_CLIENT=qwen \
+    bash -c "source '$DISCOVER_LIB'; discover_wiki" 2>/dev/null
+)"
+assert_eq "WIKI_HOOK_CLIENT=qwen with both project-dir vars unset: falls back to pwd" "$expected" "$out"
+
+# D6. WIKI_HOOK_CLIENT=qwen with both project-dir env vars set AND an
+#     explicit \$1 start_dir: the explicit argument still wins over every
+#     env fallback, transport signal included.
+claude_fixture_d6="$(make_fixture)"
+qwen_fixture_d6="$(make_fixture)"
+explicit_fixture_d6="$(make_fixture)"
+expected="$(real "$explicit_fixture_d6/docs/wiki")"
+out="$(
+  env WIKI_HOOK_CLIENT=qwen CLAUDE_PROJECT_DIR="$claude_fixture_d6" QWEN_PROJECT_DIR="$qwen_fixture_d6" \
+    bash -c "source '$DISCOVER_LIB'; discover_wiki \"\$1\"" _ "$explicit_fixture_d6" 2>/dev/null
+)"
+assert_eq "WIKI_HOOK_CLIENT=qwen: explicit \$1 start_dir wins over both env fallbacks" "$expected" "$out"
 
 # 19. out-of-bounds pointer in QWEN.md: pointer resolves outside the git
 #     boundary -> rejected, empty stdout, stderr carries the boundary note
