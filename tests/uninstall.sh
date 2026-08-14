@@ -547,4 +547,199 @@ grep -q "не вдалося взяти лок" "$TMP/uninstall-claude-only.log"
 }
 expect_no_lockdirs "claude-only run"
 
+# D-2. Mirror of D: qwen-only machine, no ~/.claude at all -> only the qwen
+#      lock is taken, ~/.claude is NOT created just to host a lockdir, and
+#      the clean clone is still removed.
+setup_installed_tree
+rm -rf "$HOME_DIR/.claude"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-qwen-only.log" 2>&1
+expect_missing "$HOME_DIR/claude-wiki-skill"
+expect_missing "$HOME_DIR/.claude"
+grep -q "не вдалося взяти лок" "$TMP/uninstall-qwen-only.log" && {
+  echo "expected no lock failure on a qwen-only machine"
+  exit 1
+}
+expect_no_lockdirs "qwen-only run"
+
+# E. No lock nesting (self-deadlock regression). The REAL hooks/
+#    uninstall-hooks.sh (T8) — which takes the SAME two settings locks
+#    itself — is present in the verified clone. Step 1 of uninstall.sh calls
+#    it OUTSIDE the critical section, so it must acquire, use, and fully
+#    release both locks before the critical section ever asks for them
+#    again. If that call were ever moved inside the critical section, this
+#    run would block for the full timeout and fail with "could not acquire
+#    lock".
+if command -v python3 >/dev/null 2>&1; then
+  setup_installed_tree
+  mkdir -p "$HOME_DIR/claude-wiki-skill/hooks/lib"
+  cp "$ROOT/hooks/uninstall-hooks.sh" "$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh"
+  cp "$ROOT/hooks/lib/settings-lock.sh" "$HOME_DIR/claude-wiki-skill/hooks/lib/settings-lock.sh"
+  chmod +x "$HOME_DIR/claude-wiki-skill/hooks/uninstall-hooks.sh"
+  printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+  printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+  _t0=$(date +%s)
+  PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" WIKI_HOOKS_LOCK_TIMEOUT=6 WIKI_HOOKS_LOCK_POLL=0.1 \
+    bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-selfdeadlock.log" 2>&1
+  _t1=$(date +%s)
+  grep -q "could not acquire lock" "$TMP/uninstall-selfdeadlock.log" && {
+    echo "expected no self-deadlock between uninstall.sh and its own hooks/uninstall-hooks.sh"
+    exit 1
+  }
+  [ $((_t1 - _t0)) -le 4 ] || {
+    echo "expected the self-deadlock case to finish noticeably faster than the 6s timeout, took $((_t1 - _t0))s"
+    exit 1
+  }
+  expect_missing "$HOME_DIR/claude-wiki-skill"
+  expect_no_lockdirs "self-deadlock run"
+else
+  echo "uninstall: skipping self-deadlock case (python3 unavailable)"
+fi
+
+# F. A non-regular file inside the critical section does not starve the
+#    locks: once the guard finishes (unverifiable -> fail-closed), BOTH
+#    lockdirs are released and a parallel installer can acquire them right
+#    after, without "could not acquire lock".
+setup_installed_tree
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+rm -f "$HOME_DIR/.qwen/settings.json"
+mkfifo "$HOME_DIR/.qwen/settings.json"
+PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/uninstall-fifo-locks.log" 2>&1
+expect_exists "$HOME_DIR/claude-wiki-skill"
+expect_no_lockdirs "fifo-in-section run"
+grep -q "не вдалося прочитати $HOME_DIR/.qwen/settings.json" "$TMP/uninstall-fifo-locks.log" || {
+  echo "expected the fifo-in-section case to still report the qwen file as unverifiable"
+  exit 1
+}
+rm -f "$HOME_DIR/.qwen/settings.json"
+printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+if command -v python3 >/dev/null 2>&1; then
+  HOME="$HOME_DIR" WIKI_HOOKS_LOCK_TIMEOUT=5 WIKI_HOOKS_LOCK_POLL=0.1 \
+    bash "$ROOT/hooks/install-hooks.sh" >"$TMP/uninstall-fifo-followup-install.log" 2>&1
+  grep -q "could not acquire lock" "$TMP/uninstall-fifo-followup-install.log" && {
+    echo "expected the installer to acquire both locks freely after the fifo-in-section guard released them"
+    exit 1
+  }
+fi
+
+# G/G-2. Race, second half: uninstall.sh takes BOTH locks FIRST (doc plan
+#    scenario B — proof the window is hermetic) and, once it releases them,
+#    a concurrent installer's entries written afterward are inert (scenario
+#    B-2 — machine-checked boundary of the invariant, not just prose).
+if command -v python3 >/dev/null 2>&1; then
+  _assert_inert_entries() {
+    local settings="$1" label="$2" cmd out err_file
+    err_file="$TMP/inert-stderr-$$"
+    while IFS= read -r cmd; do
+      [ -n "$cmd" ] || continue
+      case "$cmd" in
+        "test -x "*) : ;;
+        *)
+          echo "$label: expected orphaned entry to start with 'test -x ', got: $cmd"
+          exit 1
+          ;;
+      esac
+      out="$(bash -c "$cmd" </dev/null 2>"$err_file")" || {
+        echo "$label: expected inert entry to exit 0, got $? for: $cmd"
+        exit 1
+      }
+      [ -z "$out" ] || {
+        echo "$label: expected empty stdout from inert entry, got: $out"
+        exit 1
+      }
+      [ ! -s "$err_file" ] || {
+        echo "$label: expected empty stderr from inert entry, got: $(cat "$err_file")"
+        exit 1
+      }
+      rm -f "$err_file"
+    done < <(python3 - "$settings" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+for event in ("SessionStart", "PostToolUse"):
+    for entry in data.get("hooks", {}).get(event, []) or []:
+        for h in entry.get("hooks", []) or []:
+            cmd = h.get("command", "")
+            if "/skills/wiki/hooks/" in cmd:
+                print(cmd)
+PY
+)
+  }
+
+  setup_installed_tree
+  printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.claude/settings.json"
+  printf '%s\n' "$NO_MARKER_SNIPPET" >"$HOME_DIR/.qwen/settings.json"
+  _claude_before="$(cat "$HOME_DIR/.claude/settings.json")"
+  _qwen_before="$(cat "$HOME_DIR/.qwen/settings.json")"
+
+  ( PATH="$BIN_DIR:$PATH" HOME="$HOME_DIR" WIKI_UNINSTALL_TEST_SLEEP_IN_GUARD=2 \
+      WIKI_HOOKS_LOCK_TIMEOUT=20 WIKI_HOOKS_LOCK_POLL=0.1 \
+      bash "$ROOT/uninstall.sh" --remove-clones >"$TMP/window-uninstall.log" 2>&1 ) &
+  _uninstall_pid=$!
+  sleep 0.3
+  # No sleep-seam here on purpose: this installer races the guard's window
+  # for real, not on a scheduled delay.
+  ( HOME="$HOME_DIR" WIKI_HOOKS_LOCK_TIMEOUT=20 WIKI_HOOKS_LOCK_POLL=0.1 \
+      bash "$ROOT/hooks/install-hooks.sh" >"$TMP/window-install.log" 2>&1 ) &
+  _install_pid=$!
+  sleep 0.7
+
+  # Inside the window (~1s after the guard started, well before its 2s
+  # sleep-seam ends): both locks are still held, so nothing may have
+  # changed either settings file yet.
+  [ "$(cat "$HOME_DIR/.claude/settings.json")" = "$_claude_before" ] || {
+    echo "expected the claude settings file to be untouched while the guard holds both locks"
+    exit 1
+  }
+  [ "$(cat "$HOME_DIR/.qwen/settings.json")" = "$_qwen_before" ] || {
+    echo "expected the qwen settings file to be untouched while the guard holds both locks"
+    exit 1
+  }
+  grep -q '/skills/wiki/hooks/' "$HOME_DIR/.claude/settings.json" && {
+    echo "expected no marker in the claude settings file inside the guard window"
+    exit 1
+  }
+  grep -q '/skills/wiki/hooks/' "$HOME_DIR/.qwen/settings.json" && {
+    echo "expected no marker in the qwen settings file inside the guard window"
+    exit 1
+  }
+
+  _urc=0
+  wait "$_uninstall_pid" || _urc=$?
+  _irc=0
+  wait "$_install_pid" || _irc=$?
+  [ "$_urc" -eq 0 ] || {
+    echo "expected uninstall.sh to exit 0 in the hermetic-window race, got $_urc"
+    exit 1
+  }
+  [ "$_irc" -eq 0 ] || {
+    echo "expected install-hooks.sh to exit 0 once it got the locks after the window, got $_irc"
+    exit 1
+  }
+  expect_missing "$HOME_DIR/claude-wiki-skill"
+  expect_no_lockdirs "hermetic-window race"
+
+  # G-2: the installer that unblocked right after the clone vanished wrote
+  # fresh entries pointing at a canonical path that no longer resolves.
+  # Prove those entries are inert (fail open, touch nothing), then prove a
+  # normal uninstall-hooks.sh run from the working tree sweeps them to zero.
+  _assert_inert_entries "$HOME_DIR/.claude/settings.json" "claude (post-window)"
+  _assert_inert_entries "$HOME_DIR/.qwen/settings.json" "qwen (post-window)"
+
+  HOME="$HOME_DIR" WIKI_HOOKS_LOCK_TIMEOUT=10 bash "$ROOT/hooks/uninstall-hooks.sh" \
+    >"$TMP/window-cleanup.log" 2>&1
+  grep -q '/skills/wiki/hooks/' "$HOME_DIR/.claude/settings.json" && {
+    echo "expected the post-window claude entry to be swept by hooks/uninstall-hooks.sh"
+    exit 1
+  }
+  grep -q '/skills/wiki/hooks/' "$HOME_DIR/.qwen/settings.json" && {
+    echo "expected the post-window qwen entry to be swept by hooks/uninstall-hooks.sh"
+    exit 1
+  }
+else
+  echo "uninstall: skipping hermetic-window race + inert-entries case (python3 unavailable)"
+fi
+
 echo "uninstall: ok"
