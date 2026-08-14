@@ -2961,7 +2961,12 @@ foreign_pid=$!
 mkdir -p "$lockdir"
 echo "$foreign_pid" >"$lockdir/pid"
 
-env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=8 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$clone_h/hooks/install-hooks.sh" >/dev/null 2>"t6h_err.$$" &
+# stderr goes to a file under the fake HOME, never to the suite's own cwd:
+# an interrupt between the redirect and the `rm -f` below used to strand a
+# `t6h_err.<pid>` in whatever directory the suite was launched from, which
+# then shows up as an untracked file in the repository itself.
+t6h_err_file="$home/t6h_err.$$"
+env WIKI_HOOKS_FORCE_MKDIR_LOCK=1 WIKI_HOOKS_LOCK_TIMEOUT=8 WIKI_HOOKS_LOCK_POLL=0.1 HOME="$home" bash "$clone_h/hooks/install-hooks.sh" >/dev/null 2>"$t6h_err_file" &
 waiter_pid=$!
 
 sleep 0.5
@@ -2973,8 +2978,8 @@ wait "$waiter_pid" || rc=$?
 kill "$foreign_pid" 2>/dev/null || true
 wait "$foreign_pid" 2>/dev/null || true
 
-t6h_err="$(cat "t6h_err.$$" 2>/dev/null)"
-rm -f "t6h_err.$$"
+t6h_err="$(cat "$t6h_err_file" 2>/dev/null)"
+rm -f "$t6h_err_file"
 assert_eq "t6: hosting clone deleted under lock -> non-zero exit" "1" "$rc"
 assert_contains "t6: hosting clone deleted under lock -> stderr names the hosting clone" "$t6h_err" "skill clone hosting this script vanished"
 assert_file_unchanged "t6: hosting clone deleted under lock -> settings.json byte-identical" "$f" "$sha_before"
