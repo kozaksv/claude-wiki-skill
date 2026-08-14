@@ -31,6 +31,13 @@ Exports created by install.sh:
 
 `~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
 
+## What's new in v4.7
+
+- **Поле блоку РЕФЛЕКСІЯ зветься `Кристалізація:`.** Перейменування agent-visible
+  контракту: блок друкується у хід і ніде не зберігається, тому на диску нічого не
+  змінюється — `wiki_version` лишається `"4.0"`, міграцій нуль. Разом із цим
+  прибрані залишки вирізаної tier-моделі кристалізації з довідки скіла.
+
 ## What's new in v4.6
 
 - **Native Qwen Code support.** Qwen Code joins Claude, Codex, and Gemini as
@@ -306,15 +313,15 @@ wiki-проєкті контекст має містити блок
 v4.1 describes behavior changes that shipped on the path to v4.2. There is no
 separate `v4.1.0` install tag; use `v4.2.0` for the stable cross-agent release.
 
-- **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до wiki-only: єдиний target крихталізації — `wiki`-сторінка. User-runnable скрипти (`scripts/*.sh` / `*.py`) і окремий skill-tier видалено як target крихталізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/crystallization.md`. *(Перероблено у v4.1 і v4.4.)*
+- **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до wiki-only: єдиний target кристалізації — `wiki`-сторінка. User-runnable скрипти (`scripts/*.sh` / `*.py`) і окремий skill-tier видалено як target кристалізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/crystallization.md`. *(Перероблено у v4.1 і v4.4.)*
 - **Proactive query trigger.** Скіл активується на природних українських формах питання («як налаштувати X», «що таке X», «де лежить Y», «пам'ятаєш як ми Z», «потрібно знову W», «розкажи про…») — без вимоги вживати ключове слово "wiki" / "вікі". Master rule: query перед генерацією проєктно-специфічного контенту з пам'яті, навіть коли «знаю відповідь». Деталі: `references/operation-query.md`.
-- **Discovery ↔ crystallization pair.** Коли query не знаходить релевантної сторінки — це сигнал-кандидат для крихталізації після того, як агент відповість. Пара двох половин одного циклу: query читає збережене, crystallization зберігає re-derived.
+- **Discovery ↔ crystallization pair.** Коли query не знаходить релевантної сторінки — це сигнал-кандидат для кристалізації після того, як агент відповість. Пара двох половин одного циклу: query читає збережене, crystallization зберігає re-derived.
 
 ## What's new in v4.0
 
 - **РЕФЛЕКСІЯ block** — після кожного edit/write проходу скіл вмикає короткий refleksiya-крок з anti-noise rule (read-only блоки не тригерять reflection).
 - **Telemetry sidecar (`.usage.json`)** — gitignored per-clone metadata: `view_count` / `use_count` / `patch_count` (з timestamp'ами `last_viewed_at` / `last_used_at` / `last_patched_at`) для кожної сторінки. Для пріоритизації, не для flagging.
-- **Tiered crystallization** — патерн повторюється 3+ разів → пропозиція (y/n/пізніше) створити concept-сторінку, helper-скрипт або під-скіл. Ніколи silent. *(Перероблено у v4.1 і v4.4 — див. вище.)*
+- **Tiered crystallization** — патерн повторюється 3+ разів → пропозиція (y/n/пізніше) створити concept-сторінку, helper-скрипт або під-скіл. Ніколи silent. *(Скасовано: tier-модель прибрана у v4.1 і v4.4 — скриптова й skill-ціль більше не пропонуються, єдина ціль кристалізації — wiki-сторінка. Див. вище.)*
 - **`wiki status` operation** — інтроспективний звіт: hot pages, cold pages, drift candidates, telemetry summary.
 - **Karpathy lint reformulation** — staleness визначається content-verification (читання сторінки + judgement), не timestamp-евристикою.
 - **Versioning + migration** — поле `wiki_version` у `schema.md`. Структурні зміни — explicit plan-then-confirm; field-level backfill в `.usage.json` — silent.

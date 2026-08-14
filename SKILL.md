@@ -155,7 +155,7 @@ are first-class, and the LLM does the mechanical bookkeeping humans abandon.
 
 Use the wiki as a palette, not a checklist. Small projects may only need
 `ingest-source` and `query`; research projects may lean on `ingest-binary`; mature
-projects may benefit from lint/status/cleanup and skill crystallization.
+projects may benefit from lint/status/cleanup and crystallization.
 
 ## Operation Index
 
