@@ -99,7 +99,14 @@ Exports created by install.sh:
     Fix: the hooks now pick which anchor to check first based on which
     client actually fired the call, with the other anchor kept as a
     fallback either way. Nothing on disk changed — `wiki_version` stays
-    `"4.0"` and there is no migration to run.
+    `"4.0"` and there is no migration to run. Implementation: the
+    client-aware branch lives in `hooks/post-tool-use.sh` (keys off the
+    firing tool name) and `hooks/lib/discover.sh` (keys off the
+    `WIKI_HOOK_CLIENT` transport signal), with
+    `hooks/session-start-qwen.sh` setting that signal when it wraps the
+    canonical `SessionStart` hook — landed together with this doc update
+    in the v461-anchor-precedence branch (tasks t1/t3/t4), not in a
+    later change.
 
 ### Migrating to v4.6 if you already use Qwen Code
 
