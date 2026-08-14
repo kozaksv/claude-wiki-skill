@@ -138,3 +138,7 @@ SessionStart.
 tests/install-cross-agent-links.sh && bash tests/uninstall.sh` — зелено;
 вкладений сценарій (обидві env на різні проєкти) дає правильну вікі для обох
 клієнтів у SessionStart і PostToolUse.
+
+## Відкладене рев'ю
+
+- [P1] (codex-кор) Diff only adds design doc, no implementation [file: docs/superpowers/specs/2026-08-14-v461-anchor-precedence-design.md]: The reviewed range 3b1ce77..8a7cc83 only adds/modifies docs/superpowers/specs/2026-08-14-v461-anchor-precedence-design.md; it does not implement the described required changes in hooks/post-tool-use.sh, hooks/lib/discover.sh, hooks/session-start-qwen.sh, SKILL.md or tests, so the described fixes and Done-when criteria are not yet achieved.
