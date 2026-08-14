@@ -39,7 +39,15 @@ command -v python3 >/dev/null 2>&1 || exit 0
 # Capture ONLY stdout from the canonical hook; let its stderr pass through
 # to this wrapper's own stderr untouched (diagnostics stay diagnostics,
 # never leak into the Qwen-parsed stdout channel).
-out="$("$HOOK_DIR/session-start.sh")"
+#
+# WIKI_HOOK_CLIENT=qwen is a private transport signal to the canonical
+# hook, not a public contract or user-facing setting: SessionStart has no
+# `tool_name` for the canonical hook to key off of, so this wrapper tells
+# it which client is calling. Command-prefixed (not `export`) so the
+# value reaches only this one child process, never the python3 packer
+# below or any other descendant. See
+# docs/superpowers/specs/2026-08-14-v461-anchor-precedence.md.
+out="$(WIKI_HOOK_CLIENT=qwen "$HOOK_DIR/session-start.sh")"
 
 # Empty stdout (no wiki discoverable, or the canonical hook otherwise
 # chose to say nothing) -> print nothing and exit 0. A wrapped-empty

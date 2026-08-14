@@ -1040,10 +1040,71 @@ CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" >/dev/null 2>&1
 if [ -e "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
 assert_eq "session-start: fresh checkout + legacy schema -> .usage.json NOT created" "1" "$r"
 
+# S2. Regression guard for the default branch: calling the canonical hook
+#     DIRECTLY (no WIKI_HOOK_CLIENT set at all) with both CLAUDE_PROJECT_DIR
+#     and QWEN_PROJECT_DIR pointing at DISTINGUISHABLE fixtures must still
+#     inject the CLAUDE fixture's index -- proves this task never touched
+#     hooks/session-start.sh's own default discovery order.
+claude_fixture_s2="$(make_fixture)"
+qwen_fixture_s2="$(make_fixture)"
+printf '# Wiki Index\n\nMARKER_CLAUDE_FIXTURE\n' >"$claude_fixture_s2/docs/wiki/index.md"
+printf '# Wiki Index\n\nMARKER_QWEN_FIXTURE\n' >"$qwen_fixture_s2/docs/wiki/index.md"
+out="$(
+  env -u WIKI_HOOK_CLIENT CLAUDE_PROJECT_DIR="$claude_fixture_s2" QWEN_PROJECT_DIR="$qwen_fixture_s2" \
+    bash "$SESSION_START_HOOK" 2>/dev/null
+)"
+assert_contains "session-start direct, WIKI_HOOK_CLIENT unset: injects CLAUDE fixture index" "$out" "MARKER_CLAUDE_FIXTURE"
+assert_not_contains "session-start direct, WIKI_HOOK_CLIENT unset: does not inject QWEN fixture index" "$out" "MARKER_QWEN_FIXTURE"
+
+# S3. Calling the canonical hook DIRECTLY with WIKI_HOOK_CLIENT=qwen in its
+#     environment flips discovery to the QWEN fixture -- proves the
+#     transport signal read by discover_wiki (t3) still works when driven
+#     straight, independent of the qwen wrapper (t4) added in this task.
+out="$(
+  env WIKI_HOOK_CLIENT=qwen CLAUDE_PROJECT_DIR="$claude_fixture_s2" QWEN_PROJECT_DIR="$qwen_fixture_s2" \
+    bash "$SESSION_START_HOOK" 2>/dev/null
+)"
+assert_contains "session-start direct, WIKI_HOOK_CLIENT=qwen: injects QWEN fixture index" "$out" "MARKER_QWEN_FIXTURE"
+assert_not_contains "session-start direct, WIKI_HOOK_CLIENT=qwen: does not inject CLAUDE fixture index" "$out" "MARKER_CLAUDE_FIXTURE"
+
 echo "=== session-start-qwen.sh ===" >&2
 
 # session-start-qwen.sh is a standalone hook process (exit on every path)
 # — run as a subprocess, never sourced.
+
+# S1. The wrapper hands WIKI_HOOK_CLIENT=qwen to the canonical hook even
+#     though the wrapper's OWN caller never set it: with both
+#     CLAUDE_PROJECT_DIR and QWEN_PROJECT_DIR pointing at DISTINGUISHABLE
+#     fixtures, the injected index must be the QWEN fixture's, never the
+#     CLAUDE fixture's.
+claude_fixture_s1="$(make_fixture)"
+qwen_fixture_s1="$(make_fixture)"
+printf '# Wiki Index\n\nMARKER_CLAUDE_FIXTURE\n' >"$claude_fixture_s1/docs/wiki/index.md"
+printf '# Wiki Index\n\nMARKER_QWEN_FIXTURE\n' >"$qwen_fixture_s1/docs/wiki/index.md"
+out="$(
+  env -u WIKI_HOOK_CLIENT CLAUDE_PROJECT_DIR="$claude_fixture_s1" QWEN_PROJECT_DIR="$qwen_fixture_s1" \
+    bash "$SESSION_START_QWEN_HOOK" 2>/dev/null
+)"
+rc=$?
+assert_eq "session-start-qwen: S1 exit 0" "0" "$rc"
+if printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then r=0; else r=1; fi
+assert_eq "session-start-qwen: S1 stdout parses as JSON" "0" "$r"
+cont_s1="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["continue"])')"
+assert_eq "session-start-qwen: S1 continue is True" "True" "$cont_s1"
+actx_s1="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
+assert_contains "session-start-qwen: S1 wrapper injects QWEN fixture index (transport signal reaches canonical hook)" "$actx_s1" "MARKER_QWEN_FIXTURE"
+assert_not_contains "session-start-qwen: S1 wrapper does NOT inject CLAUDE fixture index" "$actx_s1" "MARKER_CLAUDE_FIXTURE"
+
+# S1b. Any WIKI_HOOK_CLIENT already present in the wrapper's OWN
+#      environment (even "claude") is ignored: the wrapper hardcodes
+#      "qwen" as a command prefix on its child-hook invocation, it never
+#      passes through an inherited value. Result must be byte-identical
+#      to S1 (still the qwen fixture's marker).
+out_s1b="$(
+  env WIKI_HOOK_CLIENT=claude CLAUDE_PROJECT_DIR="$claude_fixture_s1" QWEN_PROJECT_DIR="$qwen_fixture_s1" \
+    bash "$SESSION_START_QWEN_HOOK" 2>/dev/null
+)"
+assert_eq "session-start-qwen: S1b inherited WIKI_HOOK_CLIENT=claude is ignored (hardcoded qwen wins)" "$out" "$out_s1b"
 
 # 1. Happy path: valid wiki -> exit 0, stdout is valid single-line JSON
 #    wrapping the canonical hook's index injection.
