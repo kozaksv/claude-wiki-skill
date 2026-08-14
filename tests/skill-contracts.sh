@@ -424,7 +424,7 @@ grep -q 'Two entry points' "$ROOT/references/cleanup-flow.md" &&
 grep -q '### РЕФЛЕКСІЯ block format (strict template)' "$ROOT/references/reflection.md" ||
   fail "reflection strict template missing"
 
-for field in 'Дізнався:' 'Чому це краще:' 'Зберіг у wiki:' 'Автоматизував:' 'Перевірив:'; do
+for field in 'Дізнався:' 'Чому це краще:' 'Зберіг у wiki:' 'Кристалізація:' 'Перевірив:'; do
   grep -q "$field" "$ROOT/references/reflection.md" ||
     fail "reflection template missing field: $field"
 done

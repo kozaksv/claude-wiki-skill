@@ -13,7 +13,7 @@ specific reference needed for the current task:
 
 Do not load all three by default. For example, `ingest-source` can finish with
 `references/reflection.md`; only load `references/crystallization.md` when the
-`Автоматизував:` field plausibly needs a proposal, and only load
+`Кристалізація:` field plausibly needs a proposal, and only load
 `references/cleanup-flow.md` when the user enters cleanup/status follow-up.
 
 Lint, `wiki status`, and cleanup-flow have their own reports and must not append
