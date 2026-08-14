@@ -146,3 +146,7 @@ T4 і T5 обидва торкаються `SKILL.md` — їх ставити в
 tests/install-cross-agent-links.sh && bash tests/uninstall.sh` — зелено;
 `grep -rn 'Автоматизував' references/ SKILL.md` → нуль влучань;
 `grep -rn 'state == "active"' references/` → нуль влучань.
+
+## Відкладене рев'ю
+
+- [P1] (codex-кор) telemetry.md wording overstates that `state` is never written [file: docs/superpowers/specs/2026-08-14-v47-reflection-cleanup-design.md]: The design doc plans telemetry.md text 'зарезервовані, зараз їх ніхто не пише і не читає' for `state`/`archived_at`, but the same diff's own analysis (line ~116: 'жодна операція ніколи не пише `state` інакше ніж "active"') and the r3 measurement citation ('grep дає лише запис дефолту "active" у post-tool-use.sh:209') show `state` IS written — as the default 'active' on every record creation. The simplified telemetry.md phrasing 'ніхто не пише' is therefore factually imprecise: it should say some
