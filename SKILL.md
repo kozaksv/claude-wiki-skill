@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.6.0"
+version: "4.6.1"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:

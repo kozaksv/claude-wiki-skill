@@ -558,8 +558,8 @@ if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
   fail "no-code project detection must not invent people/documents categories"
 fi
 
-grep -q 'version: "4.6.0"' "$ROOT/SKILL.md" ||
-  fail "SKILL.md frontmatter must be bumped to 4.6.0"
+grep -q 'version: "4.6.1"' "$ROOT/SKILL.md" ||
+  fail "SKILL.md frontmatter must be bumped to 4.6.1"
 
 grep -q '| Qwen Code |' "$ROOT/SKILL.md" ||
   fail "Platform Compatibility table must include a Qwen Code column"
