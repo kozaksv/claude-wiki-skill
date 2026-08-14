@@ -262,17 +262,27 @@ create, query, lint, or cleanup a wiki.
 
 ### Expected behavior
 
-- `discover_wiki`'s start-directory fallback chain is
-  `$CLAUDE_PROJECT_DIR` → `$QWEN_PROJECT_DIR` → `pwd`. Since
-  `CLAUDE_PROJECT_DIR` is unset, it falls through to `QWEN_PROJECT_DIR`
-  and starts the walk-up there, NOT at the process's actual `pwd`.
+- `discover_wiki`'s start-directory fallback chain, in this scenario's
+  default (non-Qwen-signaled) branch, is `$CLAUDE_PROJECT_DIR` →
+  `$QWEN_PROJECT_DIR` → `pwd`. Since `CLAUDE_PROJECT_DIR` is unset, it
+  falls through to `QWEN_PROJECT_DIR` and starts the walk-up there, NOT
+  at the process's actual `pwd`.
 - The wiki at `$QWEN_PROJECT_DIR/docs/wiki/` is found and injected /
   telemetry-updated correctly, even though `pwd` alone would have looked
   in the wrong directory.
-- If BOTH `CLAUDE_PROJECT_DIR` and `QWEN_PROJECT_DIR` happen to be set
-  (unusual, but the chain is a plain fallback, not an exclusive
-  either/or), `CLAUDE_PROJECT_DIR` wins — it is checked first in the
-  chain regardless of which agent is actually running.
+- If BOTH `CLAUDE_PROJECT_DIR` and `QWEN_PROJECT_DIR` happen to be set,
+  that is a normal nested-session shape (a Qwen Code session launched
+  from inside a Claude Code session), confirmed by an empirical run on
+  2026-08-14 (Qwen Code 0.21.11) — not an unusual edge case. Which rung
+  is checked first depends on which client actually fired the hook: for
+  `PostToolUse`, the tool name that triggered the call (Qwen's lowercase
+  names such as `read_file` check `QWEN_PROJECT_DIR` first; Claude's
+  CamelCase names such as `Edit` check `CLAUDE_PROJECT_DIR` first); for
+  `SessionStart`, whether the call arrived via `hooks/session-start-qwen.sh`
+  (which checks `QWEN_PROJECT_DIR` first) or the canonical hook invoked
+  directly (which checks `CLAUDE_PROJECT_DIR` first). Either way both
+  rungs remain in the chain as each other's fallback — neither is ever
+  dropped, only reordered.
 - Any other stdin-provided anchor (e.g. a `cwd` field passed on the hook's
   stdin JSON payload) is a separate, lower-priority fallback used only
   when neither env var is set; `QWEN_PROJECT_DIR` is not conditioned on

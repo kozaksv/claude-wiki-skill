@@ -40,9 +40,13 @@ Exports created by install.sh:
     now unions Qwen's tool-call vocabulary (`read_file`, `edit`,
     `write_file`, `notebook_edit`, `replace`) alongside Claude's
     (`Read`, `Edit`, `Write`, `MultiEdit`) in one action-gate — `read_file`
-    counts as a view, the rest count as a patch. No `if … else` branching
-    per client: it's a plain union list plus a first-match-wins
-    precedence chain, same shape as before Qwen existed.
+    counts as a view, the rest count as a patch. The tool-name union
+    itself stays a plain union list plus a first-match-wins precedence
+    chain, no `if … else` branching per client, same shape as before
+    Qwen existed. Separately, which project-root anchor env var
+    (`CLAUDE_PROJECT_DIR` or `QWEN_PROJECT_DIR`) is checked first *does*
+    depend on which client fired the hook — see v4.6.1 below; that is
+    the one per-client branch in the hooks.
   - **`hooks/session-start-qwen.sh` — an envelope-wrapper, not a
     reimplementation.** Qwen Code's SessionStart hook contract expects a
     single line of JSON on stdout
@@ -56,8 +60,10 @@ Exports created by install.sh:
     also reads `QWEN.md`, appended last in the priority chain after
     `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — it only adds a lower-priority
     fallback pointer source, it never masks or outranks an existing file.
-    `QWEN_PROJECT_DIR` is also recognized as a project-root anchor,
-    lowest-priority after `CLAUDE_PROJECT_DIR`.
+    `QWEN_PROJECT_DIR` is also recognized as a project-root anchor
+    alongside `CLAUDE_PROJECT_DIR`; which one is checked first depends
+    on which client fired the hook (see v4.6.1 below), and each remains
+    a fallback for the other.
   - **Global hooks register into `~/.qwen/settings.json` too.**
     `hooks/install-hooks.sh` performs a second, sequential registration
     pass for Qwen — gated on Qwen actually being present (`qwen` on
@@ -80,6 +86,20 @@ Exports created by install.sh:
     and `~/.qwen/settings.json` (plus the legacy Qwen wrapper-script
     marker) before allowing clone deletion — an orphaned hook entry in
     either file blocks removal, not just Claude's.
+  - **v4.6.1: fixed a nested-session anchor bug.** A Qwen Code session
+    launched from inside a Claude Code session (or vice versa) can end
+    up with *both* `CLAUDE_PROJECT_DIR` and `QWEN_PROJECT_DIR` exported
+    at once, pointing at two different project roots — the outer
+    session's and the inner one's. A fixed `CLAUDE_PROJECT_DIR`-first
+    order silently anchored `SessionStart` and `PostToolUse` at the
+    wrong (outer) project, injecting the wrong wiki and dropping
+    telemetry for the inner session without any error. This affects
+    nested Qwen-inside-Claude and Claude-inside-Qwen sessions; a single
+    top-level session with only one of the two vars set is unaffected.
+    Fix: the hooks now pick which anchor to check first based on which
+    client actually fired the call, with the other anchor kept as a
+    fallback either way. Nothing on disk changed — `wiki_version` stays
+    `"4.0"` and there is no migration to run.
 
 ### Migrating to v4.6 if you already use Qwen Code
 
