@@ -27,12 +27,12 @@ Run through each check and report findings:
 1. **Determine the verification subset — no menu.** Pick the subset by this rule, in priority order:
    - **If the user named a path-based scope** in the trigger (e.g. "лінт `concepts/architecture/`", "лінт all `entities/contracts/`") — verify exactly that scope.
    - **If the user described a topic in natural language** ("перевір склад", "все про курси", "сторінки про закупки") — resolve via topic resolution flow (see below) BEFORE running. Don't guess silently; confirm the resolved list with the user first.
-   - **If the user said "швидко" / "fast" / "top-10" / "топ-10"** — verify only top-10 most-edited active + unprotected pages. Sort `report()` by `patch_count desc, last_patched_at asc`, filter `state == "active"` and `protected == false`, take the first 10.
-   - **Otherwise — default: full lint.** Verify ALL active + unprotected pages, in priority order (sort by `patch_count desc, last_patched_at asc`; protected pages skipped). This matches the convention from other linters (ESLint, mypy, ruff): "lint" = full check by default.
+   - **If the user said "швидко" / "fast" / "top-10" / "топ-10"** — verify only top-10 most-edited unprotected pages. Sort `report()` by `patch_count desc, last_patched_at asc`, filter `protected == false`, take the first 10.
+   - **Otherwise — default: full lint.** Verify ALL unprotected pages, in priority order (sort by `patch_count desc, last_patched_at asc`; protected pages skipped). This matches the convention from other linters (ESLint, mypy, ruff): "lint" = full check by default.
 
    State the chosen subset at the top of the report (e.g. "Verified subset: full — N active pages" or "Verified subset: top-10 most-edited active" or "Verified subset: `concepts/architecture/` — N pages").
 
-   **Heads-up before starting full lint — only for larger wikis.** If `report()` finds fewer than 20 active + unprotected pages, skip the heads-up entirely and start verification immediately; on small wikis the full pass is short enough that asking about scope is pure friction. Otherwise print **exactly this block, nothing else**, then end the turn:
+   **Heads-up before starting full lint — only for larger wikis.** If `report()` finds fewer than 20 unprotected pages, skip the heads-up entirely and start verification immediately; on small wikis the full pass is short enough that asking about scope is pure friction. Otherwise print **exactly this block, nothing else**, then end the turn:
 
    ```
    🔍 Готую повний лінт: N активних сторінок.

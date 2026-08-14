@@ -31,7 +31,7 @@ The file is a JSON dict — keys are page paths relative to `{wiki}/` (e.g. `con
 }
 ```
 
-All ten fields are present for every record. Timestamps are ISO 8601 UTC. `state`, `protected`, `archived_at` are forward-compat fields (v5+ will use them for curator/auto-transitions); v4.0 reads them as defaults but does not act on them.
+All ten fields are present for every record. Timestamps are ISO 8601 UTC. Of the three non-counter fields only `protected` is live: it is written by `wiki protect` / `wiki unprotect` and read by the lint and `wiki status` subset filters. `state` is written only as its default `"active"` — both when a record is created and when a record missing the key is silently backfilled — and after the subset filters dropped it, nothing reads it. `archived_at` is written only as its default `null` and nothing reads it. Both stay in the record shape so the on-disk form needs no migration.
 
 **Field-rename compat (v4.0.0 → v4.0.x): `pinned` → `protected`.** The earliest v4.0.0 release used `pinned` as the field name; subsequent commits renamed it to `protected` for clearer English semantics matching the user-facing «захищена» term. **On read, accept either name as truthy** — old records with `pinned: true` are treated as `protected: true`. **On the first write to a record carrying the legacy `pinned` field**, silently migrate: copy the value to `protected`, drop the old `pinned` key. No version-bump prompt for this — it's a field-level backfill (per Versioning & Migration silent-backfill rule).
 
@@ -43,7 +43,8 @@ All ten fields are present for every record. Timestamps are ISO 8601 UTC. `state
 | `use_count` / `last_used_at` | use = synthesis-applied | The page is cited as `[[wikilink]]` in a new or updated page body |
 | `patch_count` / `last_patched_at` | patch = modified | You modify the page file (Claude `Edit`/`Write`, Codex `apply_patch`, Gemini equivalent edit/write) |
 | `created_at` | birth timestamp | Set once on first record creation; never changes |
-| `state`, `protected`, `archived_at` | forward-compat | v4.0 does not write these except defaults (`"active"`, `false`, `null`) |
+| `protected` | live — page is pin-protected | Written by `wiki protect` / `wiki unprotect`; read by the lint and `wiki status` subset filters (`protected == false`) |
+| `state`, `archived_at` | default-only | Written once as defaults (`"active"`, `null`); nothing reads them |
 
 ### Mutator API (instructional)
 

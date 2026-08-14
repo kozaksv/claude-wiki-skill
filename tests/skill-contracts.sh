@@ -271,8 +271,8 @@ fi
 grep -q 'Lint never\|never runs `git init`' "$ROOT/references/operation-lint.md" ||
   fail "operation-lint must affirm it never runs git init itself for orphan-wiki"
 
-grep -q 'fewer than 20 active' "$ROOT/references/operation-lint.md" ||
-  fail "operation-lint must skip the full-lint heads-up for small wikis (< 20 active pages)"
+grep -q 'fewer than 20 unprotected' "$ROOT/references/operation-lint.md" ||
+  fail "operation-lint must skip the full-lint heads-up for small wikis (< 20 unprotected pages)"
 
 if grep -q 'Heads-up before starting full lint — always' "$ROOT/references/operation-lint.md"; then
   fail "operation-lint must no longer claim the full-lint heads-up runs unconditionally"
@@ -411,6 +411,11 @@ fi
 
 grep -q 'set_skill_link' "$ROOT/references/crystallization.md" &&
   fail "crystallization must not reference installer skill helpers (skill tier removed in 4.4)"
+
+# t3: the dead subset filter must not come back into the reference text.
+# Scope is references/ only — a tests/-wide scope would match this guard itself.
+grep -rq 'state == "active"' "$ROOT/references/" &&
+  fail "lint / wiki status subsets must filter on protected == false only (dead state filter removed in 4.7.0)"
 
 grep -rq '🧹' "$ROOT/references/" &&
   fail "cleanup-prompt emoji must not appear in references/ (removed in 4.4)"
