@@ -1681,6 +1681,99 @@ assert_file_unchanged "post-tool-use: P9 Grep -> claude .usage.json unchanged" \
 assert_file_unchanged "post-tool-use: P9 Grep -> qwen .usage.json unchanged" \
   "$qwen_fixture/docs/wiki/.usage.json" "$qwen_sha_before"
 
+# P3 (v461-anchor-precedence Task 2): for EACH Qwen patch-shaped tool name
+#     (write_file, edit, replace, notebook_edit) -- CLAUDE_PROJECT_DIR and
+#     QWEN_PROJECT_DIR set to DIFFERENT fixtures, tool_input.file_path an
+#     ABSOLUTE path inside the qwen fixture -> the qwen wiki's
+#     patch_count is bumped to 1, the claude wiki's .usage.json stays
+#     byte-for-byte unchanged. Proves the own-client-first anchor order
+#     (P1 covered only read_file) holds across every Qwen patch tool
+#     name, not just one representative.
+for _qwen_tool in write_file edit replace notebook_edit; do
+  claude_fixture="$(make_fixture)"
+  printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
+  qwen_fixture="$(make_fixture)"
+  printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
+  claude_sha_before="$(_sha "$claude_fixture/docs/wiki/.usage.json")"
+  _ptu_stdin "$_qwen_tool" "$qwen_fixture/docs/wiki/foo.md" \
+    | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+  rc=$?
+  assert_eq "post-tool-use: P3 qwen $_qwen_tool exits 0" "0" "$rc"
+  assert_eq "post-tool-use: P3 qwen $_qwen_tool -> qwen wiki patch_count 1" \
+    "1" "$(_ptu_field "$qwen_fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+  assert_file_unchanged "post-tool-use: P3 qwen $_qwen_tool -> claude .usage.json unchanged" \
+    "$claude_fixture/docs/wiki/.usage.json" "$claude_sha_before"
+done
+
+# P4 (v461-anchor-precedence Task 2): for EACH Claude patch-shaped tool
+#     name (Edit, Write, MultiEdit) -- CLAUDE_PROJECT_DIR and
+#     QWEN_PROJECT_DIR set to DIFFERENT fixtures, tool_input.file_path an
+#     ABSOLUTE path inside the claude fixture -> the claude wiki's
+#     patch_count is bumped to 1, the qwen wiki's .usage.json stays
+#     byte-for-byte unchanged (regression-zero for Claude across every
+#     Claude patch tool name, not just Read from P2).
+for _claude_tool in Edit Write MultiEdit; do
+  claude_fixture="$(make_fixture)"
+  printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
+  qwen_fixture="$(make_fixture)"
+  printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
+  qwen_sha_before="$(_sha "$qwen_fixture/docs/wiki/.usage.json")"
+  _ptu_stdin "$_claude_tool" "$claude_fixture/docs/wiki/foo.md" \
+    | CLAUDE_PROJECT_DIR="$claude_fixture" QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+  rc=$?
+  assert_eq "post-tool-use: P4 claude $_claude_tool exits 0" "0" "$rc"
+  assert_eq "post-tool-use: P4 claude $_claude_tool -> claude wiki patch_count 1" \
+    "1" "$(_ptu_field "$claude_fixture/docs/wiki/.usage.json" "foo.md" "patch_count")"
+  assert_file_unchanged "post-tool-use: P4 claude $_claude_tool -> qwen .usage.json unchanged" \
+    "$qwen_fixture/docs/wiki/.usage.json" "$qwen_sha_before"
+done
+
+# P5 (v461-anchor-precedence Task 2): Qwen tool `read_file`, ONLY
+#     CLAUDE_PROJECT_DIR set (QWEN_PROJECT_DIR explicitly unset), path
+#     inside the claude fixture -> the claude wiki is bumped. Proves the
+#     qwen-first branch still falls back to the OTHER client's rung when
+#     its own rung is unset (the fallback step did not get lost when the
+#     branch order flipped).
+claude_fixture="$(make_fixture)"
+printf 'body\n' >"$claude_fixture/docs/wiki/foo.md"
+_ptu_stdin "read_file" "$claude_fixture/docs/wiki/foo.md" \
+  | env -u QWEN_PROJECT_DIR CLAUDE_PROJECT_DIR="$claude_fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: P5 qwen read_file, only CLAUDE_PROJECT_DIR set, exits 0" "0" "$rc"
+assert_eq "post-tool-use: P5 qwen read_file falls back to CLAUDE_PROJECT_DIR -> claude wiki bumped" \
+  "1" "$(_ptu_field "$claude_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# P6 (v461-anchor-precedence Task 2): Claude tool `Read`, ONLY
+#     QWEN_PROJECT_DIR set (CLAUDE_PROJECT_DIR explicitly unset), path
+#     inside the qwen fixture -> the qwen wiki is bumped (fallback step
+#     preserved symmetrically on the claude-first branch).
+qwen_fixture="$(make_fixture)"
+printf 'body\n' >"$qwen_fixture/docs/wiki/foo.md"
+_ptu_stdin "Read" "$qwen_fixture/docs/wiki/foo.md" \
+  | env -u CLAUDE_PROJECT_DIR QWEN_PROJECT_DIR="$qwen_fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
+rc=$?
+assert_eq "post-tool-use: P6 claude Read, only QWEN_PROJECT_DIR set, exits 0" "0" "$rc"
+assert_eq "post-tool-use: P6 claude Read falls back to QWEN_PROJECT_DIR -> qwen wiki bumped" \
+  "1" "$(_ptu_field "$qwen_fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
+# P7 (v461-anchor-precedence Task 2): Qwen tool `read_file`, NEITHER
+#     CLAUDE_PROJECT_DIR nor QWEN_PROJECT_DIR set, stdin `cwd` is the
+#     fixture root, tool_input.file_path is RELATIVE
+#     (`docs/wiki/foo.md`), and the hook is invoked from a subdirectory of
+#     the fixture -> the fixture's wiki is bumped, proving the shared
+#     stdin-cwd tail (applied outside the client branch) still resolves a
+#     relative path when both project-dir rungs are unset, for the
+#     qwen-first branch same as the pre-existing claude-first case.
+fixture="$(make_fixture)"
+printf 'body\n' >"$fixture/docs/wiki/foo.md"
+mkdir -p "$fixture/some/other/subdir"
+echo '{"tool_name":"read_file","cwd":"'"$fixture"'","tool_input":{"file_path":"docs/wiki/foo.md"}}' \
+  | ( cd "$fixture/some/other/subdir" && env -u CLAUDE_PROJECT_DIR -u QWEN_PROJECT_DIR bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1 )
+rc=$?
+assert_eq "post-tool-use: P7 qwen read_file, no env, relative file_path resolves against stdin cwd, exits 0" "0" "$rc"
+assert_eq "post-tool-use: P7 qwen read_file relative file_path resolves against stdin cwd -> fixture wiki bumped" \
+  "1" "$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
+
 # 22. Qwen `run_shell_command` (not in the allowlist) -> exit 0,
 #     .usage.json byte-for-byte unchanged.
 fixture="$(make_fixture)"
