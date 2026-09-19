@@ -1,12 +1,22 @@
-## Three Layers (within Wiki)
+## Tracks (configurable; within Wiki)
 
-The wiki itself has three internal layers:
+The wiki's tracks are **configurable** via `{wiki}/schema.md` — either
+`preset: <name>` or an inline `tracks:` list (see SKILL.md → *Tracks*). The
+directory a page lives in dictates its `type`, and a track may declare
+`requires` (mandatory frontmatter fields) and `path_map` (code globs → that
+track). With **no declaration the default is the `karpathy` preset** — three
+internal layers:
 
 ```
 {wiki}/concepts/         → themes, processes, rules (synthesis)
 {wiki}/entities/         → specific things (people, contracts, objects, ...)
 {wiki}/transcripts/      → full text of binaries (for grep / LLM context)
 ```
+
+Other built-in preset: `code-project` (`guide`/`workflows`/`modules`, where
+`modules` requires a `module:` field). Projects may declare their own presets
+(see `presets/README.md`). The descriptions below detail the default `karpathy`
+layers.
 
 Plus external layers:
 

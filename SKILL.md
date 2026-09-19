@@ -71,6 +71,22 @@ That reference contains Step 0 discovery, schema lookup, version comparison,
 migration flow, and the rule to resume the user's original operation after a
 migration. Never create a second wiki if a valid existing wiki can be found.
 
+## Tracks (configurable)
+
+Knowledge lives in **tracks** declared in `{wiki}/schema.md` frontmatter:
+
+- `preset: <name>` — a built-in track set from `presets/<name>.json`, or
+- inline `tracks:` — a list of `{dir, type, requires?, path_map?}` (mutually
+  exclusive with `preset`; declaring both is a lint error), or
+- neither → default **`karpathy`** (`concepts`/`entities`/`transcripts`), so the
+  classic Karpathy layout works with zero configuration.
+
+Built-in presets: `karpathy` (default) and `code-project`
+(`guide`/`workflows`/`modules`). The directory→type binding and required-field
+rules are derived from the configured tracks by `scripts/okf_lint.py` (via
+`scripts/wiki_config.py`); any framework-specific extraction/signals live only in
+a project's own preset (see `presets/README.md`), never in the core format.
+
 ## Session-Start Contract (NON-NEGOTIABLE)
 
 This section is the local-workspace contract. The GitHub adapter preserves

@@ -1,0 +1,8 @@
+{
+  "name": "karpathy",
+  "tracks": [
+    {"dir": "concepts", "type": "concept"},
+    {"dir": "entities", "type": "entity"},
+    {"dir": "transcripts", "type": "transcript"}
+  ]
+}
