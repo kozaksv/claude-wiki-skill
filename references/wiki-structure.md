@@ -39,7 +39,10 @@ Cyrillic OK. Spaces → `-`. Forbidden: `/\?*<>:|`, quotes, dots (except before 
 
 | File | Purpose | Format |
 |------|---------|--------|
-| `{wiki}/index.md` | Catalog of all pages, organized by category | `- [[page-name]] — one-line description` |
+| `{wiki}/index.md` | Curated navigation plus generated exact-path block when enabled | Manual categories / generated Markdown links |
+| `{wiki}/catalog.json` | Deterministic path, hash, size and section-range inventory | Generated format version 1; see wiki-maintenance.md |
+| `{wiki}/policy.json` | Durable shared page protection | Tracked policy version 1; see writer-core.md |
+| `{wiki}/history/*.md` | Dated incidents and superseded guidance | Backlink to the stable current topic page |
 | `{wiki}/log.md` | Live chronological log of recent operations (soft cap ~2000 lines, see `## Log Rotation`) | `## [YYYY-MM-DD] operation \| Subject` + optional `touched: [[page-a]], [[page-b]]` line for searchability. Optional `## Archived` section at the top lists rotated shards. |
 | `{wiki}/log/{YYYY-MM-DD}_to_{YYYY-MM-DD}.md` | Archived log shards (rotated out of `log.md`) | Same entry format as `log.md`. Created lazily on first rotation; date range derived from peeled entries, not calendar boundaries. |
 

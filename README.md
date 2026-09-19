@@ -1,29 +1,46 @@
 # Wiki Skill
 
-**Skill behavior version: 4.8.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default; pin a published tag or full commit SHA for reproducible installs. Fresh wikis still use `wiki_version: "4.0"`: the v4.x behavior changes, including the GitHub reader, do not change the on-disk schema major.
+**Skill behavior version: 4.9.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default; pin a published tag or full commit SHA for reproducible installs. Fresh wikis still use `wiki_version: "4.0"`: the v4.x behavior changes, including the GitHub reader, do not change the on-disk schema major.
 
 Скіл для Claude Code, Codex, Gemini CLI, Qwen Code та ChatGPT з GitHub, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
 
 ## ChatGPT у вебверсії
 
-Для читання вікі через підключений GitHub використовується
-[wiki-github](skills/wiki-github/SKILL.md). Він читає файли з вибраного
-репозиторію, визначає справжню default branch, фіксує commit за доступності
-та повертає клікабельні посилання на джерела. Пошуковий індекс не потрібен,
-коли конектор дозволяє читати файли за шляхом і перелічувати дерево.
+Встановіть **Wiki** як особистий скіл і підключіть GitHub. Після цього можна
+писати звичайною мовою: читати вікі, додавати рішення, виправляти сторінки,
+розділяти історію, захищати матеріали та зберігати зміни.
 
-[Налаштування та приклади](docs/chatgpt.md): разовий запуск, правило для нових
-чатів і пакування як плагіна. `.codex-plugin/plugin.json` експортує лише
-`skills/wiki-github/`; локальний installer і хуки не запускаються в браузері.
-Пакет у репозиторії сам по собі не встановлює плагін у твій обліковий запис.
+Підтримуються **прямий коміт у master/main без PR** і **pull request**.
+Скажіть «закоміть у master без PR» або встановіть такий режим типовим для
+проєкту. Скіл перевіряє актуальний стан гілки й не використовує force push.
 
-## What's new in v4.8
+[Встановлення та приклади](docs/chatgpt.md). Редагувати Custom instructions
+не потрібно. Для читання потрібен доступ до репозиторію, для збереження —
+GitHub-підключення з правом запису і дозволений спосіб запису в обрану гілку.
+Скіл не обходить правила захищених гілок.
 
-- GitHub reader for ChatGPT: scoped repository/ref discovery, exact-path reads,
-  unindexed-page fallback, partial-read handling, and source links.
-- Query and basic remote status perform no telemetry writes, instruction-file
-  synchronization, migrations, or automatic filing back.
-- Existing local workflows and wiki schema v4.0 remain compatible.
+Самостійний пакет — [skills/wiki-github](skills/wiki-github/SKILL.md).
+Додаткове пакування `.codex-plugin/plugin.json` експортує той самий скіл
+для каталогів плагінів; локальні інсталятори та хуки не запускаються у браузері.
+
+## What's new in v4.9
+
+- Shared reader/writer contracts with filesystem and GitHub adapters.
+- GitHub edits, ingestion, protection, current/history splits and two delivery
+  modes: direct commit or PR. Query remains free of agent-initiated writes.
+- Deterministic `catalog.json` and a generated exact-path index block,
+  validated against real files in CI.
+- Tracked `policy.json` preserves protection across clones; explicit migration
+  retains legacy pins without changing per-clone counters.
+- Current guidance stays at stable topic paths; dated records move to
+  `history/` with reciprocal links and reviewed link relocation.
+- One tested Wiki/Вікі pointer parser, including case variants, suffixes and
+  active-agent preference. SessionStart emits only a small discovery notice:
+  it no longer claims to have read the index.
+- Existing schema v4 Markdown remains readable without migration. Catalog and
+  policy adoption happen during authorized maintenance.
+
+[Architecture and maintenance commands](references/wiki-maintenance.md).
 
 ## Cross-agent install model
 
@@ -182,7 +199,7 @@ Exports created by install.sh:
   дисципліни — вона нікуди не зникла й лишається fallback для Codex/Gemini
   та для Claude Code без встановлених hooks. Два глобальні, per-machine
   хуки реєструються в `~/.claude/settings.json`:
-  - **SessionStart** — автоматично інжектить `{wiki}/index.md` у контекст
+  - **SessionStart** — повідомляє шлях до `{wiki}/index.md` у контексті
     кожної нової сесії (`startup|clear|compact`), з untrusted-data
     преамбулою і лімітом 24 KB, плюс нагадування про `wiki lint`, якщо
     він не запускався понад 7 днів.
@@ -234,7 +251,7 @@ Claude. Codex і Gemini лишаються text-only (там hook-реєстра
 
 Перевірити, що хуки реально активні: у новій сесії Claude Code в
 wiki-проєкті контекст має містити блок
-`=== WIKI INDEX (hook-injected) ===`. Якщо запис у
+`=== WIKI DISCOVERY (hook) ===`. Якщо запис у
 `~/.claude/settings.json` є, а блока немає — це «зламані хуки»;
 діагностуйте через `wiki doctor`, не перевстановлюйте наосліп.
 

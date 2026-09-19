@@ -1,18 +1,20 @@
 {
   "name": "claude-wiki-skill",
-  "version": "4.8.0",
-  "description": "Read repository wikis in ChatGPT through the connected GitHub plugin.",
+  "version": "4.9.0",
+  "description": "Read and maintain repository wikis in ChatGPT through GitHub.",
   "author": {
     "name": "kozaksv"
   },
   "skills": "./skills/",
   "interface": {
-    "displayName": "Wiki Reader",
-    "shortDescription": "Read project wikis through GitHub.",
-    "longDescription": "Read Markdown wikis in authorized GitHub repositories, follow their index and source pages, and answer with links. Requires the separately connected GitHub plugin. Query and basic status are read-only.",
+    "displayName": "Wiki",
+    "shortDescription": "Read, edit and maintain project wikis.",
+    "longDescription": "Read authorized GitHub repository wikis with source links, edit knowledge, manage page protection, and save direct commits or reviewable pull requests. Requires a separately connected GitHub integration with permissions appropriate to the task.",
     "developerName": "kozaksv",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": ["Read my repository wiki and explain its architecture."]
+    "defaultPrompt": [
+      "Read my repository wiki and help me update its documentation."
+    ]
   }
 }

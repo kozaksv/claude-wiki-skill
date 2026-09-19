@@ -31,7 +31,12 @@ The file is a JSON dict — keys are page paths relative to `{wiki}/` (e.g. `con
 }
 ```
 
-All ten fields are present for every record. Timestamps are ISO 8601 UTC. Of the three non-counter fields only `protected` is live: it is written by `wiki protect` / `wiki unprotect` and read by the lint and `wiki status` subset filters. `state` is written only as its default `"active"` — both when a record is created and when a record missing the key is silently backfilled — and after the subset filters dropped it, nothing reads it. `archived_at` is written only as its default `null` and nothing reads it. Both stay in the record shape so the on-disk form needs no migration.
+These ten fields remain compatible with older hooks. Timestamps are ISO 8601
+UTC. `state` and `archived_at` are legacy defaults. `protected` is now a
+legacy fallback only: durable protection lives in tracked `policy.json`.
+Use `writer-core.md` to resolve effective protection for lint/status/cleanup.
+Never use a default false telemetry field to override a policy record.
+`wiki protect` / `wiki unprotect` write policy, not the telemetry sidecar.
 
 **Field-rename compat (v4.0.0 → v4.0.x): `pinned` → `protected`.** The earliest v4.0.0 release used `pinned` as the field name; subsequent commits renamed it to `protected` for clearer English semantics matching the user-facing «захищена» term. **On read, accept either name as truthy** — old records with `pinned: true` are treated as `protected: true`. **On the first write to a record carrying the legacy `pinned` field**, silently migrate: copy the value to `protected`, drop the old `pinned` key. No version-bump prompt for this — it's a field-level backfill (per Versioning & Migration silent-backfill rule).
 
@@ -43,10 +48,17 @@ All ten fields are present for every record. Timestamps are ISO 8601 UTC. Of the
 | `use_count` / `last_used_at` | use = synthesis-applied | The page is cited as `[[wikilink]]` in a new or updated page body |
 | `patch_count` / `last_patched_at` | patch = modified | You modify the page file (Claude `Edit`/`Write`, Codex `apply_patch`, Gemini equivalent edit/write) |
 | `created_at` | birth timestamp | Set once on first record creation; never changes |
-| `protected` | live — page is pin-protected | Written by `wiki protect` / `wiki unprotect`; read by the lint and `wiki status` subset filters (`protected == false`) |
+| `protected` | Legacy protection fallback | New writes go to tracked `policy.json`; resolve policy first, then legacy protected/pinned |
 | `state`, `archived_at` | default-only | Written once as defaults (`"active"`, `null`); nothing reads them |
 
 ### Mutator API (instructional)
+
+These manual mutations apply to authorized local maintenance, not ordinary
+Query. Query never requires a manual fallback bump. Existing hooks may still
+record activity independently. `report()` joins page paths and counters with
+effective protection from `policy.json`; missing telemetry does not hide a
+protected page or authorize a destructive operation.
+
 
 These are the actions you must perform on `.usage.json` during operations. Read the file, mutate the in-memory dict, write atomically (see Tolerance below). If a path key is missing on a `bump_*`, create the record with all ten default fields, then increment.
 
@@ -72,7 +84,10 @@ suppression rule` below for the full contract.
 The wiki operation must never fail because of telemetry. Apply these rules:
 
 - **Atomic write** — write to a temp file in the same directory, then rename over the target. Never partial-write `.usage.json` directly.
-- **Corrupt read → `{}`** — if the file is unparseable JSON, treat it as an empty dict and continue. Do not restore from a template; subsequent writes will rebuild it.
+- **Corrupt telemetry → unavailable counters** — continue reading, but preserve
+  the corrupt file for recovery. Do not rebuild it over potentially lost legacy
+  protection. For protection resolution, a corrupt legacy sidecar blocks
+  destructive actions for pages without an explicit durable policy record.
 - **Write fail → log only, do not raise** — if you cannot write the sidecar (disk full, permission denied, etc.), surface a warning to the user but let the wiki operation succeed. Telemetry is best-effort.
 - **Backfill missing keys silently** — if a record exists but lacks newer fields (e.g. an old record without `protected`), fill the missing fields with defaults (`"active"`, `false`, `null`) on read. This is the only silent-migration path; structural migrations require explicit consent (see `## Versioning & Migration`).
 
@@ -123,8 +138,8 @@ metadata about the telemetry system itself, not a versioned record shape.
 Two separate things can each be true or false, and neither implies the
 other:
 
-1. **`index injected`** — a `WIKI INDEX (hook-injected)` block appeared in
-   the current session's context. This proves only that `session-start.sh`
+1. **`discovery notice`** — a `WIKI DISCOVERY (hook)` block appeared in
+   the current session's context (older hooks used `WIKI INDEX (hook-injected)`). Neither proves a content read. This proves only that `session-start.sh`
    fired for this session (fresh `_hooks.session_start_at`). It says nothing
    about whether the per-tool-call telemetry hook is running.
 2. **`telemetry active`** — `post-tool-use.sh` is actually firing on

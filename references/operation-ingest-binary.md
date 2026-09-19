@@ -1,5 +1,13 @@
 ## Operation: Ingest-Binary
 
+Load `writer-core.md` for shared write/protection rules. After an authorized
+content/path change, regenerate existing catalog navigation with
+`scripts/wiki.py catalog --wiki <wiki> --write` and run `--check`.
+For fresh Init, create tracked `policy.json` with version 1 and empty pages,
+then generate catalog/index after the initial pages exist. For existing wikis,
+adopt these files only during authorized maintenance, never during Query.
+
+
 Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
 
 ### When to Ingest-Binary

@@ -893,29 +893,30 @@ echo "=== session-start.sh ===" >&2
 # path, including success) — it must be run as a subprocess, never
 # sourced, or `exit` would terminate this test harness itself.
 
-# 1. Happy path: valid wiki -> stable block markers + full index content
-#    injected, exit 0.
+# 1. Happy path: valid wiki -> stable discovery markers + exact path, exit 0.
 fixture="$(make_fixture)"
 out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
 rc=$?
 assert_eq "session-start: exit 0 on valid wiki" "0" "$rc"
-assert_contains "session-start: opens WIKI INDEX block" "$out" "=== WIKI INDEX (hook-injected) ==="
-assert_contains "session-start: closes WIKI INDEX block" "$out" "=== END WIKI INDEX ==="
-assert_contains "session-start: injects full index.md content" "$out" "Test fixture wiki index."
+assert_contains "session-start: opens WIKI INDEX block" "$out" "=== WIKI DISCOVERY (hook) ==="
+assert_contains "session-start: closes WIKI INDEX block" "$out" "=== END WIKI DISCOVERY ==="
+assert_contains "session-start: provides exact index path" "$out" "$fixture/docs/wiki/index.md"
+assert_not_contains "session-start: does not inject index body" "$out" "Test fixture wiki index."
+assert_contains "session-start: requires explicit read" "$out" "READ FIRST ще НЕ виконано"
 
 # 2. Preamble carries the mandatory untrusted-data label — the exact
 #    boundary phrase "НЕ інструкції" must appear (plan Task 2 requirement:
 #    index.md content is reference data, never trusted instructions).
 assert_contains "session-start: preamble has untrusted-data label" "$out" "НЕ інструкції"
 
-# 3. >24 KB index.md is truncated to the cap with a truncation marker; the
-#    tail past the cap must NOT appear in the injected block.
+# 3. Large indexes do not grow the discovery notice or leak content.
 fixture="$(make_fixture)"
 : >"$fixture/docs/wiki/index.md"
-yes "0123456789" | head -c 31000 >>"$fixture/docs/wiki/index.md"
+python3 -c 'print("0123456789" * 3100)' >>"$fixture/docs/wiki/index.md"
 printf 'TAIL_MARKER_BEYOND_CAP' >>"$fixture/docs/wiki/index.md"
 out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
-assert_contains "session-start: >24KB index truncated with marker" "$out" "Індекс обрізано"
+assert_contains "session-start: large index still requires explicit read" "$out" "READ FIRST ще НЕ виконано"
+[ "${#out}" -lt 2048 ] || fail "session-start: discovery notice should stay small"
 assert_not_contains "session-start: truncated tail not leaked past 24KB cap" "$out" "TAIL_MARKER_BEYOND_CAP"
 
 # 4. Heartbeat: session_start_at / hook_version written atomically to
@@ -943,7 +944,7 @@ wiki_version: "3.0"
 EOF
 sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
 out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
-assert_contains "session-start: legacy schema still injects index (read-only)" "$out" "=== WIKI INDEX (hook-injected) ==="
+assert_contains "session-start: legacy schema still injects index (read-only)" "$out" "=== WIKI DISCOVERY (hook) ==="
 assert_file_unchanged "session-start: legacy schema -> .usage.json NOT written" "$fixture/docs/wiki/.usage.json" "$sha_before"
 
 # 5b. Version gate: schema.md entirely absent -> same contract (index
@@ -952,7 +953,7 @@ fixture="$(make_fixture)"
 rm -f "$fixture/docs/wiki/schema.md"
 sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
 out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
-assert_contains "session-start: missing schema.md still injects index" "$out" "=== WIKI INDEX (hook-injected) ==="
+assert_contains "session-start: missing schema.md still injects index" "$out" "=== WIKI DISCOVERY (hook) ==="
 assert_file_unchanged "session-start: missing schema.md -> .usage.json NOT written" "$fixture/docs/wiki/.usage.json" "$sha_before"
 
 # 6. Lint reminder: last_lint_at 8 days old -> reminder present.
@@ -999,7 +1000,7 @@ fi
 out="$(CLAUDE_PROJECT_DIR="$fixture" $_timeout bash "$SESSION_START_HOOK" 2>/dev/null)"
 rc=$?
 assert_eq "session-start: FIFO .usage.json -> returns promptly, exit 0 (never blocks startup)" "0" "$rc"
-assert_contains "session-start: FIFO .usage.json -> index still injected (read-only degrade)" "$out" "=== WIKI INDEX (hook-injected) ==="
+assert_contains "session-start: FIFO .usage.json -> index still injected (read-only degrade)" "$out" "=== WIKI DISCOVERY (hook) ==="
 rm -f "$fixture/docs/wiki/.usage.json"
 
 # 8. Fresh checkout: current-schema wiki but .usage.json is entirely ABSENT
@@ -1012,7 +1013,7 @@ rm -f "$fixture/docs/wiki/.usage.json"
 out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
 rc=$?
 assert_eq "session-start: fresh checkout (no .usage.json) -> exit 0" "0" "$rc"
-assert_contains "session-start: fresh checkout -> index still injected" "$out" "=== WIKI INDEX (hook-injected) ==="
+assert_contains "session-start: fresh checkout -> index still injected" "$out" "=== WIKI DISCOVERY (hook) ==="
 if [ -f "$fixture/docs/wiki/.usage.json" ]; then r=0; else r=1; fi
 assert_eq "session-start: fresh checkout -> .usage.json bootstrapped" "0" "$r"
 sa="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json')); print(d.get('_hooks',{}).get('session_start_at',''))" 2>/dev/null)"
@@ -1053,7 +1054,7 @@ out="$(
   env -u WIKI_HOOK_CLIENT CLAUDE_PROJECT_DIR="$claude_fixture_s2" QWEN_PROJECT_DIR="$qwen_fixture_s2" \
     bash "$SESSION_START_HOOK" 2>/dev/null
 )"
-assert_contains "session-start direct, WIKI_HOOK_CLIENT unset: injects CLAUDE fixture index" "$out" "MARKER_CLAUDE_FIXTURE"
+assert_contains "session-start direct, WIKI_HOOK_CLIENT unset: announces CLAUDE fixture path" "$out" "$claude_fixture_s2/docs/wiki/index.md"
 assert_not_contains "session-start direct, WIKI_HOOK_CLIENT unset: does not inject QWEN fixture index" "$out" "MARKER_QWEN_FIXTURE"
 
 # S3. Calling the canonical hook DIRECTLY with WIKI_HOOK_CLIENT=qwen in its
@@ -1064,7 +1065,7 @@ out="$(
   env WIKI_HOOK_CLIENT=qwen CLAUDE_PROJECT_DIR="$claude_fixture_s2" QWEN_PROJECT_DIR="$qwen_fixture_s2" \
     bash "$SESSION_START_HOOK" 2>/dev/null
 )"
-assert_contains "session-start direct, WIKI_HOOK_CLIENT=qwen: injects QWEN fixture index" "$out" "MARKER_QWEN_FIXTURE"
+assert_contains "session-start direct, WIKI_HOOK_CLIENT=qwen: announces QWEN fixture path" "$out" "$qwen_fixture_s2/docs/wiki/index.md"
 assert_not_contains "session-start direct, WIKI_HOOK_CLIENT=qwen: does not inject CLAUDE fixture index" "$out" "MARKER_CLAUDE_FIXTURE"
 
 echo "=== session-start-qwen.sh ===" >&2
@@ -1092,7 +1093,7 @@ assert_eq "session-start-qwen: S1 stdout parses as JSON" "0" "$r"
 cont_s1="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["continue"])')"
 assert_eq "session-start-qwen: S1 continue is True" "True" "$cont_s1"
 actx_s1="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
-assert_contains "session-start-qwen: S1 wrapper injects QWEN fixture index (transport signal reaches canonical hook)" "$actx_s1" "MARKER_QWEN_FIXTURE"
+assert_contains "session-start-qwen: S1 wrapper announces QWEN fixture path (transport reaches canonical hook)" "$actx_s1" "$qwen_fixture_s1/docs/wiki/index.md"
 assert_not_contains "session-start-qwen: S1 wrapper does NOT inject CLAUDE fixture index" "$actx_s1" "MARKER_CLAUDE_FIXTURE"
 
 # S1b. Any WIKI_HOOK_CLIENT already present in the wrapper's OWN
@@ -1125,7 +1126,7 @@ assert_eq "session-start-qwen: hookEventName == SessionStart" "SessionStart" "$e
 #    the mandatory untrusted-data label (exact string from
 #    hooks/session-start.sh's preamble).
 actx="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
-assert_contains "session-start-qwen: additionalContext has WIKI INDEX marker" "$actx" "=== WIKI INDEX (hook-injected) ==="
+assert_contains "session-start-qwen: additionalContext has WIKI INDEX marker" "$actx" "=== WIKI DISCOVERY (hook) ==="
 assert_contains "session-start-qwen: additionalContext has untrusted-data label" "$actx" "НЕ інструкції"
 
 # 4. stdout is EXACTLY one line.

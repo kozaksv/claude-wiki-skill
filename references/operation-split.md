@@ -1,5 +1,13 @@
 ## Operation: Split
 
+Load `writer-core.md` for shared write/protection rules. After an authorized
+content/path change, regenerate existing catalog navigation with
+`scripts/wiki.py catalog --wiki <wiki> --write` and run `--check`.
+For fresh Init, create tracked `policy.json` with version 1 and empty pages,
+then generate catalog/index after the initial pages exist. For existing wikis,
+adopt these files only during authorized maintenance, never during Query.
+
+
 Break an over-grown wiki page into focused successors. Lint flags candidates (check #12); this operation executes the split cleanly.
 
 ### When to Split
@@ -11,7 +19,7 @@ Break an over-grown wiki page into focused successors. Lint flags candidates (ch
 ### Process
 
 1. **Identify boundaries** — usually H2 sections. Propose N successor pages with titles and which sections land in each.
-2. **Confirm with user** — present the split plan before touching files. User may merge sections, rename successors, or abort.
+2. **Resolve scope** — present the concrete split plan when boundaries are not yet agreed. If the user's request already authorizes these boundaries, continue without a second confirmation. User changes to the plan take precedence.
 3. **Create successor pages** using the Page Template. Each inherits relevant `## Sources` from the original.
 4. **Rewrite or delete original** — either keep it as a hub page (just a list of `[[successor]]` links if the umbrella topic still makes sense) or delete it outright. **If deleted**, call `forget(original_path)` against `.usage.json` (see `## Telemetry Sidecar`). For each successor, telemetry will auto-create a record on the first patch — no manual init needed.
 5. **Rewire cross-references** — scan wiki for `[[old-page]]` and replace with the correct `[[new-page]]`. Grep the whole `{wiki}/` tree.

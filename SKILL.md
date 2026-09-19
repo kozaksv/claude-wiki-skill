@@ -1,219 +1,108 @@
 ---
 name: wiki
-version: "4.8.0"
+version: "4.9.0"
 description: >
-  Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
-  ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
-  "створи/ініціалізуй wiki/вікі", "init wiki", "bootstrap wiki",
-  "додай/оновити/перевір wiki/вікі", "wiki/вікі lint/query/cleanup/status",
-  "що каже wiki про...", "знайди у вікі", binaries in tmp/. Proactively query
-  before project-specific how-to/config/setup/recipe/explanation answers,
-  including "як налаштувати X", "що таке X", "як працює X", "де лежить X",
-  "пам'ятаєш як ми Y", "потрібно знову Z".
-  ОБОВ'ЯЗКОВО на старті сесії в проєкті з вікі: прочитай `{wiki}/index.md`
-  ДО будь-якої project-specific відповіді. Кожна project-specific відповідь
-  МАЄ містити `[[page-name]]` цитати з вікі. Відповідь без цитат на
-  wiki-backed темі — баг, переробити.
+  Read and maintain a project's LLM Wiki: query, init, ingest, edit, lint,
+  cleanup, split, protect and status. Use for wiki/вікі requests and
+  project-specific architecture, setup, decisions and recipes. Read relevant
+  wiki evidence before answering; use the GitHub adapter for remote repos.
 ---
 
-# LLM Wiki (Karpathy Pattern)
+# LLM Wiki
 
-A persistent, compounding knowledge base maintained by an AI coding agent.
-Instead of re-discovering knowledge each session, the wiki accumulates
-synthesized understanding across conversations.
-
-This skill is **project-agnostic** and **agent-neutral**: it discovers wiki
-location automatically and can be used from Claude, Codex, Gemini, Qwen Code,
-or ChatGPT with the GitHub plugin.
-
-This file is intentionally a thin entrypoint. The operational contract lives in
-`references/` and should be loaded only when needed for the current operation.
+A persistent knowledge base of project decisions and synthesized understanding.
+Use the smallest workflow that covers the request. Shared reading/writing rules
+are independent of the filesystem or GitHub transport.
 
 ## Choose the Access Mode First
 
-- **GitHub repository, without a checkout of the target repo:** load
-  [skills/wiki-github/SKILL.md](skills/wiki-github/SKILL.md) and follow that
-  self-contained read-only adapter. It supports wiki questions and basic
-  inventory/status through the connected GitHub tools. This also applies when
-  ChatGPT has a scratch filesystem but the target repository is remote.
-  The remaining local-workspace discovery, migration, hook, telemetry, and
-  instruction-file-sync procedures do not apply to that adapter.
-- **Local checkout of the target repo:** use the existing workflow below.
-  When the user explicitly asks about a GitHub branch or commit, use the
-  GitHub adapter for that snapshot even if a local checkout exists.
+- **Remote repository:** load [skills/wiki-github/SKILL.md](skills/wiki-github/SKILL.md).
+  It supports reading and authorized wiki changes through the connected GitHub
+  tools. A scratch filesystem alone is not a checkout of the target repository.
+  The repository used to install this skill is not automatically the target.
+- **Local checkout, question or inventory:** load
+  [references/local-reader.md](references/local-reader.md) and
+  [references/reader-core.md](references/reader-core.md). Do not load migration
+  and telemetry instructions for ordinary reading.
+- **Local maintenance:** load [references/writer-core.md](references/writer-core.md),
+  [references/discovery-versioning.md](references/discovery-versioning.md), and
+  the operation reference below. Existing user authorization covers its scope;
+  do not ask again for permission already supplied.
+- An explicit request about a GitHub ref selects that snapshot even if a local
+  checkout exists. A request for local changes selects the checkout.
 
-The GitHub plugin supplies repository access; an installed skill or an explicit
-bootstrap instruction supplies this workflow. Merely storing `SKILL.md` or
-`AGENTS.md` in a repository does not establish automatic loading in every chat.
+Installed skills provide the workflow; GitHub provides repository access.
+Merely storing a SKILL.md or AGENTS.md in a repository does not install a skill
+in a ChatGPT account. The standalone ChatGPT skill bundles the shared contracts;
+maintainers regenerate that bundle with `python3 scripts/build_skill.py`.
 
 ## Platform Compatibility (Local Workspace)
 
-The workflow is written in Claude-era terms, but the contract is platform-neutral:
-
 | Generic action | Claude Code | Codex | Gemini CLI | Qwen Code |
 |---|---|---|---|---|
-| Read file(s) | Read | shell/read tools | shell/read tools | read_file |
-| Edit file(s) | Edit/Write | apply_patch | shell/edit tools | edit / write_file |
+| Read files | Read | file/shell tools | read_file | read_file |
+| Edit files | Edit/Write | apply_patch | file/shell tools | edit/write_file |
 | Run commands | Bash | exec_command | shell tool | shell |
-| Track tasks | TodoWrite | update_plan | native plan/todo mechanism if available | todo_write |
+| Track tasks | TodoWrite | update_plan | native tasks | native tasks |
 
-When references name a platform-specific tool (`Read`, `Edit`, `Write`, `Bash`,
-`TodoWrite`), translate it to the current agent's equivalent. The behavior is
-normative; tool names are examples.
+Translate reference tool names to available equivalents; do not invent tools.
 
-## Always Start Here
+## Session-Start Contract
 
-Before **any local-workspace** operation, load and follow:
+1. **READ FIRST:** read the complete wiki index, then relevant topic pages
+   before a wiki-backed answer. Follow the shared reader contract for ranges,
+   truncation, current rules, historical incidents and correction notices.
+2. **CITE:** support project claims with sources actually read. Use wikilinks
+   where rendered, clickable file/GitHub links in ChatGPT. Identify inferences
+   and sources outside the wiki.
+3. **NO MEMORY-FIRST:** memory and an index marker are not source evidence.
+   A legacy `WIKI INDEX (hook-injected)` block may have been truncated by the
+   host. A new `WIKI DISCOVERY (hook)` block supplies a path only. Neither
+   satisfies READ FIRST; explicitly read the index.
+4. **GAPS:** an index omission is not proof that no page exists. Check actual
+   paths before declaring a gap; distinguish a failed read from absence.
 
-- `references/discovery-versioning.md`
-
-That reference contains Step 0 discovery, schema lookup, version comparison,
-migration flow, and the rule to resume the user's original operation after a
-migration. Never create a second wiki if a valid existing wiki can be found.
-
-## Session-Start Contract (NON-NEGOTIABLE)
-
-This section is the local-workspace contract. The GitHub adapter preserves
-read-before-answer using its own discovery and clickable source citations.
-
-Якщо Step 0 знайшов валідну вікі для цього проєкту — діє блокуючий контракт.
-Жодних винятків окрім явно зазначеного нижче.
-
-1. **READ FIRST.** До першої project-specific відповіді в сесії — прочитай
-   `{wiki}/index.md` та сторінки, на які він вказує по темі питання. Не
-   після відповіді, не «пізніше», не «коли буде час» — спочатку. Якщо на
-   старті сесії хук уже інжектнув блок `WIKI INDEX (hook-injected)` у
-   контекст — це виконаний READ FIRST лише для `index.md`. Тематичні
-   сторінки, на які index вказує по темі питання, все одно треба прочитати
-   й процитувати окремо — інжект їх не підміняє.
-2. **CITE OR FAIL.** Кожна project-specific claim, recipe, path, config,
-   setup-step, «як ми робимо X», «де лежить Y», «як працює Z» МАЄ нести
-   `[[wikilink]]` на сторінку вікі, що це підтверджує. Відповідь без
-   `[[page-name]]` цитат на wiki-backed темі — баг, перероби з вікі.
-3. **NO MEMORY-FIRST.** «Я пам'ятаю як цей проєкт робить X» — недостатньо.
-   Memory не замінює read. Спершу прочитай вікі, потім цитуй, потім
-   відповідай. Якщо вікі суперечить пам'яті — вікі виграє.
-4. **EMPTY-WIKI EXCEPTION.** Якщо у вікі немає релевантної сторінки —
-   скажи це прямо («у вікі нема, відповідаю з training») І познач тему як
-   кандидата на crystallization (див. `references/crystallization.md`).
-   Цей exception легалізує відповідь без цитат — але лише якщо ти справді
-   прочитав `index.md` і релевантні сторінки, і їх немає. Не використовуй
-   його, щоб обійти крок READ FIRST.
-
-### Red Flags — це раціоналізації, СТОП
-
-| Думка                                | Реальність                                                       |
-|--------------------------------------|------------------------------------------------------------------|
-| «Я й так знаю»                       | Знання загального ≠ знання саме цього проєкту. Читай вікі.       |
-| «Питання просте»                     | Прості питання найчастіше мають специфічну відповідь у вікі.     |
-| «Подивлюся у файли — швидше»         | Файли = код. Вікі = рішення/обґрунтування. Спершу вікі.          |
-| «Перевірю вікі після відповіді»      | Ні. READ → CITE → ANSWER. Не «answer-then-verify».               |
-| «Це не project-specific»             | Якщо торкаєшся paths/configs/decisions цього проєкту — є.        |
-| «Цитата зайва, бо очевидно»          | Цитата дешева. Її відсутність = баг за контрактом.               |
-| «Я вже читав вікі в попередній сесії»| Resident-контекст не зберігся між сесіями. Читай знову.          |
-| «Хук інжектнув index → усе прочитано»| Ні, інжект = лише `index.md`. Тематичні сторінки читай і цитуй сам. |
-| «Інжект-блок є → хук веде телеметрію, ручні bump не потрібні»| Ні, інжект доводить лише живий SessionStart-хук. Супресію ручних `bump_view`/`bump_patch` дозволяє ЛИШЕ свіжий `_hooks.post_tool_use_at`, інакше bump вручну (`references/telemetry.md`). |
-
-Контракт не залежить від типу операції — він діє завжди, коли є валідна
-вікі для поточного проєкту. Operation Query (`references/operation-query.md`)
-дає механіку (як шукати, як цитувати, як filing back); контракт тут — це
-коли і чому це обов'язково.
+A query has no agent-initiated writes: no manual telemetry bumps, migration,
+pointer sync, hooks installation or automatic filing back. A user's request to
+save or change knowledge invokes the writing workflow. Independently installed
+hooks may continue their optional local telemetry.
 
 ## Reference Loading Map
 
-Load the smallest set of references that covers the user's request:
-
 | User intent / operation | Required references |
 |---|---|
-| Read a remote repository wiki through ChatGPT/GitHub | `skills/wiki-github/SKILL.md` only; no local discovery or telemetry |
-| Create / initialize / migrate a wiki (`створи вікі`, `init wiki`, `bootstrap wiki`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/telemetry.md`, `references/reflection.md` |
-| Add source Markdown/spec/code knowledge (`ingest-source`, `додай до вікі`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-source.md`, `references/telemetry.md`, `references/reflection.md` |
-| Add binary artifact from `tmp/` (`ingest-binary`, PDF/DOCX/image) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-binary.md`, `references/telemetry.md`, `references/reflection.md` |
-| Ask project-specific questions / recipes / setup details | `references/discovery-versioning.md`, `references/operation-query.md`, `references/telemetry.md` |
-| Print wiki status | `references/discovery-versioning.md`, `references/operation-wiki-status.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
-| Run lint / verify wiki health | `references/discovery-versioning.md`, `references/operation-lint.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
-| Diagnose/repair wiki+hooks health (`wiki doctor`, `полікуй вікі`, `перевір здоров'я вікі`, `онови вікі`) | `references/discovery-versioning.md`, `references/operation-doctor.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
-| Split a large page | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-split.md`, `references/telemetry.md`, `references/reflection.md` |
-| Cleanup / resolve lint/status actions | `references/discovery-versioning.md`, `references/operation-cleanup.md`, `references/operation-lint.md`, `references/cleanup-flow.md`, `references/maintenance-and-mistakes.md` |
+| Read or change a remote GitHub wiki | `skills/wiki-github/SKILL.md`; it routes reading and writing |
+| Ask project-specific questions | `references/local-reader.md`, `references/reader-core.md`, `references/operation-query.md` |
+| Create / initialize / migrate a local wiki | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/writer-core.md`, `references/telemetry.md`, `references/reflection.md` |
+| Add source Markdown/spec/code knowledge | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-source.md`, `references/writer-core.md`, `references/telemetry.md`, `references/reflection.md` |
+| Add binary artifact from tmp/ | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-binary.md`, `references/telemetry.md`, `references/reflection.md` |
+| Print local wiki status | `references/local-reader.md`, `references/operation-wiki-status.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
+| Run lint / verify wiki health | `references/discovery-versioning.md`, `references/operation-lint.md`, `references/writer-core.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
+| Diagnose/repair wiki+hooks health | `references/discovery-versioning.md`, `references/operation-doctor.md`, `references/telemetry.md`, `references/maintenance-and-mistakes.md` |
+| Split a large page | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-split.md`, `references/writer-core.md`, `references/telemetry.md`, `references/reflection.md` |
+| Cleanup / resolve lint/status actions | `references/discovery-versioning.md`, `references/operation-cleanup.md`, `references/operation-lint.md`, `references/cleanup-flow.md`, `references/writer-core.md`, `references/maintenance-and-mistakes.md` |
 | Reflection / crystallization | `references/reflection.md`, `references/crystallization.md`, `references/cleanup-flow.md`, `references/self-improvement.md` |
-| Telemetry sidecar details | `references/telemetry.md` |
-| Wiki layer and navigation conventions | `references/wiki-structure.md` |
+| Catalog, durable protection, current/history layout | `references/wiki-maintenance.md` |
+| Optional telemetry / wiki navigation | `references/telemetry.md`, `references/wiki-structure.md` |
 
-If a referenced file is missing, stop and tell the user which file is missing
-instead of improvising the behavior from memory.
+If a required reference is missing, report the missing file rather than
+inventing its instructions.
 
-## Core Invariants
+## Local Maintenance Invariants
 
-Local registry, checkout, and filesystem-boundary invariants below apply to the
-local-workspace adapter. The GitHub adapter uses the selected repository and
-verified ref as its boundary; it does not require a local `.git` marker.
-
-- **DRY topology:** one real git clone, one canonical entrypoint, symlink exports
-  for other agents. Do not copy skills into per-agent private registries.
-- **Shared canonical registry:** `~/.claude/skills/` is the canonical skill
-  registry for this stack even in Codex-only or Gemini-only sessions. It does
-  not require Claude Code to be installed.
-- **Agent-neutral discovery:** `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and
-  `QWEN.md` are equal sources of a `## Wiki` / `## Вікі` pointer. Validate
-  every pointer by checking for `{wiki}/index.md`.
-- **Git-backed wiki:** Git is the foundation of the wiki: snapshots, rollback,
-  lint auto-fixes, cleanup, and migration safety all rely on commits. A project
-  without git metadata (`.git/` directory or `.git` file) is not wiki-ready.
-- **Boundary-aware discovery:** walk from cwd upward only to the nearest git
-  marker ancestor (`.git/` directory or `.git` file), inclusive. If no git
-  marker ancestor exists, stop and require explicit git initialization before
-  any wiki operation can proceed.
-- **No split-brain wiki:** a stale active-agent pointer is a cleanup/lint finding,
-  not permission to create a second wiki.
-- **Optional `doc-extract`:** required only for `ingest-binary`. The rest of the
-  wiki must remain usable when `doc-extract` is missing or broken.
-- **Karpathy content-verification:** telemetry prioritizes what to read; it never
-  flags stale content by itself.
-- **Resident context is expensive:** keep agent instruction files short. Move
-  implementation details and full schemas into the wiki.
-
-## Philosophy
-
-From Karpathy's original pattern: the problem is that an LLM rediscovers project
-knowledge from scratch every session. The wiki is not generic documentation; it
-is synthesized understanding that compounds across sessions. Cross-references
-are first-class, and the LLM does the mechanical bookkeeping humans abandon.
-
-Use the wiki as a palette, not a checklist. Small projects may only need
-`ingest-source` and `query`; research projects may lean on `ingest-binary`; mature
-projects may benefit from lint/status/cleanup and crystallization.
-
-## Operation Index
-
-All operation bodies live in references:
-
-- `references/operation-init.md`
-- `references/operation-ingest-source.md`
-- `references/operation-ingest-binary.md`
-- `references/operation-query.md`
-- `references/operation-wiki-status.md`
-- `references/operation-lint.md`
-- `references/operation-split.md`
-- `references/operation-cleanup.md`
-- `references/operation-doctor.md`
-
-The supporting contracts are:
-
-- `references/discovery-versioning.md`
-- `references/wiki-structure.md`
-- `references/telemetry.md`
-- `references/reflection.md`
-- `references/crystallization.md`
-- `references/cleanup-flow.md`
-- `references/self-improvement.md`
-- `references/maintenance-and-mistakes.md`
-
-## Session-Start Checklist
-
-При першому project-specific питанні в сесії (якщо Step 0 знайшов валідну вікі):
-
-- [ ] Прочитати `{wiki}/index.md`
-- [ ] Визначити релевантні до питання сторінки з index
-- [ ] Прочитати ці сторінки
-- [ ] Сформувати відповідь з `[[page-name]]` цитатами на прочитані сторінки
-- [ ] Якщо знання нове/синтезоване — filing back (нова сторінка) або mark for crystallization
+- One real git clone, one canonical `~/.claude/skills/wiki` entrypoint and
+  symlink exports for Codex, Gemini and Qwen. Claude need not be installed.
+- Git backs maintenance snapshots and rollback. Discovery walks only to the
+  nearest Git boundary and rejects resolved paths escaping the repository.
+- `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md` are pointer sources.
+  Validate candidates by their index. A broken active-agent pointer cannot
+  hide a valid wiki or authorize creation of another wiki.
+- Use the canonical `hooks/lib/discover.sh` parser for local discovery.
+  It accepts `## Wiki`, `## Вікі`, case variants and heading suffixes.
+- Track durable protection in `policy.json`; keep usage counters local.
+  Resolve legacy protection before destructive work, and block on corrupt
+  protection metadata. Optional telemetry failure must not block a query.
+- `doc-extract` is needed only for ingest-binary.
+- Content determines staleness. Telemetry only prioritizes verification.
+- Keep resident instruction files short; schema and procedures live in wiki
+  or skill references. Keep dated history separate from current guidance.

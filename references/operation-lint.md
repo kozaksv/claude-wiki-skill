@@ -1,5 +1,7 @@
 ## Operation: Lint
 
+Resolve effective page protection via `writer-core.md` before selecting or modifying pages. A missing counter record is not evidence of absent protection.
+
 Periodic health-check of the wiki.
 
 ### When to Lint
@@ -129,7 +131,7 @@ Page protection always applies during resolution: protected pages are excluded f
 
    **Forbidden DECIDE pattern: binary `глянь і онови` / `залиш як є`.** If the only alternative to applying the fix is to perpetuate an identified bug, that's not a competing alternative — that's a fake choice. Such findings belong in AUTO, not DECIDE. Use DECIDE only when alternatives are genuinely defensible from different angles.
 
-4. **`.usage.json` is read here for prioritization only** — sort order (`patch_count desc, last_patched_at asc`) so most-likely-drifted pages are verified first, and protection filter (skip `protected == true`). The presence of low view_count or old last_viewed_at is **never** a reason to flag a page as stale on its own. A 0-view page may be a perfectly correct security recipe that just hasn't been needed yet (which is exactly why protection exists).
+4. **`.usage.json` is read here for prioritization only** — sort order (`patch_count desc, last_patched_at asc`) so most-likely-drifted pages are verified first, and join it with the effective protection filter from `policy.json` (skip `protected == true`). The presence of low view_count or old last_viewed_at is **never** a reason to flag a page as stale on its own. A 0-view page may be a perfectly correct security recipe that just hasn't been needed yet (which is exactly why protection exists).
 
 ### Page protection during Lint
 
@@ -137,10 +139,10 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 
 **Page protection rules:**
 
-- A page with `protected: true` in `.usage.json` is **skipped** by every subset variant — full lint, "швидко" top-10, and any user-named scope. It is also **excluded** from any "candidates for content-verification" auto-list.
+- A page with `protected: true` in `policy.json` (resolved with legacy fallback per `writer-core.md`) is **skipped** by every subset variant — full lint, "швидко" top-10, and any user-named scope. It is also **excluded** from any "candidates for content-verification" auto-list.
 - The Lint report **must** include a separate `### Захищені` line listing these pages (so the user remembers they exist), but **never** flags them as `глянь і онови` or `видали`.
 - To verify or modify a protected page, the user must first run `wiki unprotect <path>`. After unprotecting, the page becomes a normal Lint candidate; the user can re-protect afterwards with `wiki protect <path>`.
-- Protect/unprotect is a sidecar mutation: read `.usage.json`, set/clear `protected`, write atomically (see Telemetry Tolerance rules). Protecting does not bump `patch_count` for the page itself.
+- Protect/unprotect is a versioned policy mutation: use `scripts/wiki.py protect|unprotect --wiki <wiki> --page <path>`. Preserve existing legacy pins and commit `policy.json` with the change (see `writer-core.md`). Protecting does not bump `patch_count` for the page itself.
 - Protect auto-suggest fires during Ingest-Source / Ingest-Binary when a new page looks critically-rare (security / incident / migration / compliance / recovery). See those operations for the exact prompt.
 
 **2. Contradictions** — Cross-check between pages:

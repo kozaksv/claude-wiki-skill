@@ -1,0 +1,25 @@
+name: Wiki catalog
+description: Check or regenerate exact-path wiki navigation from repository files.
+inputs:
+  wiki:
+    description: Wiki directory relative to the checked-out repository.
+    required: false
+    default: docs/wiki
+  mode:
+    description: check (default) or write; neither mode commits changes.
+    required: false
+    default: check
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        WIKI_ACTION_PATH: ${{ github.action_path }}
+        WIKI_ACTION_ROOT: ${{ inputs.wiki }}
+        WIKI_ACTION_MODE: ${{ inputs.mode }}
+      run: |
+        case "$WIKI_ACTION_MODE" in
+          check|write) ;;
+          *) echo 'mode must be check or write' >&2; exit 1 ;;
+        esac
+        python3 "$WIKI_ACTION_PATH/scripts/wiki.py" catalog --wiki "$WIKI_ACTION_ROOT" "--$WIKI_ACTION_MODE"

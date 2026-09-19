@@ -1,5 +1,13 @@
 ## Operation: Ingest-Source
 
+Load `writer-core.md` for shared write/protection rules. After an authorized
+content/path change, regenerate existing catalog navigation with
+`scripts/wiki.py catalog --wiki <wiki> --write` and run `--check`.
+For fresh Init, create tracked `policy.json` with version 1 and empty pages,
+then generate catalog/index after the initial pages exist. For existing wikis,
+adopt these files only during authorized maintenance, never during Query.
+
+
 Process a new source (spec, feature, code change) into the wiki.
 
 ### When to Ingest
@@ -74,7 +82,7 @@ Ask the user:
 Сторінка [[{slug}]] виглядає як критично-рідкісна. Запропонувати захист? [y/n]
 ```
 
-On `y`: read `.usage.json`, set `protected: true` on this page's record (creating the record with defaults if absent), write atomically. Pinning does not bump `patch_count` — it's a metadata mutation. On `n`: leave `protected: false`. Page protection then kicks in during future Lint runs (see `## Operation: Lint > Page protection during Lint`).
+On `y`: use `scripts/wiki.py protect --wiki <wiki> --page <path>` to save durable protection in tracked `policy.json`, preserving legacy pins for other pages. Protection does not bump `patch_count`. On `n`: do not change policy. Page protection then kicks in during future Lint runs (see `## Operation: Lint > Page protection during Lint`).
 
 ### Page Template
 
