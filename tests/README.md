@@ -1,6 +1,6 @@
 # Test strategy
 
-This repo has two kinds of tests:
+This repo has several complementary kinds of tests:
 
 - `install-cross-agent-links.sh` is an automated shell regression test for installer behavior: canonical link shape, symlink exports, repair-only exports, conflict preservation, bad refs, optional `doc-extract` failure, and truthful summaries.
 - `uninstall.sh` is an automated shell regression test for safe uninstall behavior: idempotent symlink removal, conflict preservation, and optional clean-clone removal.
@@ -9,7 +9,7 @@ This repo has two kinds of tests:
 
 The Markdown scenarios are intentional, not placeholders. The behavior they cover depends on an agent reading project files, resolving ambiguous user intent, and applying the skill instructions in context, so plain shell assertions would either miss the actual contract or overfit to a fake parser.
 
-`scenarios/chatgpt-github.md` covers the remote read adapter: snapshot-scoped
+`scenarios/chatgpt-github.md` covers the remote read/write adapter: snapshot-scoped
 retrieval, missing index entries, empty/partial/inaccessible wikis, duplicate
 basenames, truncation, and capability boundaries. Validate the new entrypoint
 with Skill Creator's `quick_validate.py skills/wiki-github` and the package with
@@ -36,3 +36,15 @@ If an automated eval harness is added later, start with the highest-risk scenari
 - destructive cleanup double-confirmation
 - anti-recursion after lint/status/cleanup
 - crystallization proposing only the single `wiki` artifact type (never a script or skill tier)
+
+## Deterministic maintenance coverage
+
+Run `python3 -m unittest discover -s tests -p 'test_*.py' -v`.
+These tests execute real discovery in Git fixtures and exercise catalog
+coverage/drift, Git blob identity, large-page section ranges, Unicode paths,
+symlink/FIFO boundaries, durable/legacy protection, corruption handling,
+history extraction and rollback. They do not claim model or GitHub E2E coverage.
+
+Run `python3 scripts/build_skill.py --check` for canonical/bundled parity.
+The Wiki contracts workflow runs these plus the existing hook/installer suites.
+The root `action.yml` makes catalog check/write available to consuming repos.

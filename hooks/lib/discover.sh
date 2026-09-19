@@ -60,43 +60,50 @@ _wiki_disc_boundary_ok() {
 }
 
 _wiki_disc_extract_pointer() {
-  # $1 = config file path. Prints the first backtick-quoted token found
-  # inside the file's "## Wiki" section (a line that is exactly
-  # "## Wiki", up to the next "## " header or EOF). Empty if no such
-  # section or no backtick token inside it.
-  #
-  # The awk|grep|head|sed pipe returns non-zero when the "## Wiki" section
-  # exists but has NO backtick token (grep -o matches nothing -> exit 1;
-  # head closing the pipe early can also SIGPIPE grep). Capturing into a
-  # local with a trailing `|| true` swallows that so this function always
-  # exits 0 — otherwise a `raw="$(_wiki_disc_extract_pointer ...)"`
-  # assignment would abort a set -e caller on the perfectly-normal
-  # "section present, no pointer" case (codex-атк P1).
+  # Canonical parser for references/reader-core.md's pointer grammar.
+  # Explicit Cyrillic cases work even with byte-oriented awk / LC_ALL=C.
   local file="$1" out
   out="$(
     awk '
-      /^## Wiki[[:space:]]*$/ { insec=1; next }
-      insec && /^## / { insec=0 }
-      insec { print }
-    ' "$file" | grep -o '`[^`]*`' | head -1 | sed 's/^`//; s/`$//'
+      { sub(/\r$/, "") }
+      {
+        line=$0; sub(/^ ? ? ?/, "", line)
+        if (line ~ /^(```|~~~)/) {
+          c=substr(line,1,1); n=0
+          while (substr(line,n+1,1)==c) n++
+          rest=substr(line,n+1)
+          if (!fence) { fence=c; fence_len=n }
+          else if (fence==c && n>=fence_len && rest ~ /^[[:space:]]*$/) fence=""
+          next
+        }
+        if (fence) next
+        if (line ~ /^##[[:space:]]+([Ww][Ii][Kk][Ii]|(В|в)(І|і)(К|к)(І|і))([[:space:][:punct:]]|$)/) {
+          insec=1; next
+        }
+        if (line ~ /^##?[[:space:]]/) insec=0
+        if (insec && match(line, /`[^`]+`/)) {
+          print substr(line,RSTART+1,RLENGTH-2); exit
+        }
+      }
+    ' "$file"
   )" || true
   printf '%s' "$out"
 }
 
 _wiki_disc_dir_pointers() {
-  # $1 = directory. Agent-neutral pointer lookup: consult ALL instruction
-  # files in priority order (CLAUDE.md, AGENTS.md, GEMINI.md, QWEN.md) and
-  # print EVERY `## Wiki` backtick pointer found, one per line, in that
-  # order. A file with no pointer contributes nothing but does NOT stop the
-  # scan (codex-атк P1). Printing ALL pointers (not just the first) lets
-  # the caller validate each one, so a stale-but-present CLAUDE.md pointer
-  # cannot mask a valid AGENTS.md/GEMINI.md/QWEN.md pointer in the same
-  # directory (agy-атк P1 follow-up). QWEN.md is appended LAST — it never
-  # changes the priority of the existing files, it only adds a lower-
-  # priority fallback pointer source. Always exits 0; empty output = no
-  # pointers.
-  local dir="$1" name raw
-  for name in CLAUDE.md AGENTS.md GEMINI.md QWEN.md; do
+  # $1 = directory. Try the known active agent first, then the stable
+  # CLAUDE/AGENTS/GEMINI/QWEN default order, de-duplicated. Print all
+  # pointers so the caller can continue past stale candidates. Empty = none.
+  local dir="$1" name raw preferred="" seen=" "
+  case "${WIKI_DISCOVERY_AGENT:-${WIKI_HOOK_CLIENT:-}}" in
+    claude) preferred=CLAUDE.md ;;
+    codex) preferred=AGENTS.md ;;
+    gemini) preferred=GEMINI.md ;;
+    qwen) preferred=QWEN.md ;;
+  esac
+  for name in $preferred CLAUDE.md AGENTS.md GEMINI.md QWEN.md; do
+    case "$seen" in *" $name "*) continue ;; esac
+    seen="$seen$name "
     [ -f "$dir/$name" ] || continue
     raw="$(_wiki_disc_extract_pointer "$dir/$name")"
     [ -n "$raw" ] && printf '%s\n' "$raw"
@@ -140,6 +147,7 @@ _wiki_disc_candidate() {
     echo "[wiki-hook] pointer поза межами репо, ігнорую: $candidate" >&2
     return 1
   fi
+  [ -f "$candidate/index.md" ] || return 1
   dirname "$idx_real"
   return 0
 }

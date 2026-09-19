@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wiki"
+  short_description: "Read and edit GitHub wikis with direct commits or PRs."
+  default_prompt: "Use $wiki-github to read my repository wiki and update its documentation."

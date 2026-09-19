@@ -1,5 +1,12 @@
 ## Step 0: Discover Wiki Location and Schema
 
+For ordinary questions, use `local-reader.md` and `reader-core.md` instead.
+For local maintenance, execute `hooks/lib/discover.sh` for path discovery;
+`WIKI_DISCOVERY_AGENT=claude|codex|gemini|qwen` supplies the active agent.
+Its tested parser is canonical: ignore fenced code, accept Wiki/Вікі H2
+headings with suffixes, stop at H1/H2, and validate within the Git boundary.
+The explanation below defines maintenance state handling after discovery.
+
 This reference describes the local-workspace adapter. For a remote repository
 read through GitHub, use `skills/wiki-github/SKILL.md` instead; local `.git`,
 hook provisioning, instruction-file sync, and migration gates do not apply.
@@ -175,8 +182,8 @@ All paths below use `{wiki}` as placeholder for the discovered wiki directory (e
 ### Hook provisioning (Claude Code only)
 
 After Step 0 resolves a valid wiki, and only when the active agent is Claude
-Code, offer to install the global session hooks that auto-inject
-`{wiki}/index.md` at session start and keep `.usage.json` heartbeats warm.
+Code, offer to install the global session hooks that announce
+the path to `{wiki}/index.md` at session start and keep `.usage.json` heartbeats warm.
 This is a host-side, cross-project install — it never touches project files
 or the wiki itself.
 
@@ -184,7 +191,7 @@ Propose installation only when **all** of these hold, checked in order:
 
 1. The active agent is Claude Code (not Codex, not Gemini CLI).
 2. Step 0 found a valid wiki for this project.
-3. The current session context contains **no** `WIKI INDEX (hook-injected)`
+3. The current session context contains **no** `WIKI DISCOVERY (hook)`
    block — if the block is already present, hooks are already active; do not
    ask again.
 4. `~/.claude/wiki-hooks-optout` does not exist.
@@ -201,7 +208,7 @@ after the first decline/accept in the same session):
 
 ```
 Хочеш поставити глобальні session-хуки для wiki (Claude Code)? Вони
-автоінжектять {wiki}/index.md на старті сесії і оновлюють телеметрію
+повідомляють шлях до {wiki}/index.md на старті сесії і оновлюють телеметрію
 використання сторінок. Хости — глобальні, per-machine, не per-project.
 
 [y] встановити   [n] не зараз   [не питай більше] більше не пропонувати
@@ -213,7 +220,7 @@ after the first decline/accept in the same session):
   session's context was already assembled before install).
 - **`y`, but a canonical marker already exists** — this is the "marker
   present but no inject" branch: a hook entry is registered yet no
-  `WIKI INDEX (hook-injected)` block appeared this session, meaning hooks
+  `WIKI DISCOVERY (hook)` block appeared this session, meaning hooks
   are broken (stale script path, lost executable bit, missing `python3`,
   etc.), not simply un-installed. Do **not** blindly reinstall/overwrite —
   route to `references/operation-doctor.md` (`wiki doctor`) to diagnose the
@@ -456,6 +463,18 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.9.0 (2026-09-19)
+
+- Shared reader/writer contracts and separate filesystem/GitHub adapters.
+- ChatGPT can prepare authorized edits and wiki PRs, not only read.
+- Query does not initiate telemetry, migration or pointer writes.
+- Deterministic optional catalog/index, tracked policy with legacy-pin
+  migration, and a current/history layout; existing v4 Markdown stays readable.
+- The hook emits a small discovery notice and never claims READ FIRST.
+  This supersedes the historical v4.5 injection description below.
+- Wiki/Вікі heading variants and active-agent priorities use the same tested
+  parser for local hooks and maintenance. No schema-major migration.
 
 ### 4.8.0 (2026-09-19)
 - No schema migration (`wiki_version` stays `"4.0"`). Add the self-contained

@@ -37,7 +37,7 @@ If the trigger is ambiguous (e.g. user just says "wiki?"), confirm before runnin
      - Top 2 by view_count (most consulted)
      - Top 2 by use_count (most cited as [[wikilinks]])
      - Top 2 by patch_count (most edited)
-5. LIST protected pages (records where protected == true)
+5. LIST protected pages from policy.json plus legacy fallback (writer-core.md), independently of telemetry records
 6. DETECT passive issues — these need NO LLM read:
      - Cross-ref drift: grep [[wikilinks]] in every page, flag links that don't resolve
      - Schema drift: scan entity-page frontmatter for category/type values

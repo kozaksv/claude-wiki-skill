@@ -668,8 +668,8 @@ grep -q 'last_lint_at' "$ROOT/references/operation-init.md" ||
 # and version gate must exist, be wired together, and be executable before
 # the executable hooks test suite (below) is trusted to have run at all.
 
-grep -q 'WIKI INDEX (hook-injected)' "$ROOT/hooks/session-start.sh" ||
-  fail "hooks/session-start.sh must inject the WIKI INDEX (hook-injected) block"
+grep -q 'WIKI DISCOVERY (hook)' "$ROOT/hooks/session-start.sh" ||
+  fail "hooks/session-start.sh must inject the WIKI DISCOVERY (hook) block"
 
 grep -q 'НЕ інструкції' "$ROOT/hooks/session-start.sh" ||
   fail "hooks/session-start.sh must label injected wiki content as untrusted data (НЕ інструкції)"

@@ -1,5 +1,7 @@
 ### Cleanup-flow
 
+Resolve effective page protection via `writer-core.md` before selecting or modifying pages. A missing counter record is not evidence of absent protection.
+
 The cleanup-flow is the **single canonical path** for any "the wiki has drifted, let's fix it" moment. The single entry point is `wiki status`; downstream is subset selection → content-verification → Two-Tier classification (AUTO auto-applied, DECIDE/INFO via the action menu below). This subsection is the contract; everything in `## Operation: Lint` and `## Operation: Wiki Status` is a delegation target.
 
 ### Passive drift notice
@@ -21,8 +23,8 @@ The six verbs below are the menu for **DECIDE / elevated-INFO** findings only �
 | Action | What the skill does | Telemetry effect |
 |---|---|---|
 | `глянь і онови` | Read page + cited code, update content synchronously, show diff before saving | `bump_patch(path)` |
-| `видали` | Delete the file, remove from `index.md`, mark in `.usage.json` | `forget(path)` |
-| `захисти` | Set `protected: true` in `.usage.json` — cleanup-flow skips this page | toggle `protected` |
+| `видали` | Delete the unprotected file, remove navigation and obsolete policy entry; forget local telemetry | `forget(path)` |
+| `захисти` | Set `protected: true` in `policy.json` (resolved with legacy fallback per `writer-core.md`) — cleanup-flow skips this page | toggle `protected` |
 | `merge` | Propose merging two pages into one; triggers a separate flow that asks which is the target and which is the source | `forget(merged-into-other)` + `bump_patch(target)` |
 | `розбий` | Invoke the existing `## Operation: Split` on this page | (split's own telemetry, normally `bump_patch` on each successor) |
 | `глянь обидві` | Verbose side-by-side diff + recommendation (used when content-verification surfaces a contradiction between two pages) | (no immediate mutation; user then picks per-page action on each side) |
@@ -90,7 +92,7 @@ Three layers protect against accidental destruction:
    agent notices this after a revert, it may offer to re-record a baseline entry
    with `bump_view`; do not do it silently.
 
-3. **Page protection.** Even if the user typed `видали` (and even if they made it through double-confirmation), if the target page has `protected: true` in `.usage.json`, the skill **refuses** with a helpful message and does nothing. Example:
+3. **Page protection.** Even if the user typed `видали` (and even if they made it through double-confirmation), if the target page has `protected: true` in `policy.json` (resolved with legacy fallback per `writer-core.md`), the skill **refuses** with a helpful message and does nothing. Example:
 
    ```
    ⛔ concepts/security-recovery.md помічена як `protected: true` —
@@ -124,12 +126,12 @@ A cancelled action (user said anything other than `yes` to a `видали` conf
 
 ### `wiki protect <path>` and `wiki unprotect <path>`
 
-Two micro-operations let the user toggle the `protected` field in `.usage.json` outside of the cleanup-flow context — useful when adding a page that should be born protected (security recipes, incident postmortems, migration runbooks), or when the user wants to liberate a previously-protected page so it rejoins normal cleanup.
+Two micro-operations let the user toggle the `protected` field in `policy.json` (resolved with legacy fallback per `writer-core.md`) outside of the cleanup-flow context — useful when adding a page that should be born protected (security recipes, incident postmortems, migration runbooks), or when the user wants to liberate a previously-protected page so it rejoins normal cleanup.
 
 | Command | What it does |
 |---|---|
-| `wiki protect <path>` | Set `protected: true` for `<path>` in `.usage.json`. Page is now skipped by `[a]` / `[b]` and refused by `видали` until unprotected. |
-| `wiki unprotect <path>` | Set `protected: false` for `<path>` in `.usage.json`. Page rejoins the normal cleanup-flow and can be proposed for verification or destructive action. |
+| `wiki protect <path>` | Set `protected: true` for `<path>` in `policy.json` (resolved with legacy fallback per `writer-core.md`). Page is now skipped by `[a]` / `[b]` and refused by `видали` until unprotected. |
+| `wiki unprotect <path>` | Set `protected: false` for `<path>` in `policy.json` (resolved with legacy fallback per `writer-core.md`). Page rejoins the normal cleanup-flow and can be proposed for verification or destructive action. |
 
 After either toggle, the skill confirms the new state and notes which protections (de)apply. Example output:
 
