@@ -1,8 +1,29 @@
 # Wiki Skill
 
-**Skill behavior version: 4.5.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default, with `v4.2.0` available as the latest reproducible stable tag. Fresh wikis still use `wiki_version: "4.0"` because v4.1/v4.2/v4.3/v4.4/v4.5 changed agent behavior, installer behavior, and log substrate, not the on-disk schema major.
+**Skill behavior version: 4.8.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default; pin a published tag or full commit SHA for reproducible installs. Fresh wikis still use `wiki_version: "4.0"`: the v4.x behavior changes, including the GitHub reader, do not change the on-disk schema major.
 
-Скіл для Claude Code, Codex і Gemini CLI, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
+Скіл для Claude Code, Codex, Gemini CLI, Qwen Code та ChatGPT з GitHub, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
+
+## ChatGPT у вебверсії
+
+Для читання вікі через підключений GitHub використовується
+[wiki-github](skills/wiki-github/SKILL.md). Він читає файли з вибраного
+репозиторію, визначає справжню default branch, фіксує commit за доступності
+та повертає клікабельні посилання на джерела. Пошуковий індекс не потрібен,
+коли конектор дозволяє читати файли за шляхом і перелічувати дерево.
+
+[Налаштування та приклади](docs/chatgpt.md): разовий запуск, правило для нових
+чатів і пакування як плагіна. `.codex-plugin/plugin.json` експортує лише
+`skills/wiki-github/`; локальний installer і хуки не запускаються в браузері.
+Пакет у репозиторії сам по собі не встановлює плагін у твій обліковий запис.
+
+## What's new in v4.8
+
+- GitHub reader for ChatGPT: scoped repository/ref discovery, exact-path reads,
+  unindexed-page fallback, partial-read handling, and source links.
+- Query and basic remote status perform no telemetry writes, instruction-file
+  synchronization, migrations, or automatic filing back.
+- Existing local workflows and wiki schema v4.0 remain compatible.
 
 ## Cross-agent install model
 

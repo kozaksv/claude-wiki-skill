@@ -1,5 +1,9 @@
 ## Step 0: Discover Wiki Location and Schema
 
+This reference describes the local-workspace adapter. For a remote repository
+read through GitHub, use `skills/wiki-github/SKILL.md` instead; local `.git`,
+hook provisioning, instruction-file sync, and migration gates do not apply.
+
 **Before any operation**, locate both the wiki directory and its schema. Follow this sequence:
 
 1. **Require a git root first** — start in the current working directory and walk up parent directories until the nearest ancestor containing `.git/` or a `.git` file (include that directory).
@@ -316,7 +320,7 @@ last_migration: "2026-05-01"
 ---
 ```
 
-The skill itself has a version in this file's frontmatter (`version: "4.4.0"`). For state detection, compare the schema major (`4` for `4.0`, `4.1`, ..., `4.4`) with the skill major (`4` for `4.4.0`). v4.x releases change agent behavior and installer behavior, not the on-disk wiki schema; a fresh v4.x skill can still create `wiki_version: "4.0"` and be current.
+The skill release version is in the root `SKILL.md` frontmatter. For state detection, compare the schema major with the skill major (`4` for any v4.x release). v4.x releases change agent behavior and installer behavior, not the on-disk wiki schema; a fresh v4.x skill can still create `wiki_version: "4.0"` and be current.
 
 ### State detection on Step 0
 
@@ -452,6 +456,13 @@ treat the partial state according to what actually exists (`schema.md`,
 - No schema migration. Lint heads-up dialog is now size-gated: wikis with
   fewer than 20 active unprotected pages start full verification immediately
   without asking about `швидко` / topic / path scope.
+
+### 4.8.0 (2026-09-19)
+- No schema migration (`wiki_version` stays `"4.0"`). Add the self-contained
+  `skills/wiki-github/SKILL.md` read adapter and a ChatGPT plugin manifest.
+  Remote queries use the selected repository/ref as their boundary, read
+  through GitHub, and cite actual files without local telemetry or sync.
+  Local installation, hooks, and mutating operation contracts are unchanged.
 
 ### 4.7.0 (2026-08-14)
 - No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki migrations
