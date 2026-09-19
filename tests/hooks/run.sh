@@ -1329,17 +1329,16 @@ rc=$?
 assert_eq "post-tool-use: Read outside wiki exits 0" "0" "$rc"
 assert_file_unchanged "post-tool-use: Read outside wiki -> .usage.json unchanged" "$fixture/docs/wiki/.usage.json" "$sha_before"
 
-# 6. Corrupt .usage.json -> recovered to {} + fresh record written.
+# 6. Corrupt .usage.json stays intact so legacy pins remain recoverable.
 fixture="$(make_fixture)"
 cat >"$fixture/docs/wiki/foo.md" <<'EOF'
 # Foo
 EOF
 printf '{not valid json' >"$fixture/docs/wiki/.usage.json"
+sha_before="$(_sha "$fixture/docs/wiki/.usage.json")"
 _ptu_stdin "Read" "$fixture/docs/wiki/foo.md" | CLAUDE_PROJECT_DIR="$fixture" bash "$POST_TOOL_USE_HOOK" >/dev/null 2>&1
-if python3 -c "import json; json.load(open('$fixture/docs/wiki/.usage.json'))" 2>/dev/null; then r=0; else r=1; fi
-assert_eq "post-tool-use: corrupt .usage.json recovered to valid JSON" "0" "$r"
-vc="$(_ptu_field "$fixture/docs/wiki/.usage.json" "foo.md" "view_count")"
-assert_eq "post-tool-use: corrupt .usage.json -> fresh record written (view_count 1)" "1" "$vc"
+assert_file_unchanged "post-tool-use: corrupt .usage.json preserved for legacy-pin recovery" \
+  "$fixture/docs/wiki/.usage.json" "$sha_before"
 
 # 7. No python3 on PATH -> exit 0, .usage.json untouched. A curated PATH
 #    dir carries symlinks to every OTHER external tool the hook needs

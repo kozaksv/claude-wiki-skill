@@ -85,6 +85,26 @@ reminder_secs = int(sys.argv[3])
 usage_path = os.path.join(wiki_dir, ".usage.json")
 
 
+def unique_usage_pairs(pairs):
+    # Match the policy reader: duplicate keys can silently erase a true pin.
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate usage key")
+        result[key] = value
+    return result
+
+
+def valid_usage(value):
+    # Counters are optional, but malformed legacy protection is not an empty DB.
+    return isinstance(value, dict) and all(
+        name.startswith("_") or (
+            isinstance(record, dict) and all(
+                field not in record or type(record[field]) is bool
+                for field in ("protected", "pinned")))
+        for name, record in value.items())
+
+
 def read_usage():
     # Defensive read — same shared invariant as hooks/post-tool-use.sh
     # (agy-атк P0, wave3: this hook runs on Claude Code STARTUP, so a
@@ -116,8 +136,8 @@ def read_usage():
             f = os.fdopen(fd, "r", encoding="utf-8")
             fd = None  # ownership passed to f
             with f:
-                loaded = json.load(f)
-            if isinstance(loaded, dict):
+                loaded = json.load(f, object_pairs_hook=unique_usage_pairs)
+            if valid_usage(loaded):
                 d, ok = loaded, True
     except FileNotFoundError:
         d, ok = {}, True

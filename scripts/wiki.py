@@ -152,8 +152,8 @@ def write_batch(wiki, changes):
         raise
 
 
-def headings(text):
-    """ATX headings outside YAML frontmatter and fenced code; 1-based lines."""
+def headings(text, *, for_split=False):
+    """ATX headings and 1-based ranges; destructive splits reject ambiguity."""
     rows, fence = [], None
     lines = text.splitlines()
     frontmatter = bool(lines and lines[0] == "---")
@@ -172,6 +172,12 @@ def headings(text):
             continue
         if fence:
             continue
+        # This scanner is not a full Markdown block parser. A Setext
+        # underline can end the requested section even though it has no #.
+        # Refuse ambiguous thematic breaks too; never guess when moving text.
+        if for_split and re.match(r"^ {0,3}(?:=+|-+)[ \t]*$", line):
+            raise WikiError("Possible Setext heading or thematic break; "
+                            "use the reviewed Split workflow")
         match = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+?)\s*$", line)
         if match:
             rows.append({"level": len(match[1]), "heading": re.sub(r"\s+#+\s*$", "", match[2]),
@@ -269,7 +275,8 @@ def split_history(wiki, page, heading, destination):
     if wiki.path(destination).exists():
         raise WikiError(f"Destination already exists: {destination}")
     original = wiki.read(page).decode("utf-8")
-    matches = [h for h in headings(original) if h["level"] == 2 and h["heading"] == heading]
+    matches = [h for h in headings(original, for_split=True)
+               if h["level"] == 2 and h["heading"] == heading]
     if len(matches) != 1:
         raise WikiError("History heading must identify exactly one H2 section")
     section = matches[0]
@@ -278,8 +285,13 @@ def split_history(wiki, page, heading, destination):
     body = "".join(lines[start:end])
     if not body.strip():
         raise WikiError("History section is empty")
-    if re.search(r"\]\(|^ {0,3}\[[^\]]+\]:", body, re.MULTILINE):
-        raise WikiError("Section contains Markdown links; use the reviewed Split workflow to relocate links")
+    # Reference definitions may live outside this section. Conservatively
+    # reject link/HTML markers, including shortcut references and images,
+    # instead of moving a reference without its definition. Literal markers
+    # (also in code) and wikilinks go through the reviewed workflow as well.
+    if re.search(r"[\[<]|\]\(", heading + "\n" + body):
+        raise WikiError("Section contains possible links or markup; "
+                        "use the reviewed Split workflow to relocate links")
     from urllib.parse import quote
     import posixpath
     forward = quote(posixpath.relpath(destination, posixpath.dirname(page) or "."), safe="/")
