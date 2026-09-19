@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.7.0"
+version: "4.8.0"
 description: >
   Manage a project's LLM Wiki (Karpathy pattern): init, ingest-source,
   ingest-binary, query, lint, cleanup, split, wiki status. Triggers:
@@ -23,12 +23,30 @@ Instead of re-discovering knowledge each session, the wiki accumulates
 synthesized understanding across conversations.
 
 This skill is **project-agnostic** and **agent-neutral**: it discovers wiki
-location automatically and can be used from Claude, Codex, Gemini, or Qwen Code.
+location automatically and can be used from Claude, Codex, Gemini, Qwen Code,
+or ChatGPT with the GitHub plugin.
 
 This file is intentionally a thin entrypoint. The operational contract lives in
 `references/` and should be loaded only when needed for the current operation.
 
-## Platform Compatibility
+## Choose the Access Mode First
+
+- **GitHub repository, without a checkout of the target repo:** load
+  [skills/wiki-github/SKILL.md](skills/wiki-github/SKILL.md) and follow that
+  self-contained read-only adapter. It supports wiki questions and basic
+  inventory/status through the connected GitHub tools. This also applies when
+  ChatGPT has a scratch filesystem but the target repository is remote.
+  The remaining local-workspace discovery, migration, hook, telemetry, and
+  instruction-file-sync procedures do not apply to that adapter.
+- **Local checkout of the target repo:** use the existing workflow below.
+  When the user explicitly asks about a GitHub branch or commit, use the
+  GitHub adapter for that snapshot even if a local checkout exists.
+
+The GitHub plugin supplies repository access; an installed skill or an explicit
+bootstrap instruction supplies this workflow. Merely storing `SKILL.md` or
+`AGENTS.md` in a repository does not establish automatic loading in every chat.
+
+## Platform Compatibility (Local Workspace)
 
 The workflow is written in Claude-era terms, but the contract is platform-neutral:
 
@@ -45,7 +63,7 @@ normative; tool names are examples.
 
 ## Always Start Here
 
-Before **any** operation, load and follow:
+Before **any local-workspace** operation, load and follow:
 
 - `references/discovery-versioning.md`
 
@@ -54,6 +72,9 @@ migration flow, and the rule to resume the user's original operation after a
 migration. Never create a second wiki if a valid existing wiki can be found.
 
 ## Session-Start Contract (NON-NEGOTIABLE)
+
+This section is the local-workspace contract. The GitHub adapter preserves
+read-before-answer using its own discovery and clickable source citations.
 
 Якщо Step 0 знайшов валідну вікі для цього проєкту — діє блокуючий контракт.
 Жодних винятків окрім явно зазначеного нижче.
@@ -104,6 +125,7 @@ Load the smallest set of references that covers the user's request:
 
 | User intent / operation | Required references |
 |---|---|
+| Read a remote repository wiki through ChatGPT/GitHub | `skills/wiki-github/SKILL.md` only; no local discovery or telemetry |
 | Create / initialize / migrate a wiki (`створи вікі`, `init wiki`, `bootstrap wiki`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/telemetry.md`, `references/reflection.md` |
 | Add source Markdown/spec/code knowledge (`ingest-source`, `додай до вікі`) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-source.md`, `references/telemetry.md`, `references/reflection.md` |
 | Add binary artifact from `tmp/` (`ingest-binary`, PDF/DOCX/image) | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-ingest-binary.md`, `references/telemetry.md`, `references/reflection.md` |
@@ -121,6 +143,10 @@ If a referenced file is missing, stop and tell the user which file is missing
 instead of improvising the behavior from memory.
 
 ## Core Invariants
+
+Local registry, checkout, and filesystem-boundary invariants below apply to the
+local-workspace adapter. The GitHub adapter uses the selected repository and
+verified ref as its boundary; it does not require a local `.git` marker.
 
 - **DRY topology:** one real git clone, one canonical entrypoint, symlink exports
   for other agents. Do not copy skills into per-agent private registries.

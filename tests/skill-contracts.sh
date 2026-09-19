@@ -577,8 +577,16 @@ if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
   fail "no-code project detection must not invent people/documents categories"
 fi
 
-grep -q 'version: "4.7.0"' "$ROOT/SKILL.md" ||
-  fail "SKILL.md frontmatter must be bumped to 4.7.0"
+# Release metadata has more than one consumer. Check agreement rather than
+# pinning a historical release while README or plugin metadata quietly drifts.
+skill_release="$(sed -n 's/^version: "\([0-9][0-9.]*\)"$/\1/p' "$ROOT/SKILL.md" | head -1)"
+[[ "$skill_release" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+  fail "SKILL.md frontmatter must contain a semantic version"
+plugin_release="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/.codex-plugin/plugin.json")"
+[ "$skill_release" = "$plugin_release" ] ||
+  fail "SKILL.md and plugin manifest versions must match"
+grep -Fq "**Skill behavior version: $skill_release**" "$ROOT/README.md" ||
+  fail "README.md must report the current skill behavior version"
 
 grep -q '| Qwen Code |' "$ROOT/SKILL.md" ||
   fail "Platform Compatibility table must include a Qwen Code column"

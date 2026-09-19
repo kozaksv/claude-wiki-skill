@@ -9,6 +9,13 @@ This repo has two kinds of tests:
 
 The Markdown scenarios are intentional, not placeholders. The behavior they cover depends on an agent reading project files, resolving ambiguous user intent, and applying the skill instructions in context, so plain shell assertions would either miss the actual contract or overfit to a fake parser.
 
+`scenarios/chatgpt-github.md` covers the remote read adapter: snapshot-scoped
+retrieval, missing index entries, empty/partial/inaccessible wikis, duplicate
+basenames, truncation, and capability boundaries. Validate the new entrypoint
+with Skill Creator's `quick_validate.py skills/wiki-github` and the package with
+Plugin Creator's `validate_plugin.py .` where those development helpers are
+available. Scenario review is separate from manifest/static validation.
+
 In scenarios, fixed section headers, action verbs, telemetry field names, and safety prompts are contract. Concrete counts, timestamps, example page orderings, and sample entity names are examples unless the scenario explicitly says otherwise.
 
 Manual pre-release pass order for the current prose scenarios:
