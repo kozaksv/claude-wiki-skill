@@ -1,0 +1,44 @@
+name: Verify reviewed wiki safety fixes
+on:
+  push:
+    branches: [wiki/review-fix-verification-20260919-01]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Apply fixes to the reviewed base, not to the temporary workflow branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .github/review-fix.py "$RUNNER_TEMP/wiki-review-fix.py"
+          cp .github/review-regressions.py "$RUNNER_TEMP/wiki-review-tests.py"
+          git checkout --detach a77aaf18bd64bf03f01817dd4763178ef343bbf0
+          python3 "$RUNNER_TEMP/wiki-review-fix.py" "$RUNNER_TEMP/wiki-review-tests.py"
+      - run: python3 scripts/build_skill.py --check
+      - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - run: bash tests/skill-contracts.sh
+      - run: bash tests/hooks/run.sh
+      - run: bash tests/install-cross-agent-links.sh
+      - run: bash tests/uninstall.sh
+      - name: Publish a verified candidate only; do not update master
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Publish code only; the connector applies the checked CI change.
+          git restore .github/workflows/wiki-contracts.yml
+          git add scripts/wiki.py skills/wiki-github/scripts/wiki.py hooks/post-tool-use.sh hooks/session-start.sh tests/test_review_regressions.py tests/hooks/run.sh references/wiki-maintenance.md
+          git diff --cached --check
+          git diff --exit-code
+          test "$(git rev-parse HEAD)" = a77aaf18bd64bf03f01817dd4763178ef343bbf0
+          test "$(git diff --cached --name-only | wc -l)" -eq 7
+          git diff --cached --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(wiki): prevent unsafe history splits and preserve legacy protection' -m 'Fail closed for ambiguous Setext boundaries and link/reference relocation. Preserve corrupt legacy usage metadata in both hooks. Add real-hook and CLI regression coverage and run the hook suite in CI.'
+          git push origin HEAD:refs/heads/wiki/review-fix-candidate-20260919-01
