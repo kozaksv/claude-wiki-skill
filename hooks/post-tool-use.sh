@@ -88,9 +88,9 @@ source "$HOOK_DIR/lib/version-gate.sh"
 
 # Best-effort telemetry mutator. $1 = wiki dir (already realpath'd),
 # $2 = record key (path relative to {wiki}/), $3 = action ("view"|"patch").
-# Reads {wiki}/.usage.json (corrupt/non-object -> treated as `{}`, per
+# Reads {wiki}/.usage.json (corrupt/non-object -> untouched, per
 # telemetry.md Tolerance rules), creates the 10-field-default record if the
-# key is absent. For a record that already exists, migrates a legacy
+# key is absent in a valid object, or the sidecar itself is absent. For a record that already exists, migrates a legacy
 # `pinned` field to `protected` and backfills any other missing v4 fields
 # with defaults (telemetry.md "Field-rename compat" / "Backfill missing
 # keys silently") before bumping. Bumps the relevant counters + timestamp,
@@ -151,50 +151,59 @@ if fcntl is not None:
             pass
         sys.exit(0)
 
-# Read the sidecar defensively (codex-атк P1). The version-gate already
-# rejects a symlink / FIFO / char-device .usage.json, but this open() is
-# the second, TOCTOU-proof line of the same shared invariant:
-#   * O_NOFOLLOW  -> a .usage.json that is a symlink raises ELOOP here
-#     instead of being followed, so external JSON can never be slurped in
-#     and then copied into the repo sidecar by the atomic rename below.
-#   * O_NONBLOCK  -> opening a FIFO / char-device (e.g. /dev/zero) returns
-#     immediately instead of blocking the hook forever ("never blocks"
-#     invariant); the fstat/S_ISREG check then rejects it before any read.
-# Anything that isn't a plain regular file leaves `data == {}`, i.e. the
-# hook proceeds exactly as if the sidecar were absent-but-bootstrappable,
-# and the atomic tmp+rename below replaces the offending path with a real
-# regular file (rename never follows a symlink at the target path).
+def unique_usage_pairs(pairs):
+    # Match the policy reader: duplicate keys can silently erase a true pin.
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate usage key")
+        result[key] = value
+    return result
+
+
+def valid_usage(value):
+    # Counters are optional, but malformed legacy protection is not an empty DB.
+    return isinstance(value, dict) and all(
+        name.startswith("_") or (
+            isinstance(record, dict) and all(
+                field not in record or type(record[field]) is bool
+                for field in ("protected", "pinned")))
+        for name, record in value.items())
+
+
+# Only a genuinely absent sidecar may bootstrap. Existing corrupt, unreadable,
+# non-object or invalid legacy protection must stay byte-identical for recovery.
+# The read stays inside the directory lock and uses no-follow/non-blocking flags:
+# a path changed after the shell gate must not cause a read or overwrite outside
+# the wiki, block on a FIFO, or turn unknown protection into an empty database.
 data = {}
 try:
-    # O_NOFOLLOW / O_NONBLOCK are Unix-only attributes; on Windows they do
-    # not exist and a bare reference raises AttributeError, which the
-    # `except OSError` would NOT catch — killing all telemetry there
-    # (fixwave0-1 P1). getattr degrades them to 0: the defensive guards
-    # simply do not apply on a platform that has neither symlink-following
-    # hazards of the same shape nor mkfifo.
     fd = os.open(
         usage_path,
         os.O_RDONLY
         | getattr(os, "O_NOFOLLOW", 0)
         | getattr(os, "O_NONBLOCK", 0),
     )
-except OSError:
+except FileNotFoundError:
     fd = None
+except OSError:
+    sys.exit(0)
 if fd is not None:
     try:
-        if stat.S_ISREG(os.fstat(fd).st_mode):
-            with os.fdopen(fd, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            if isinstance(loaded, dict):
-                data = loaded
-        else:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
             os.close(fd)
+            sys.exit(0)
+        with os.fdopen(fd, "r", encoding="utf-8") as f:
+            loaded = json.load(f, object_pairs_hook=unique_usage_pairs)
+        if not valid_usage(loaded):
+            sys.exit(0)
+        data = loaded
     except Exception:
         try:
             os.close(fd)
         except Exception:
             pass
-        data = {}
+        sys.exit(0)
 
 now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 

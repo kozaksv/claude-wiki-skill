@@ -79,10 +79,17 @@ python3 <skill>/scripts/wiki.py split-history --wiki docs/wiki \
 Default previews both files. `--write` also refreshes catalog/index, refuses
 protected pages or existing destinations, and rolls back ordinary write
 failures. The command retains the source H2 anchor and adds reciprocal links.
-Sections containing Markdown links require the reviewed Split workflow so
-relative URLs, heading links and reference definitions are relocated correctly.
-It does not synthesize new rules, select a section by size, or rewrite inbound
-links automatically. For mixed current/history text, use `operation-split.md`.
+The automatic helper is deliberately limited to simple, link-free ATX sections.
+Possible Setext underlines (`===` / `---`, including ambiguous thematic breaks)
+outside YAML frontmatter and fenced code require the reviewed Split workflow;
+they are refused before preview or write rather than guessing section boundaries.
+Link/HTML markers in the selected heading or body also require review, including
+full, collapsed and shortcut references, images and wikilinks. This conservative
+guard also refuses literal markers in code; it is not a complete Markdown parser.
+The reviewed workflow relocates relative URLs, heading links and reference
+definitions using the whole source document. Catalog reading remains available.
+The helper does not synthesize new rules, select a section by size, or rewrite
+inbound links automatically. For mixed current/history text, use `operation-split.md`.
 
 Writes use atomic replacement per file, with preflight and rollback of ordinary
 errors. A process/power interruption across multiple files still needs Git
