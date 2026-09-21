@@ -306,10 +306,10 @@ After consent:
 6a. Create `{wiki}/.usage.json`. This is the telemetry sidecar — see `## Telemetry Sidecar`. It is not a bare empty dict: seed it with the reserved `_hooks` metadata key so a freshly bootstrapped wiki isn't immediately flagged as overdue for lint (see `references/telemetry.md` → reserved `_hooks` key):
 
     ```json
-    { "_hooks": { "last_lint_at": "{today}T00:00:00Z" } }
+    { "_hooks": { "telemetry_first_seen_at": "{today}T00:00:00Z" } }
     ```
 
-    Substitute the actual bootstrap timestamp for `{today}T00:00:00Z`. `_hooks.last_lint_at = now` at birth covers the "fresh wiki, no lint yet" edge — a wiki born today has nothing to be stale about, so it should not immediately surface a lint-reminder.
+    Substitute the actual bootstrap timestamp for `{today}T00:00:00Z`. Do not fabricate a full lint result at birth. A missing content checkpoint permits one startup notice for this state; repeated startup/compact events do not repeatedly request lint. Only a completed full lint records `last_lint_fingerprint` (see `operation-lint.md`).
 6b. Add `{wiki}/.usage.json` to `.gitignore`. Telemetry is per-clone, not shared.
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)

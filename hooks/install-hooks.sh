@@ -115,17 +115,29 @@
 #      INSIDE its critical section, before releasing — one contract, two
 #      ends; do not reorder either.
 #
-# Always exits 0 only when there is genuinely nothing to do (no python3);
+# Missing python3 fails registration explicitly; --verify audits the result.
 # any real failure (unreadable/corrupt settings.json, lock timeout, write
 # failure, vanished clone) exits non-zero with a client-prefixed message on
 # stderr (`install-hooks: <client>: …`) and leaves that client's
 # settings.json untouched. No settings-file content is ever printed.
 
 set -uo pipefail
+PROJECT_ARGS=()
+VERIFY=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --verify) VERIFY=1; shift ;;
+    --project)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'install-hooks: --project needs a path' >&2; exit 2; }
+      PROJECT_ARGS+=(--project "$2"); shift 2 ;;
+    --help|-h) echo 'usage: install-hooks.sh [--verify] [--project PATH ...]'; exit 0 ;;
+    *) echo "install-hooks: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "install-hooks: python3 not found — skipping hook registration" >&2
-  exit 0
+  echo "install-hooks: python3 not found — hook registration unavailable" >&2
+  exit 1
 fi
 
 : "${HOME:?install-hooks: HOME is not set}"
@@ -153,6 +165,22 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 # shellcheck source=lib/settings-lock.sh
 source "$SELF_DIR/lib/settings-lock.sh"
+
+# Preflight selected project boundaries/JSON before any global settings mutation.
+python3 "$SELF_DIR/lib/config_audit.py" validate ${PROJECT_ARGS[@]+"${PROJECT_ARGS[@]}"} || exit 3
+PROJECT_FILES=()
+PROJECT_QWEN=0
+if [ "${#PROJECT_ARGS[@]}" -gt 0 ]; then
+  project_list="$(mktemp)" || exit 3
+  if ! python3 "$SELF_DIR/lib/config_audit.py" project-files ${PROJECT_ARGS[@]+"${PROJECT_ARGS[@]}"} >"$project_list"; then
+    rm -f "$project_list"; exit 3
+  fi
+  while IFS= read -r -d '' project_file; do
+    PROJECT_FILES+=("$project_file")
+    case "$project_file" in */.qwen/*) PROJECT_QWEN=1 ;; esac
+  done <"$project_list"
+  rm -f "$project_list"
+fi
 
 # fail <client> <message> — used only for the initial lock-acquisition
 # check below, where no lock is held yet: a hard `exit 1` there is exactly
@@ -243,7 +271,7 @@ register_into() {
   backup_file="$settings_file.bak-wiki-hooks-$ts"
 
   if ! python3 - "$client" "$settings_file" "$backup_file" "$MARKER" "$legacy_marker" \
-      "$session_script" "$post_script" "$session_matcher" "$post_matcher" <<'PYEOF'
+      "$session_script" "$post_script" "$session_matcher" "$post_matcher" "$SELF_DIR/lib" <<'PYEOF'
 import errno
 import json
 import os
@@ -262,6 +290,9 @@ import tempfile
     session_matcher,
     post_matcher,
 ) = sys.argv[1:10]
+
+sys.path.insert(0, sys.argv[10])
+from config_audit import classify, unique_pairs, validate_structure
 
 # How many "$settings_file.bak-wiki-hooks-$TS[-N]" candidates the exclusive
 # backup create below will probe before giving up (see the long note there).
@@ -303,7 +334,7 @@ if fd is not None:
     raw = None
     try:
         st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
+        if not stat.S_ISREG(st.st_mode) or st.st_size > 4 * 1024 * 1024:
             die(
                 "%s is not a regular file — cannot verify, refusing to modify"
                 % settings_file
@@ -311,7 +342,9 @@ if fd is not None:
         mode = stat.S_IMODE(st.st_mode)
         with os.fdopen(fd, "r", encoding="utf-8") as fh:
             fd = None  # ownership passed to fh
-            raw = fh.read()
+            raw = fh.read(4 * 1024 * 1024 + 1)
+            if len(raw.encode("utf-8")) > 4 * 1024 * 1024:
+                die("settings file exceeds size limit")
     except OSError as exc:
         die("cannot read %s: %s" % (settings_file, exc))
     finally:
@@ -324,11 +357,22 @@ if fd is not None:
     stripped = raw.strip()
     if stripped:
         try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
+            data = json.loads(raw, object_pairs_hook=unique_pairs)
+        except ValueError as exc:
             die("%s is not valid JSON: %s" % (settings_file, exc))
     if not isinstance(data, dict):
         die("%s top-level value is not a JSON object" % settings_file)
+    try:
+        validate_structure(data)
+    except ValueError as exc:
+        die("invalid settings structure: %s" % exc)
+    if session_matcher == "__remove__" and not any(
+        classify(hook.get("command")) == "owned"
+        for entries in (data.get("hooks") or {}).values()
+        for entry in entries for hook in entry["hooks"]
+    ):
+        # Foreign-only project settings remain byte-identical, without a backup.
+        sys.exit(0)
     # Write the backup from `raw` (already read from the fstat-verified fd
     # above), not by reopening settings_file by name — shutil.copy2 would
     # reopen the path itself, reintroducing the very TOCTOU window the
@@ -404,12 +448,8 @@ data["hooks"] = hooks
 
 
 def has_marker(command):
-    command = str(command)
-    if marker in command:
-        return True
-    if legacy_marker and legacy_marker in command:
-        return True
-    return False
+    # Never remove an inline/composite command just for mentioning our path.
+    return classify(command) == "owned"
 
 
 def strip_marker(event_name):
@@ -428,7 +468,7 @@ def strip_marker(event_name):
                 for h in inner
                 if not (isinstance(h, dict) and has_marker(h.get("command", "")))
             ]
-            if len(filtered) == 0:
+            if len(filtered) == 0 and len(inner) > 0:
                 # Whole entry was ours alone -> drop the entry.
                 continue
             if len(filtered) != len(inner):
@@ -438,8 +478,8 @@ def strip_marker(event_name):
     hooks[event_name] = kept
 
 
-strip_marker("SessionStart")
-strip_marker("PostToolUse")
+for event_name in list(hooks):
+    strip_marker(event_name)
 
 
 def add_entry(event_name, matcher, command):
@@ -458,8 +498,9 @@ def add_entry(event_name, matcher, command):
 session_cmd = 'test -x "%s" && "%s" || exit 0' % (canon_start, canon_start)
 post_cmd = 'test -x "%s" && "%s" || exit 0' % (canon_post, canon_post)
 
-add_entry("SessionStart", session_matcher, session_cmd)
-add_entry("PostToolUse", post_matcher, post_cmd)
+if session_matcher != "__remove__":
+    add_entry("SessionStart", session_matcher, session_cmd)
+    add_entry("PostToolUse", post_matcher, post_cmd)
 
 dir_name = os.path.dirname(settings_file) or "."
 tfd, tmp_path = tempfile.mkstemp(prefix=".settings.json.", dir=dir_name)
@@ -503,7 +544,7 @@ register_into claude "$CLAUDE_DIR/settings.json" \
 # has a qwen config, even if the CLI itself isn't on THIS PATH right now).
 # Absence of Qwen is not an error — a single-line stderr hint and a clean
 # `exit 0` instead.
-if command -v qwen >/dev/null 2>&1 || [ -f "$QWEN_SETTINGS" ]; then
+if command -v qwen >/dev/null 2>&1 || [ -f "$QWEN_SETTINGS" ] || [ "$PROJECT_QWEN" -eq 1 ]; then
   register_into qwen "$QWEN_SETTINGS" \
     "$CANON_SESSION_START_QWEN" "$CANON_POST_TOOL_USE" \
     'startup|clear|compact' 'read_file|write_file|edit|replace|notebook_edit' \
@@ -512,4 +553,13 @@ else
   echo "install-hooks: qwen: qwen not detected (no 'qwen' on PATH and no $QWEN_SETTINGS) — skipping" >&2
 fi
 
+# Global canonical pair is installed first; selected project entries are removed
+# under the SAME per-file mutex/backup/atomic-write protocol, never by raw sed.
+for project_file in ${PROJECT_FILES[@]+"${PROJECT_FILES[@]}"}; do
+  register_into project "$project_file" "$CANON_SESSION_START" "$CANON_POST_TOOL_USE" \
+    '__remove__' '__remove__' '' || exit 3
+done
+if [ "$VERIFY" -eq 1 ]; then
+  python3 "$SELF_DIR/lib/config_audit.py" check ${PROJECT_ARGS[@]+"${PROJECT_ARGS[@]}"} || exit 3
+fi
 exit 0

@@ -1,673 +1,258 @@
 # Wiki Skill
 
-**Skill behavior version: 4.9.0** (`SKILL.md` frontmatter). **Install ref:** `master` by default; pin a published tag or full commit SHA for reproducible installs. Fresh wikis still use `wiki_version: "4.0"`: the v4.x behavior changes, including the GitHub reader, do not change the on-disk schema major.
+**Версія скіла: 4.10.0 · Типовий install ref: `master` · Схема вікі: `4.0`**
 
-Скіл для Claude Code, Codex, Gemini CLI, Qwen Code та ChatGPT з GitHub, який додає LLM Wiki — базу знань за паттерном Karpathy. Замість того щоб щоразу перевідкривати знання, wiki накопичує синтезоване розуміння проєкту між сесіями.
+Спільна LLM Wiki для **Claude Code, Codex, Gemini CLI, Qwen Code та ChatGPT з GitHub**.
+Скіл читає джерела перед відповіддю, зберігає рішення й підтримує Markdown-базу
+знань проєкту. Сховище — ваш Git-репозиторій, а не пам’ять окремого чату.
 
-## ChatGPT у вебверсії
-
-Встановіть **Wiki** як особистий скіл і підключіть GitHub. Після цього можна
-писати звичайною мовою: читати вікі, додавати рішення, виправляти сторінки,
-розділяти історію, захищати матеріали та зберігати зміни.
-
-Підтримуються **прямий коміт у master/main без PR** і **pull request**.
-Скажіть «закоміть у master без PR» або встановіть такий режим типовим для
-проєкту. Скіл перевіряє актуальний стан гілки й не використовує force push.
-
-[Встановлення та приклади](docs/chatgpt.md). Редагувати Custom instructions
-не потрібно. Для читання потрібен доступ до репозиторію, для збереження —
-GitHub-підключення з правом запису і дозволений спосіб запису в обрану гілку.
-Скіл не обходить правила захищених гілок.
-
-Самостійний пакет — [skills/wiki-github](skills/wiki-github/SKILL.md).
-Додаткове пакування `.codex-plugin/plugin.json` експортує той самий скіл
-для каталогів плагінів; локальні інсталятори та хуки не запускаються у браузері.
-
-## What's new in v4.9
-
-- Shared reader/writer contracts with filesystem and GitHub adapters.
-- GitHub edits, ingestion, protection, current/history splits and two delivery
-  modes: direct commit or PR. Query remains free of agent-initiated writes.
-- Deterministic `catalog.json` and a generated exact-path index block,
-  validated against real files in CI.
-- Tracked `policy.json` preserves protection across clones; explicit migration
-  retains legacy pins without changing per-clone counters.
-- Current guidance stays at stable topic paths; dated records move to
-  `history/` with reciprocal links and reviewed link relocation.
-- One tested Wiki/Вікі pointer parser, including case variants, suffixes and
-  active-agent preference. SessionStart emits only a small discovery notice:
-  it no longer claims to have read the index.
-- Existing schema v4 Markdown remains readable without migration. Catalog and
-  policy adoption happen during authorized maintenance.
-
-[Architecture and maintenance commands](references/wiki-maintenance.md).
-
-## Cross-agent install model
-
-Інсталятор zero-config зі спільним canonical registry: користувач запускає одну команду, а скіл стає доступним для трьох агентів.
-
-```text
-Git clone:
-  ~/claude-wiki-skill
-
-Canonical entrypoint:
-  ~/.claude/skills/wiki  ->  ~/claude-wiki-skill
-
-Exports created by install.sh:
-  ~/.agents/skills/wiki  -> ~/.claude/skills/wiki
-  ~/.gemini/skills/wiki  -> ~/.claude/skills/wiki
-  ~/.qwen/skills/wiki    -> ~/.claude/skills/wiki
-```
-
-Назва директорії `claude-wiki-skill` — історичний артефакт першої публікації,
-а не вимога Claude Code. Функціонально це shared cross-agent canonical install,
-який однаково використовують Claude, Codex, Gemini і Qwen Code.
-
-Після встановлення: Qwen Code читає `~/.qwen/skills/wiki`.
-
-`doc-extract` встановлюється так само, бо `ingest-binary` залежить від нього. Export links навмисно вказують на canonical entrypoint, а не на `realpath`: якщо користувач перемкне canonical версію skill'а, Codex і Gemini побачать ту саму версію. `doc-extract` є optional dependency і за замовчуванням піниться на known-good commit `51f720ff620478688abf7d906d18112d45e28a90`; за потреби його ref можна override'нути через `WIKI_DOC_EXTRACT_REF`.
-
-`~/.agents/skills/` — спільний user-skill шлях для Codex і Gemini CLI. `~/.gemini/skills/` створюється додатково як direct Gemini user-skill path; це не друга копія skill'а, а сумісний symlink export. Інсталятор створює ці export-папки наперед, навіть якщо користувач ще не запускав Codex або Gemini, щоб майбутнє перемикання клієнтів було zero-config. Gemini CLI discovery tiers documented: https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
-
-## What's new in v4.7
-
-- **Поле блоку РЕФЛЕКСІЯ зветься `Кристалізація:`.** Перейменування agent-visible
-  контракту: блок друкується у хід і ніде не зберігається, тому на диску нічого не
-  змінюється — `wiki_version` лишається `"4.0"`, міграцій нуль. Разом із цим
-  прибрані залишки вирізаної tier-моделі кристалізації з довідки скіла.
-
-## What's new in v4.6
-
-- **Native Qwen Code support.** Qwen Code joins Claude, Codex, and Gemini as
-  a first-class cross-agent client. `wiki_version` lишається `"4.0"` —
-  behavior-only change, on-disk schema untouched.
-  - **Telemetry recognizes Qwen's tool names.** `hooks/post-tool-use.sh`
-    now unions Qwen's tool-call vocabulary (`read_file`, `edit`,
-    `write_file`, `notebook_edit`, `replace`) alongside Claude's
-    (`Read`, `Edit`, `Write`, `MultiEdit`) in one action-gate — `read_file`
-    counts as a view, the rest count as a patch. The tool-name union
-    itself stays a plain union list plus a first-match-wins precedence
-    chain, no `if … else` branching per client, same shape as before
-    Qwen existed. Separately, which project-root anchor env var
-    (`CLAUDE_PROJECT_DIR` or `QWEN_PROJECT_DIR`) is checked first *does*
-    depend on which client fired the hook — see v4.6.1 below; that is
-    the one per-client branch in the hooks.
-  - **`hooks/session-start-qwen.sh` — an envelope-wrapper, not a
-    reimplementation.** Qwen Code's SessionStart hook contract expects a
-    single line of JSON on stdout
-    (`{"continue":true,"hookSpecificOutput":{...}}`), not Claude's
-    raw-stdout text. This wrapper calls the existing canonical
-    `hooks/session-start.sh` unchanged and repackages whatever it printed
-    into that envelope — wiki discovery and injection logic are not
-    duplicated.
-  - **`QWEN.md` joins discovery.** Agent-neutral pointer discovery
-    (`hooks/lib/discover.sh`, `references/discovery-versioning.md`) now
-    also reads `QWEN.md`, appended last in the priority chain after
-    `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — it only adds a lower-priority
-    fallback pointer source, it never masks or outranks an existing file.
-    `QWEN_PROJECT_DIR` is also recognized as a project-root anchor
-    alongside `CLAUDE_PROJECT_DIR`; which one is checked first depends
-    on which client fired the hook (see v4.6.1 below), and each remains
-    a fallback for the other.
-  - **Global hooks register into `~/.qwen/settings.json` too.**
-    `hooks/install-hooks.sh` performs a second, sequential registration
-    pass for Qwen — gated on Qwen actually being present (`qwen` on
-    `PATH`, or an existing `~/.qwen/settings.json`) — using the exact
-    same lock → read → backup → merge → atomic-write protocol already
-    used for Claude, not a second implementation of it.
-  - **Export to `~/.qwen/skills`.** `install.sh` creates
-    `~/.qwen/skills/wiki` (and `~/.qwen/skills/doc-extract`) as symlink
-    exports pointing at the canonical entrypoint, the same way it already
-    does for `~/.agents/skills` and `~/.gemini/skills`.
-  - **Shared mutex, `hooks/lib/settings-lock.sh`.** Every writer of a
-    client `settings.json` — `install-hooks.sh`, `uninstall-hooks.sh`,
-    and the orphan-guard recheck in `uninstall.sh` — sources one
-    `mkdir`-based lock library. Adding Qwen as a second settings file did
-    not add a second locking primitive: the same mutex now serializes
-    writes to `~/.qwen/settings.json` exactly as it already serialized
-    writes to `~/.claude/settings.json`.
-  - **Strengthened orphan-guard.** The `--remove-clones` orphan-hook
-    recheck in `uninstall.sh` now scans *both* `~/.claude/settings.json`
-    and `~/.qwen/settings.json` (plus the legacy Qwen wrapper-script
-    marker) before allowing clone deletion — an orphaned hook entry in
-    either file blocks removal, not just Claude's.
-  - **v4.6.1: fixed a nested-session anchor bug.** A Qwen Code session
-    launched from inside a Claude Code session (or vice versa) can end
-    up with *both* `CLAUDE_PROJECT_DIR` and `QWEN_PROJECT_DIR` exported
-    at once, pointing at two different project roots — the outer
-    session's and the inner one's. A fixed `CLAUDE_PROJECT_DIR`-first
-    order silently anchored `SessionStart` and `PostToolUse` at the
-    wrong (outer) project, injecting the wrong wiki and dropping
-    telemetry for the inner session without any error. This affects
-    nested Qwen-inside-Claude and Claude-inside-Qwen sessions; a single
-    top-level session with only one of the two vars set is unaffected.
-    Fix: the hooks now pick which anchor to check first based on which
-    client actually fired the call, with the other anchor kept as a
-    fallback either way. Nothing on disk changed — `wiki_version` stays
-    `"4.0"` and there is no migration to run. Implementation: the
-    client-aware branch lives in `hooks/post-tool-use.sh` (keys off the
-    firing tool name to pick `$QWEN_PROJECT_DIR` or `$CLAUDE_PROJECT_DIR`
-    first) and in `discover_wiki` in `hooks/lib/discover.sh` (keys off the
-    `WIKI_HOOK_CLIENT` transport signal), with
-    `hooks/session-start-qwen.sh` passing `WIKI_HOOK_CLIENT=qwen` (command-
-    prefixed, not `export`ed) to the canonical `SessionStart` hook it wraps. Coverage for the full client ×
-    anchor-chain matrix is in `tests/hooks/run.sh`; the walkthrough is
-    scenario 3q3 in `tests/scenarios/cross-agent-discovery.md`.
-
-### Migrating to v4.6 if you already use Qwen Code
-
-Якщо ви вже мали `~/.qwen/hooks/wiki-session-start.sh` як окремий,
-раніше вручну встановлений wrapper-скрипт:
-
-1. Оновіть скіл і виконайте `bash hooks/install-hooks.sh` (або просто
-   оновіть скіл — `install.sh` викликає це сам, best-effort, наприкінці
-   встановлення). Це реєструє канонічні
-   `~/.claude/skills/wiki/hooks/session-start-qwen.sh` і
-   `hooks/post-tool-use.sh` у `~/.qwen/settings.json` і **автоматично
-   знімає** legacy-entry, що вказував на старий wrapper.
-2. **Вручну видаліть** зовнішній файл
-   `~/.qwen/hooks/wiki-session-start.sh` — інсталер знімає лише
-   *посилання* на нього в `settings.json`, сам файл лежить поза canonical
-   install-топологією (чужий файл у чужому каталозі), тож видаляти його
-   автоматично небезпечно. Порожню `~/.qwen/hooks/` після цього можна
-   прибрати теж.
-
-## What's new in v4.5
-
-- **v4.5.1 on master:** три виправлення, знайдені під час створення вікі в
-  україномовному проєкті. Схема не змінюється (`wiki_version` лишається
-  `"4.0"`), мігрувати наявні вікі не треба.
-  - **Покажчик розпізнається і як `## Вікі`.** Раніше Step 0 шукав лише
-    заголовок `## Wiki`, тож секція `## Вікі проєкту` читалася як «покажчика
-    немає». Це не косметика, а ризик дублювання: якщо вікі оголошена під
-    українським заголовком і лежить не в `docs/wiki/`, пошук не знаходить
-    нічого — і Init створює **другу** вікі поруч зі справжньою. Тепер
-    приймаються обидва написання; канонічним для запису лишається `## Wiki`,
-    а чинний покажчик під українським заголовком не переписується.
-  - **Init зберігає теки шарів у git.** `concepts/`, `entities/` і
-    `transcripts/` створюються порожніми, а git порожніх тек не зберігає —
-    тому каркас, обіцяний у плані, зникав при першому клонуванні. Тепер у
-    кожну порожню теку кладеться `.gitkeep`.
-  - **Інсталятор більше не мовчить про хуки.** `install.sh` виконував
-    `install-hooks.sh` беззвучно, і підсумок про хуки не згадував — дізнатися,
-    чи зареєстровано SessionStart/PostToolUse, можна було лише зазирнувши в
-    `~/.claude/settings.json` руками. Тепер підсумок каже і про результат, і
-    про те, що хуки діють із наступної сесії. Той самий блок називав їх «git
-    hooks», якими вони не є.
-- **v4.5.0 on master:** Session-Start Contract і телеметрія отримали
-  hook-backed шлях (Claude Code only) поверх існуючої text-only
-  дисципліни — вона нікуди не зникла й лишається fallback для Codex/Gemini
-  та для Claude Code без встановлених hooks. Два глобальні, per-machine
-  хуки реєструються в `~/.claude/settings.json`:
-  - **SessionStart** — повідомляє шлях до `{wiki}/index.md` у контексті
-    кожної нової сесії (`startup|clear|compact`), з untrusted-data
-    преамбулою і лімітом 24 KB, плюс нагадування про `wiki lint`, якщо
-    він не запускався понад 7 днів.
-  - **PostToolUse** — автоматично інкрементує `.usage.json`
-    (`view_count`/`patch_count`, `last_viewed_at`/`last_patched_at`) на
-    кожен `Read`/`Edit`/`Write`/`MultiEdit` по сторінці вікі — без
-    ручного bump.
-  - **`wiki doctor`** (нова операція, `references/operation-doctor.md`) —
-    read-only діагностика вікі й hook-шару з DECIDE-меню репарацій.
-  - Обидва хуки fail-open (`test -x ... || exit 0`): відсутній або
-    зламаний скрипт ніколи не блокує Read/Edit/Write чи старт сесії.
-  - `wiki_version` лишається `"4.0"` — зміна тільки в installer/agent
-    behavior, не в on-disk схемі.
-
-### Встановлення хуків на інших машинах
-
-Хуки — **per-machine**, не per-project: один запис у
-`~/.claude/settings.json` цього хоста обслуговує всі wiki-проєкти на
-ньому. Щоб увімкнути їх на іншому сервері, окремий крок не потрібен:
-
-1. **Через оновлення скіла** (типовий шлях) — той самий install/update
-   command із розділу [«Оновлення»](#оновлення) нижче: `install.sh`
-   наприкінці встановлення best-effort викликає
-   `hooks/install-hooks.sh` сам. Ідемпотентно — повторний запуск нічого
-   не дублює.
-2. **Через сесію в проєкті** — якщо skill вже підтягнув
-   `hooks/install-hooks.sh`, але `install.sh` явно не перезапускали,
-   скіл сам запропонує install при першому discovery в сесії:
-   `[y] встановити` / `[n] не зараз` / `[не питай більше]`. Спрацьовує
-   лише для Claude Code (не для Codex/Gemini — там хуків немає, і скіл
-   лишається на text-only Session-Start Contract).
-3. **Вручну** (headless / CI / без інтерактивної сесії):
-   ```bash
-   bash ~/.claude/skills/wiki/hooks/install-hooks.sh
-   ```
-   і для відкату:
-   ```bash
-   bash ~/.claude/skills/wiki/hooks/uninstall-hooks.sh
-   ```
-
-**Другий settings-файл (v4.6+).** `hooks/install-hooks.sh` реєструє хуки не
-лише в `~/.claude/settings.json`, а й, другим послідовним проходом, у
-`~/.qwen/settings.json` — тим самим lock → read → backup → merge →
-atomic-write протоколом. Цей другий прохід **gated**: якщо на машині немає
-`qwen` на `PATH` і немає наявного `~/.qwen/settings.json`, крок для Qwen
-пропускається з info-рядком у stderr (`qwen not detected — skipping`) —
-**це не помилка**, install-hooks.sh все одно завершується успішно для
-Claude. Codex і Gemini лишаються text-only (там hook-реєстрації немає).
-
-Перевірити, що хуки реально активні: у новій сесії Claude Code в
-wiki-проєкті контекст має містити блок
-`=== WIKI DISCOVERY (hook) ===`. Якщо запис у
-`~/.claude/settings.json` є, а блока немає — це «зламані хуки»;
-діагностуйте через `wiki doctor`, не перевстановлюйте наосліп.
-
-## What's new in v4.4
-
-- **v4.4.0 on master:** wiki-only crystallization — the skill-tier
-  crystallization target is removed, leaving `wiki` as the sole artifact
-  type. The interactive per-reflection cleanup proposal is replaced by a
-  single-entry cleanup-flow: a non-interactive, conditional pre-commit
-  passive drift notice that points at `wiki status` as the one way to
-  trigger cleanup. `wiki_version` stays `"4.0"` — behavior-only change.
-
-## What's new in v4.3
-
-- **v4.3.0 on master:** activity-driven **log rotation**. `{wiki}/log.md` now
-  has a soft cap of ~2000 lines; on each log write, if the file is over the
-  cap, the oldest contiguous entries are peeled into a date-range-named shard
-  at `{wiki}/log/{YYYY-MM-DD}_to_{YYYY-MM-DD}.md` until the live log drops
-  to ~1000 lines. Rotation is lazy and silent — no migration prompt — and
-  quiet projects never rotate. See `references/wiki-structure.md` →
-  `## Log Rotation` for the algorithm and edge cases. `wiki_version`
-  stays `"4.0"` because the change is additive: an older skill reading a
-  rotated wiki still sees a valid `log.md`.
-- **v4.2.21 on master:** **Session-Start Contract** in `SKILL.md` —
-  agent must read `{wiki}/index.md` before any project-specific answer
-  in a wiki-backed project, and every such answer must carry
-  `[[page-name]]` citations. Operation Query «Master rule» rephrased
-  as **BLOCKING RULE (NON-NEGOTIABLE)**. Cross-agent instruction-file
-  sync writes a full Session-Start Contract pointer block to
-  `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` for new pointers and stale
-  repairs; valid existing pointers are left unchanged.
-
-## What changed in v4.2
-
-- **v4.2.1 on master:** `init` now verifies/repairs cross-agent skill exports
-  (`~/.agents/skills/wiki`, `~/.gemini/skills/wiki`) so a wiki created in
-  Claude is discoverable when the same project is opened in Codex or Gemini.
-  Empty projects now bootstrap a minimal wiki with empty `entities/` instead of
-  invented starter categories. The installer also supports
-  `--repair-exports` for this symlink-only repair path.
-- **v4.2.2 on master:** discovery/init now sync project-local instruction
-  files too: `CLAUDE.md`, `AGENTS.md`, and `GEMINI.md` get the same short
-  `## Wiki` pointer, so another agent does not need manual setup after Claude
-  creates the wiki.
-- **v4.2.3 on master:** repair behavior tightened after review: instruction
-  pointers use paths relative to each instruction file, `wiki status`/`lint` stay
-  read-only, and `--repair-exports` reports conflicts/doc-extract state more
-  precisely.
-- **v4.2.4 on master:** non-absent `init` repairs are consent-gated, bootstrap
-  plans no longer leak raw template placeholders, and Gemini/Codex fresh-init
-  scenarios are symmetric for cross-agent pointer creation.
-- **v4.2.5 on master:** non-absent `init` uses one consent block for
-  project-local pointer writes and global export repairs; migration failure
-  reporting now uses Execute checklist numbering.
-- **v4.2.6 on master:** recovery docs and scenarios now match the consent
-  contract: existing wiki repairs inspect first, ask once, and write nothing
-  without explicit `[y]`.
-- **v4.2.7 on master:** non-absent init wording is tighter: user-facing repair
-  labels are consistent, migration plans explain single-repair cases, and the
-  recovery check verifies exported `SKILL.md` files.
-- **v4.2.8 on master:** git is a hard prerequisite for project wiki operations.
-  In a directory without git metadata, `wiki init` asks before running `git
-  init`; every other operation stops and explains that git is required for
-  snapshots, rollback, and cleanup safety.
-- **v4.2.9 on master:** orphan-wiki projects (wiki artifacts exist but no
-  `.git/`) get a dedicated repair gate from any wiki operation: the agent
-  offers `git init` to preserve the existing wiki instead of suggesting `wiki
-  init` for a wiki the user already has.
-- **v4.2.10 on master:** small wikis (< 20 active unprotected pages) skip the
-  full-lint scope heads-up and start verification immediately; the dialog
-  about `швидко` / topic / path remains for larger wikis where the choice is
-  meaningful.
-- **v4.2.20 on master:** three contract clarifications close iterations
-  4.2.11–4.2.19, which kept finding edge cases in heuristic
-  orphan-wiki detection. (1) **Orphan-wiki repair is fully manual** —
-  when wiki exists on disk but git doesn't, the skill shows an
-  informational gate explaining the fix (`cd` to project root →
-  `git init` → retry) and ends the operation without writing
-  anything; `[y]` applies only to the absent-state Init gate.
-  (2) **Wiki location is contract-bound** — a wiki lives at
-  `docs/wiki/` or wherever a `## Wiki` pointer resolves to; nothing
-  else counts. Files at non-canonical paths without a pointer are not
-  treated as wikis. Users who want a wiki elsewhere must add a
-  `## Wiki` pointer first. (3) **Partial wiki state is protected** —
-  a wiki directory with `schema.md`/`log.md`/`.usage.json`/`concepts/`
-  but missing `index.md` is detected as damaged state, not absent;
-  the skill shows recovery instructions and refuses to bootstrap a
-  fresh wiki on top of the existing files. This makes discovery and
-  Init fully deterministic, with no heuristic edge cases.
-- **Shared canonical cross-agent installer.** `install.sh` ставить canonical skill у `~/.claude/skills/wiki`, а потім створює symlink exports для Codex/Gemini.
-- **Agent-neutral discovery.** Wiki discovery читає `CLAUDE.md`, `AGENTS.md`, і `GEMINI.md`, а не тільки історичний Claude entrypoint.
-- **Thin skill entrypoint.** `SKILL.md` лишився trigger/routing contract, а операційні інструкції винесено в `references/`, щоб не вантажити весь 1600+ рядковий body на кожну активацію.
-- **Release safety tests.** Додано shell-тести для install/export edge-cases, safe uninstall, і статичний contract-test для `SKILL.md`/`references/` layout.
-
-## What changed in v4.1
-
-v4.1 describes behavior changes that shipped on the path to v4.2. There is no
-separate `v4.1.0` install tag; use `v4.2.0` for the stable cross-agent release.
-
-- **Crystallization без скриптів.** Tier-модель `bash → python → wiki → skill` (4 рівні з v4.0) спрощено до wiki-only: єдиний target кристалізації — `wiki`-сторінка. User-runnable скрипти (`scripts/*.sh` / `*.py`) і окремий skill-tier видалено як target кристалізації — вони перекидали mechanical work назад на юзера (Division of Labor). Якщо потрібен скрипт — агент пише inline і виконує сам, без створення файла. Деталі: `references/crystallization.md`. *(Перероблено у v4.1 і v4.4.)*
-- **Proactive query trigger.** Скіл активується на природних українських формах питання («як налаштувати X», «що таке X», «де лежить Y», «пам'ятаєш як ми Z», «потрібно знову W», «розкажи про…») — без вимоги вживати ключове слово "wiki" / "вікі". Master rule: query перед генерацією проєктно-специфічного контенту з пам'яті, навіть коли «знаю відповідь». Деталі: `references/operation-query.md`.
-- **Discovery ↔ crystallization pair.** Коли query не знаходить релевантної сторінки — це сигнал-кандидат для кристалізації після того, як агент відповість. Пара двох половин одного циклу: query читає збережене, crystallization зберігає re-derived.
-
-## What's new in v4.0
-
-- **РЕФЛЕКСІЯ block** — після кожного edit/write проходу скіл вмикає короткий refleksiya-крок з anti-noise rule (read-only блоки не тригерять reflection).
-- **Telemetry sidecar (`.usage.json`)** — gitignored per-clone metadata: `view_count` / `use_count` / `patch_count` (з timestamp'ами `last_viewed_at` / `last_used_at` / `last_patched_at`) для кожної сторінки. Для пріоритизації, не для flagging.
-- **Tiered crystallization** — патерн повторюється 3+ разів → пропозиція (y/n/пізніше) створити concept-сторінку, helper-скрипт або під-скіл. Ніколи silent. *(Скасовано: tier-модель прибрана у v4.1 і v4.4 — скриптова й skill-ціль більше не пропонуються, єдина ціль кристалізації — wiki-сторінка. Див. вище.)*
-- **`wiki status` operation** — інтроспективний звіт: hot pages, cold pages, drift candidates, telemetry summary.
-- **Karpathy lint reformulation** — staleness визначається content-verification (читання сторінки + judgement), не timestamp-евристикою.
-- **Versioning + migration** — поле `wiki_version` у `schema.md`. Структурні зміни — explicit plan-then-confirm; field-level backfill в `.usage.json` — silent.
-
-Architectural patterns inspired by [Hermes-Agent](https://github.com/NousResearch/hermes-agent) by Nous Research.
-
-## Що робить
-
-**Три шари знань у `docs/wiki/`:**
-- `concepts/` — теми, процеси, правила, gotchas (synthesis)
-- `entities/` — конкретні сутності (люди, компанії, договори, об'єкти...) — hub-сторінки
-- `transcripts/` — повний текст бінарників (PDF/DOCX) для grep і LLM-контексту
-
-**Бінарники — у `archive/`** (поза git через `.gitignore`).
-
-**Вісім операцій:**
-- **init** (bootstrap-aware) — ініціалізувати wiki АБО мігрувати існуючу структуру проєкту
-- **ingest-source** — обробити MD-спеку / статтю → оновити concept-сторінки
-- **ingest-binary** — обробити PDF/DOCX з `tmp/` → entity + transcript + бінарник в `archive/`
-- **query** — шукати у wiki відповіді на питання про проєкт (крос-просторово)
-- **wiki status** — інтроспективний звіт: hot/cold pages, drift candidates, telemetry summary
-- **lint** — Karpathy content-verification: trinity integrity, orphans, frontmatter, drift
-- **split** — розбити monolithic page на focused topics
-- **cleanup** — post-migration / періодична уборка з action menu (`глянь і онови` / `видали` / `захисти` / `merge` / `розбий` / `глянь обидві`)
-
-Плюс мікро-операції: `wiki protect <path>` / `wiki unprotect <path>` — захищає сторінку від cleanup-видалення (детальніше — секція [«Захист сторінок»](#захист-сторінок) нижче).
-
-Тригери: `створи вікі`, `ініціалізуй wiki`, `init wiki`, `bootstrap wiki`, `додай до вікі`, `оновити вікі`, `що каже вікі про...`, `вікі лінт`, `вікі статус`, `перевір вікі`, `знайди у вікі`. Також проактивно при появі бінарників у `tmp/`.
+[Встановлення](#встановлення) · **[Оновлення](#оновлення)** ·
+[Перевірка та відновлення](#перевірка-та-відновлення) ·
+[Використання](#використання) · [ChatGPT](#chatgpt-з-github) ·
+[Документація](#документація)
 
 ## Встановлення
 
-Остання rolling-версія (zero-config, за замовчуванням — master):
+Для локальних агентів потрібні **Git і Bash**; для автоматичних session-хуків —
+**Python 3**. `curl` потрібен для завантаження інсталятора. Claude Code не
+обов’язково має бути встановлений: canonical registry спільний для всіх агентів.
+
+Виконайте у терміналі:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
+(
+  set -eu
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh -o "$installer"
+  bash "$installer" master
+)
 ```
 
-Інсталятор створює `~/.claude/skills/` як shared canonical registry навіть для Codex-only або Gemini-only користувачів. Це не вимагає встановленого Claude: Codex і Gemini отримують доступ через symlink exports.
+Інсталятор створює одну копію скіла та посилання на неї:
 
-Стабільний reproducible release:
+```text
+~/claude-wiki-skill                       Git-клон
+~/.claude/skills/wiki                 -> ~/claude-wiki-skill
+~/.agents/skills/wiki                 -> ~/.claude/skills/wiki
+~/.gemini/skills/wiki                 -> ~/.claude/skills/wiki
+~/.qwen/skills/wiki                   -> ~/.claude/skills/wiki
+```
+
+Окремо встановлюється optional `doc-extract`, зафіксований на known-good commit.
+Без нього доступні всі операції з Markdown; недоступний лише `ingest-binary`.
+Для PDF/DOCX після встановлення виконайте:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash -s v4.2.0
+bash "$HOME/.claude/skills/doc-extract/bin/install-deps.sh"
+bash "$HOME/.claude/skills/doc-extract/bin/doctor.sh"
 ```
-
-### Доступні версії
-
-| Тег | Що це |
-|---|---|
-| **v4.4.0** *(behavior-only, немає окремого install-тегу — дивись `master`)* | Wiki-only crystallization (skill-tier видалено як target) + single-entry cleanup-flow: інтерактивна per-reflection пропозиція прибирання замінена на non-interactive pre-commit passive drift notice, що вказує на `wiki status` як єдину точку входу |
-| **v4.2.0** *(рекомендується для pin)* | Shared canonical cross-agent exports для Codex/Gemini + agent-neutral discovery + thin `SKILL.md` entrypoint |
-| `master` *(rolling)* | Найновіший стан інсталятора й skill references; може рухатись після останнього тегу |
-| **v4.0.0** | Karpathy + Hermes self-improvement: РЕФЛЕКСІЯ, telemetry sidecar, tiered crystallization (4 рівні зі скриптами), cleanup-flow, page protection, 8 операцій |
-| **v3.0.0** | Чистий Karpathy LLM Wiki: 3 шари (concepts/entities/transcripts), 7 операцій, без self-improvement |
-
-URL у курлі завжди вказує на `master/install.sh` — це сам інсталятор. **Версію скіла обираєш аргументом** (`bash -s v3.0.0`). Без аргумента — встановлюється `master`.
-
-Тег — це закладка на конкретний коміт; версія, яку ти отримаєш через `v3.0.0`, `v4.0.0` або `v4.2.0`, не зміниться навіть коли вийдуть нові релізи. `master` навпаки рухається вперед.
-
-`doc-extract` є optional dependency для `ingest-binary` і за замовчуванням ставиться з pinned known-good commit, щоб `bash -s v4.2.0` був відтворюваним end-to-end. Якщо треба навмисно протестувати інший extractor ref, передайте env override:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | WIKI_DOC_EXTRACT_REF=main bash
-```
-
-Для PDF/DOCX ingest є другий системний setup-крок: після install запустіть
-`bash ~/.claude/skills/doc-extract/bin/install-deps.sh` і
-`bash ~/.claude/skills/doc-extract/bin/doctor.sh`. Решта wiki operations працюють
-без цих системних залежностей.
-
-Не плутайте install-ref з `wiki_version`: `version: "4.2.0"` у `SKILL.md` описує behavior release, а `wiki_version: "4.0"` у `docs/wiki/schema.md` описує schema major. Вони можуть відрізнятися і лишатися сумісними, якщо major однаковий.
-
-Після встановлення:
-
-- Claude читає `~/.claude/skills/wiki`
-- Codex читає `~/.agents/skills/wiki` → symlink на `~/.claude/skills/wiki`
-- Gemini CLI читає `~/.agents/skills/wiki` або `~/.gemini/skills/wiki` → symlink на `~/.claude/skills/wiki`
-- Qwen Code читає `~/.qwen/skills/wiki` → symlink на `~/.claude/skills/wiki`
-
-Усі ці entrypoints ведуть до одного canonical install. Оновлювати окремо Codex/Gemini/Qwen не треба.
-
-Якщо canonical entrypoint уже є, але Codex/Gemini exports зникли, можна
-полагодити тільки symlinks без fetch/checkout:
-
-```bash
-bash ~/.claude/skills/wiki/install.sh --repair-exports
-```
-
-### Recovery cookbook
-
-Якщо ви відкрили проєкт у Codex/Gemini, але `wiki` skill не активується взагалі,
-спершу полагодьте global skill exports:
-
-```bash
-bash ~/.claude/skills/wiki/install.sh --repair-exports
-```
-
-Перевірити exports можна так:
-
-```bash
-ls -L ~/.agents/skills/wiki/SKILL.md ~/.gemini/skills/wiki/SKILL.md 2>&1
-```
-
-Якщо обидва `SKILL.md` відкриваються через export-шляхи, базова доступність
-exports OK; якщо бачите помилки, запустіть `--repair-exports`.
-
-Потім у проєкті скажіть `init wiki`. Якщо wiki вже існує, скіл не створить другу
-wiki: він знайде `docs/wiki/`, перевірить версію, перевірить project-local
-pointer-файли і global skill exports, і якщо щось потребує ремонту — покаже
-один consent block. Без [y] жодних файлів не пишеться.
-
-Якщо `wiki` skill у Codex/Gemini вже активується, але в проєкті бракує
-`AGENTS.md` або `GEMINI.md`, просто скажіть у цьому проєкті `init wiki`. Для
-поточних wiki це працює як repair: скіл синхронізує project-local pointer-файли
-після підтвердження `[y]` і не створить другу wiki.
-
-Якщо `~/.claude/skills/wiki` уже існує як plain file або real directory,
-installer не буде його перезаписувати. Перейменуйте або видаліть цей шлях
-вручну після перевірки вмісту, потім запустіть install повторно.
-
-Якщо `~/.qwen/settings.json` містить JSONC-коментарі (`//`, `/* */`) або
-трейлінг-коми, merge впаде: `hooks/install-hooks.sh` парсить settings.json
-як строгий JSON і fail-closed нічого не пише, якщо файл не парситься — жодних
-часткових/пошкоджених записів. Лікування: приберіть коментарі й трейлінг-коми
-вручну (або тимчасово перейменуйте/приберіть файл, дайте Qwen Code
-перестворити чистий `settings.json`), потім перезапустіть
-`hooks/install-hooks.sh`.
-
-Якщо orphan-guard у `uninstall.sh --remove-clones` повідомляє «could not
-acquire lock» на `~/.claude/settings.json.lockdir` або
-`~/.qwen/settings.json.lockdir` — це означає, що інший процес (паралельний
-`install-hooks.sh`/`uninstall-hooks.sh`) саме тримає той самий mutex, і
-guard навмисно відмовився видаляти clone-директорії, поки не зможе
-достовірно перевірити відсутність orphan-записів. Це не пошкодження стану;
-`~/claude-wiki-skill` лишається на місці. Повторний запуск безпечний —
-mkdir-мутекс ідемпотентний, і як тільки конкурентний held-lock звільниться,
-наступна спроба пройде.
-
-## Ініціалізація wiki у проєкті
-
-Після встановлення скіла, відкрийте свій проєкт у Claude Code, Codex або Gemini CLI і скажіть:
-
-```
-створи вікі
-```
-
-Скіл спершу перевірить, що проєкт є git-репозиторієм. Git — основа wiki:
-snapshots, rollback, lint auto-fixes і cleanup спираються на commits. Якщо
-git-маркер (`.git/` або файл `.git`) не знайдено, скіл шукає сліди існуючої
-wiki у проєкті (`docs/wiki/index.md` або `## Wiki` pointer у
-`CLAUDE.md`/`AGENTS.md`/`GEMINI.md`):
-
-- Якщо wiki вже існує (orphan wiki), будь-яка операція покаже
-  **інформаційний** gate з поясненням ситуації та інструкціями manual
-  fix (`cd` у project root → `git init` → повторити операцію). Скіл
-  сам `git init` не виконує — лише ви знаєте, де project root.
-- Якщо wiki ще не існує, `wiki init` пропонує створити wiki разом із
-  `git init` (це підтверджується `[y]`). Інші операції (`lint`,
-  `query`, `status`, `cleanup`, `split`, `ingest`) у проєкті без git
-  відмовляють і просять запустити `wiki init`.
-
-`[y]` потрібен лише для absent-state (немає wiki, немає git). Orphan-wiki
-gate жодного підтвердження не приймає — він informational only.
-
-**Розташування wiki — частина контракту.** Wiki живе у `docs/wiki/` або
-там, куди вказує `## Wiki` pointer у `CLAUDE.md`/`AGENTS.md`/`GEMINI.md`.
-Якщо хочете wiki у іншому місці — додайте `## Wiki` pointer **перед**
-запуском `wiki init`. Інакше скіл не побачить файли поза стандартним
-шляхом і створить нову wiki у `docs/wiki/`.
-
-Після цього скіл визначить стан проєкту і діятиме відповідно:
-
-- **Empty проєкт** — без додаткових питань створить мінімальну wiki: `docs/wiki/{concepts,entities,transcripts}/`, `archive/`, `index.md`, `log.md`, `schema.md` (з frontmatter `wiki_version: "4.0"` і Migration Log), `.usage.json`; `entities/` лишиться порожньою, без вигаданих `people/` чи `documents/`; додасть 1-line pointer на `schema.md` в усі наявні agent instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), або створить файл активного агента якщо таких файлів ще немає
-- **Існуючі raw-теки з артефактами** (bootstrap) — проаналізує, запропонує план міграції: які MDs стануть concepts, які бінарники підуть в `archive/`, які дублі видалити. Кожна група — з окремим consent'ом
-- **Існуюча v1-wiki** (concepts only) — доповнить structure (entities/, transcripts/, archive/)
-
-Якщо в проєкті немає жодного `CLAUDE.md`, `AGENTS.md` або `GEMINI.md` і активний агент неочевидний, скіл запитає, який instruction file створити. Якщо агент очевидний із середовища, він створить відповідний файл автоматично.
-
-Після ініціалізації wiki працює автоматично у всіх сесіях цього проєкту — скіл знаходить її через `## Wiki` секцію в `CLAUDE.md`, `AGENTS.md` або `GEMINI.md`. Fresh init синхронізує всі три project-local pointer-файли після bootstrap consent, щоб wiki, створена в Claude, одразу мала resident hint для Codex і Gemini. Для вже існуючих wiki такий repair відбувається тільки після окремого `[y]`. Init також перевіряє global skill exports, щоб після створення wiki в Claude Codex бачив той самий skill через `~/.agents/skills/wiki`.
-
-## Схема проєкту
-
-Скіл — project-agnostic. Нова схема живе у `docs/wiki/schema.md`; legacy-проєкти можуть ще мати схему в agent instruction file:
-
-```markdown
-## Entity Categories
-| Category | Шлях | Опис |
-|---|---|---|
-| ... | entities/.../ | ... |
-
-## Document Types
-| Type | Опис |
-|---|---|
-| ... | ... |
-
-## File Naming
-{YYYY-MM-DD}_{type}_{slug}.{ext}
-```
-
-Скіл читає ці секції при `ingest-binary` і додає рядки при появі нових категорій/типів.
-
-## Захист сторінок
-
-Деякі сторінки існують для рідкісних моментів — інструкції на випадок інциденту, runbook міграції, recovery-процедури, ротація токенів. Їх ніхто не редагує і не читає роками **за дизайном**; коли треба — вони критично важливі.
-
-Без захисту скіл не знає різниці між «корисна сторінка, до якої ще не звертались» і «сторінка, яка дійсно протухла». Захист — це явна декларація користувача: «ця сторінка не редагується навмисно, не пропонуй її на видалення і не верифікуй у лінті».
-
-### Як захистити сторінку
-
-```bash
-wiki protect concepts/security-recovery.md
-wiki protect concepts/migration-rollback.md
-```
-
-Що дає захист:
-- **Лінт пропускає** захищену сторінку при content-verification (повний / швидкий / scope — все одно).
-- **Cleanup-flow відмовляється** видаляти захищену сторінку, поки не зробиш `wiki unprotect`.
-- **Звіт лінта показує захищені** сторінки окремим рядком — щоб ти пам'ятав, що вони існують.
-
-### Як зняти захист
-
-Коли треба перевірити або редагувати:
-
-```bash
-wiki unprotect concepts/security-recovery.md
-```
-
-Після цього сторінка повертається у звичайний flow — її можна верифікувати, оновити, видалити.
-
-### Auto-suggest захисту
-
-При `ingest-source` / `ingest-binary` нової сторінки, що виглядає як security / incident / migration / compliance / recovery recipe (за ключовими словами в назві та змісті), скіл сам запитує: «Сторінка виглядає критично-рідкісною. Захистити? [y/n]». Не silent — завжди явна згода.
-
-### Чи воно тобі потрібне
-
-Якщо твоя вікі — **продуктова розробка** (UI patterns, бізнес-flow, data model, gotchas), захист, ймовірно, не потрібен. Усі сторінки активні, всі редагуються, всі читаються. Cleanup-flow і так має double-confirmation проти випадкового видалення.
-
-Захист стає корисним, коли в вікі **з'являються operational runbook'и** — речі, які мусять бути готові на «коли все горить», але до яких не звертаються в нормальний день.
 
 ## Оновлення
 
-Запустіть ту саму команду без аргумента — скіл оновиться до останнього master:
+> **Оновлюйте скіл через інсталятор, а не лише `git pull`.**
+> Git оновлює файли скіла й канонічних скриптів, але сам по собі не мігрує
+> старі реєстрації hooks у налаштуваннях агента та проєкту.
+
+### Рекомендований спосіб — з каталогу вашого проєкту
+
+Перейдіть у Git-репозиторій, де користуєтеся вікі, та виконайте:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
+(
+  set -eu
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh -o "$installer"
+  bash "$installer" master --project "$PWD"
+)
 ```
 
-Щоб переключитись на конкретну версію (наприклад, з master на v3.0.0 або з v3.0.0 на v4.0.0) — запустіть з аргументом:
+**Команда завантажує актуальний інсталятор.** Це важливо при переході зі старої
+версії, яка ще не розуміє нові параметри оновлення.
+
+Оновлення виконує чотири кроки:
+
+1. Оновлює canonical Git-клон без force reset і без перезапису локальних змін.
+2. Перевіряє cross-agent symlink exports.
+3. Оновлює глобальні hooks та прибирає **однозначно розпізнані власні** старі
+   реєстрації у налаштуваннях вибраного проєкту, залишаючи одну глобальну пару.
+4. Повторно читає налаштування й перевіряє команди, matchers, дублікати,
+   canonical path та виконуваність скриптів. Звіт містить версію й SHA-256 скриптів.
+
+Перевіряються `~/.claude/settings.json`, Qwen settings за наявності та
+`.claude/settings.json`, `.claude/settings.local.json`, `.qwen/settings.json`,
+`.qwen/settings.local.json` **лише явно вибраних проєктів**. Без `--project`
+інсталятор підхоплює поточний Git-проєкт, крім HOME і самого canonical клону.
+Він не обходить усю домашню директорію та не змінює managed/plugin settings.
+
+### Кілька проєктів або worktrees
+
+Скіл установлений один раз на користувача ОС. Але старі проєктні hooks можуть
+залишатися в кожному checkout/worktree; передайте їх явно:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash -s v4.0.0
+bash "$HOME/.claude/skills/wiki/install.sh" master \
+  --project /path/to/project-a \
+  --project /path/to/project-b
 ```
 
-Скрипт переключиться на потрібний тег у вже клонованому репо. Ваші wiki у проєктах не чіпаються.
+Цю коротку команду використовуйте **після першого оновлення до 4.10+**.
+Для переходу зі старого інсталятора використовуйте блок із `curl` вище.
+
+### Як зрозуміти результат
+
+| Результат | Що він означає |
+|---|---|
+| `wiki hooks: verified` | Статична перевірка пройшла в надрукованій області налаштувань. Це ще не доказ виконання PostToolUse. |
+| `wiki hooks: incomplete` / помилка | Скіл міг оновитися, але hooks потребують виправлення. Повне оновлення повертає код `3`. |
+| Hooks пропущено явно | Використано `--skip-hooks`; скіл доступний без автоматичних hooks. |
+| Старий pinned ref | Його власний інсталятор може не підтримувати міграцію/перевірку; це явно зазначено, а не оголошено verified. |
+
+Відсутність `python3`, помилка запису чи нерозпізнана wiki-команда більше не
+маскуються під успішно перевірені hooks. Незнайомі inline/composite-команди
+**зберігаються** й потрапляють у звіт для ручної перевірки — чужі hooks не видаляються.
+Перед зміною settings створюється унікальна резервна копія поруч із файлом;
+пошкоджений JSON, duplicate keys і небезпечні symlink-шляхи не перезаписуються.
+
+Зміни settings Claude Code зазвичай підхоплює автоматично; змінений файл скрипта
+використовується при наступному запуску команди. Перевірку після оновлення зручно
+робити в **новій сесії**, щоб не плутати старий текст у контексті з новим виводом.
+Джерело поведінки хоста: [офіційна документація hooks](https://code.claude.com/docs/en/hooks).
+
+### Фіксована версія та відкат
+
+Аргумент інсталятора — Git ref: `master`, наявний тег або повний commit SHA.
+Номер `4.10.0` у `SKILL.md` **не означає автоматичну наявність тега `v4.10.0`**.
+Для відтворюваного встановлення використовуйте перевірений SHA.
+
+```bash
+git -C "$HOME/claude-wiki-skill" rev-parse HEAD
+# Збережіть SHA перед оновленням. Для відкату передайте його інсталятору:
+bash "$HOME/.claude/skills/wiki/install.sh" <previous-commit-sha>
+```
+
+Відкат скіла не відновлює старі settings автоматично: за потреби відновіть
+відповідну `.bak-wiki-hooks-*` копію після перевірки її вмісту. Старі версії
+можуть знову інжектувати індекс; не вважайте їх виправленням проблеми #5.
+
+`version` у `SKILL.md` — версія поведінки скіла; `wiki_version` у `schema.md` —
+версія формату даних. Для 4.10 схема залишається `wiki_version: "4.0"`;
+переписувати вікі тільки через оновлення скіла не потрібно.
+
+## Перевірка та відновлення
+
+**Перевірка без змін файлів:**
+
+```bash
+bash "$HOME/.claude/skills/wiki/hooks/doctor.sh" --project "$PWD"
+```
+
+**Повторна реєстрація й міграція без завантаження нової версії:**
+
+```bash
+bash "$HOME/.claude/skills/wiki/hooks/install-hooks.sh" --verify --project "$PWD"
+```
+
+**Відновлення лише symlinks для Codex/Gemini/Qwen:**
+
+```bash
+bash "$HOME/.claude/skills/wiki/install.sh" --repair-exports
+```
+
+`wiki doctor` в агенті додатково перевіряє вікі, її покажчики, схему, Git-стан і
+телеметрію. Сам doctor нічого не виправляє без дозволу. Якщо виводяться і
+`WIKI DISCOVERY`, і старий `WIKI INDEX`, перевірте джерела команд у `/hooks`:
+новий глобальний hook не скасовує старий проєктний або plugin hook.
+
+Якщо настройки містять JSONC-коментарі чи trailing commas, виправте їх вручну:
+інсталятор працює зі строгим JSON і не переписує непідтримуваний формат.
+Конфлікт canonical symlink також потребує перевірки, а не примусового видалення.
+
+Старий Qwen wrapper `~/.qwen/hooks/wiki-session-start.sh` після міграції
+реєстрації більше не потрібен. Його зовнішній файл інсталятор не видаляє:
+перевірте, що на нього не залишилося посилань, і видаліть вручну за потреби.
+
+### Як тепер працюють session-хуки
+
+| Подія | Поведінка |
+|---|---|
+| `startup` | Короткий шлях до індексу; нове неповторне повідомлення про неперевірений стан або недоступну телеметрію. |
+| `clear`, `compact` | Лише короткий discovery; без індексу й lint-нагадувань. |
+| `resume` | Не зареєстрований; скрипт також ігнорує явний `resume`. |
+| Відповідний `PostToolUse` | Тихе оновлення локальної `.usage.json`; без LLM-викликів. |
+
+Discovery **не означає, що індекс прочитано**: агент явно читає повний індекс і
+релевантні сторінки перед wiki-залежною відповіддю. Hook ніколи не інжектує їхній
+вміст; великий `index.md` не збільшує discovery-вивід.
+
+Lint-нагадування прив’язане до відбитка вмісту вікі й не повторюється для того
+самого стану. Heartbeats і log rotation не створюють нове нагадування. Незмінені
+Markdown-файли **не доводять**, що описаний код або зовнішні факти актуальні.
+Повний змістовий `wiki lint` залишається явною операцією; startup не запускає
+фоновий LLM-lint, не виправляє сторінки й не створює коміти.
+
+Старий `post_tool_use_at` означає «телеметрія не підтверджена», а не автоматично
+«hook зламався». `index.md`, `schema.md`, `log.md`, `log/` і читання через `Bash`
+не є подіями, які поточний PostToolUse зараховує як читання knowledge page.
+Пошкоджена `.usage.json` зберігається: вона може містити legacy protection.
+
+## Використання
+
+Відкрийте свій Git-проєкт у підтримуваному агенті та скажіть **«створи вікі»**.
+Наявна вікі не створюється повторно: скіл читає покажчик `## Wiki` / `## Вікі`
+в `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` або `QWEN.md`; стандартний шлях — `docs/wiki/`.
+Для іншого розташування додайте покажчик перед ініціалізацією.
+
+Для наявної вікі `wiki init` спершу показує план ремонту покажчиків/exports.
+Без [y] жодних файлів не пишеться в цьому repair-процесі. Звичайний запит не
+запускає ремонт. Orphan-wiki без Git не перевідтворюється: скіл пояснює,
+як відновити Git вручну; він не виконує `git init` за вас у невідомому корені.
+
+| Намір | Приклад |
+|---|---|
+| Запит із джерелами | «Як у цьому проєкті працює авторизація?» |
+| Зберегти знання | «Додай це рішення у вікі» |
+| Перевірити стан | `wiki status` або `wiki doctor` |
+| Перевірити зміст | `wiki lint`, `wiki lint швидко`, `wiki lint concepts/auth/` |
+| Перебудувати матеріал | «Розділи цю сторінку на поточні правила й історію» |
+| Захистити важливе | `wiki protect concepts/recovery.md` |
+| Прибрати зайве | `wiki cleanup` |
+
+Вікі містить `concepts/`, `entities/`, optional `transcripts/`, навігацію й схему.
+Поточні правила відокремлюються від `history/`. `catalog.json` — похідна навігація,
+`policy.json` — версійований захист сторінок, `.usage.json` — gitignored per-clone
+телеметрія. Читання не запускає міграції, ремонт покажчиків або ручні telemetry bumps.
+
+## ChatGPT з GitHub
+
+Встановіть **Wiki** як особистий скіл і підключіть GitHub:
+[покрокова інструкція](docs/chatgpt.md). Пакет —
+[`skills/wiki-github`](skills/wiki-github/SKILL.md).
+Локальні Bash-хуки в браузері не запускаються й не встановлюються.
+
+Підтримуються **прямий коміт у `master/main` без PR** і **pull request**.
+Наприклад: «Додай рішення у вікі й закоміть у master без PR».
+Скіл перевіряє актуальний commit, права запису та конфлікти; force push не використовує.
 
 ## Видалення
 
-Безпечне видалення symlink entrypoints/exports:
-
 ```bash
-bash ~/claude-wiki-skill/uninstall.sh
+bash "$HOME/.claude/skills/wiki/uninstall.sh"
 ```
 
-За замовчуванням real clone-директорії `~/claude-wiki-skill` і `~/claude-doc-extract-skill` лишаються на диску, щоб не видалити локальні зміни випадково.
+Для видалення Git-клонів додайте `--remove-clones`. Захисні перевірки не дадуть
+видалити клон, якщо залишилися відомі глобальні посилання hooks на нього.
+Невідомі проєктні/плагінні команди потрібно перевірити окремо. Wiki-файли ваших
+проєктів не є інсталяцією скіла та не видаляються разом із ним.
 
-Якщо на цій машині встановлені global session hooks (v4.5+), `uninstall.sh` перед видаленням symlink'ів best-effort прибирає й їхні записи з `~/.claude/settings.json` і `~/.qwen/settings.json` через `hooks/uninstall-hooks.sh`. Провал цього кроку не блокує решту видалення — скрипт покаже команду для ручного повтору.
+## Документація
 
-Перед `--remove-clones` скрипт ще раз перевіряє обидва settings-файли на залишкові записи hooks, і робить це під тими самими локами, що бере інсталер (`hooks/lib/settings-lock.sh`), щоб паралельний `install-hooks.sh` не встиг дописати entries у вікні між перевіркою й видаленням. Якщо запис лишився, файл не вдалося прочитати, лок не вдалося взяти або сам lock-lib недоступний — `~/claude-wiki-skill` **не** видаляється (інакше зник би єдиний скрипт, здатний ці записи прибрати), і скрипт друкує причину.
+- [Архітектура та maintenance](references/wiki-maintenance.md),
+  [структура вікі](references/wiki-structure.md), [читання](references/reader-core.md).
+- [Lint](references/operation-lint.md), [doctor](references/operation-doctor.md),
+  [телеметрія](references/telemetry.md), [безпечний запис](references/writer-core.md).
+- [Тести](tests/README.md), [історичний README до 4.10](docs/history/README-v4.9.md).
 
-Щоб прибрати й real clones, якщо вони є clean git repos:
-
-```bash
-bash ~/claude-wiki-skill/uninstall.sh --remove-clones
-```
-
-`uninstall.sh` ідемпотентний: missing symlink показує як already absent, plain file / real directory не перезаписує і не видаляє, а clone з локальними змінами пропускає.
-Foreign symlink'и у відомих слотах теж не видаляються: скрипт прибирає тільки ті entrypoints/exports, які вказують на expected canonical topology. Порожні `*/skills` підпапки може прибрати через `rmdir`, але parent-директорії `~/.claude`, `~/.agents`, `~/.gemini`, `~/.qwen` лишаються на місці.
-
-**Що саме прибирається з `~/.qwen`.** Рівно два класи артефактів: symlink
-export `~/.qwen/skills/wiki` (і `~/.qwen/skills/doc-extract`, якщо
-встановлений), та наші hook-entries всередині `~/.qwen/settings.json`
-(SessionStart/PostToolUse записи, що вказують на
-`.../skills/wiki/hooks/`, плюс legacy-marker
-`~/.qwen/hooks/wiki-session-start.sh`, якщо він там ще лишався). Решта
-`~/.qwen/settings.json` — чужі ключі, налаштування самого Qwen Code,
-записи інших skills/hooks — **не чіпається**: merge і strip працюють на
-рівні окремих entries, не файлу цілком. Сам `~/.qwen/settings.json` як
-файл ніколи не видаляється, навіть якщо після strip у ньому не лишилось
-жодного нашого запису. Зовнішній `~/.qwen/hooks/wiki-session-start.sh`
-(файл, не запис у settings.json) `uninstall.sh` теж не видаляє — той самий
-принцип, що й для install: чужий файл у чужому каталозі прибирається
-вручну.
-
-## Тести
-
-```bash
-bash -n install.sh
-bash -n uninstall.sh
-bash -n tests/install-cross-agent-links.sh
-bash -n tests/uninstall.sh
-bash -n tests/skill-contracts.sh
-bash tests/install-cross-agent-links.sh
-bash tests/uninstall.sh
-bash tests/skill-contracts.sh
-```
-
-## Вимоги
-
-- Claude Code, Codex або Gemini CLI
-- Для cross-agent support достатньо створених symlink exports; окрема інсталяція під кожен агент не потрібна.
-- Інсталятор створює `~/.claude/skills/wiki` як canonical registry навіть якщо користувач працює лише з Codex або Gemini; це не вимагає встановленого Claude.
+Історичний README збережено для довідки; старі таблиці тегів і контракти hooks
+не є інструкцією для поточної версії.

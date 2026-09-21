@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.9.0"
+version: "4.10.0"
 description: >
   Read and maintain a project's LLM Wiki: query, init, ingest, edit, lint,
   cleanup, split, protect and status. Use for wiki/вікі requests and
@@ -71,6 +71,7 @@ hooks may continue their optional local telemetry.
 
 | User intent / operation | Required references |
 |---|---|
+| Update the installed skill / repair hook registration | `references/updating.md` |
 | Read or change a remote GitHub wiki | `skills/wiki-github/SKILL.md`; it routes reading and writing |
 | Ask project-specific questions | `references/local-reader.md`, `references/reader-core.md`, `references/operation-query.md` |
 | Create / initialize / migrate a local wiki | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/writer-core.md`, `references/telemetry.md`, `references/reflection.md` |

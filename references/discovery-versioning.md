@@ -181,6 +181,11 @@ All paths below use `{wiki}` as placeholder for the discovered wiki directory (e
 
 ### Hook provisioning (Claude Code only)
 
+This is unsolicited first-time provisioning only. An explicit skill update or
+hook repair follows `references/updating.md` and is never skipped merely because
+one discovery block is present. A discovery block cannot prove current registrations
+or absence of a duplicate in another settings scope.
+
 After Step 0 resolves a valid wiki, and only when the active agent is Claude
 Code, offer to install the global session hooks that announce
 the path to `{wiki}/index.md` at session start and keep `.usage.json` heartbeats warm.
@@ -216,8 +221,8 @@ after the first decline/accept in the same session):
 
 - **`y`** — if no canonical hook marker exists yet in
   `~/.claude/settings.json`, run `install-hooks.sh`. Tell the user hooks
-  activate from the *next* session (Claude Code limitation — the current
-  session's context was already assembled before install).
+  registration is updated; a new session is a clean smoke test. Existing
+  context is not proof of current hook output; do not assert a host-wide reload limitation.
 - **`y`, but a canonical marker already exists** — this is the "marker
   present but no inject" branch: a hook entry is registered yet no
   `WIKI DISCOVERY (hook)` block appeared this session, meaning hooks

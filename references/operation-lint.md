@@ -385,12 +385,24 @@ When ALL buckets (🟢 / 🟡 / 🔵) are empty (clean wiki, nothing applied, no
 
 ### After completion
 
-At the end of every lint run — full pass, "швидко" top-10, a scoped subset,
-or a single-topic run — write `_hooks.last_lint_at = now` into
-`{wiki}/.usage.json` (see `## Dual-signal rule` and the reserved `_hooks`
-metadata key in `references/telemetry.md`). This happens regardless of
-whether any AUTO/DECIDE findings were produced — even a clean run
-(`✅ Лінт чистий...`) still counts as a lint pass for staleness purposes.
+After a completed **full** run (all eligible unprotected pages and resident
+instruction files), record the content checkpoint with the installed helper:
+
+```bash
+python3 "$HOME/.claude/skills/wiki/hooks/lib/session_health.py" mark-lint --wiki "<wiki>" --scope full
+```
+
+For top-10/scoped/topic runs use `--scope partial`. Only full runs update
+`_hooks.last_lint_at` and `_hooks.last_lint_fingerprint`; partial runs update
+`_hooks.last_partial_lint_at` and never certify the whole wiki. Incomplete,
+cancelled or failed verification does not write a completion checkpoint.
+The helper preserves corrupt metadata and honors the current-schema gate.
+A failed optional checkpoint is reported but does not erase the lint report.
+
+A fingerprint schedules a content-state reminder; unchanged Markdown does not
+prove the described code or external sources remain accurate. Never run this
+LLM/content-verification workflow in a startup background hook or mark a structural
+check as a completed full lint. The helper runs only during authorized maintenance.
 
 Lint, `wiki status`, and cleanup-flow never emit a separate РЕФЛЕКСІЯ block. The lint report itself is the visible reasoning layer: it shows what was verified, what was auto-applied, what needs a decision, and how to revert. Adding reflection after that is recursive noise.
 

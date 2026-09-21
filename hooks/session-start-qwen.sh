@@ -12,11 +12,8 @@
 # granularity un/install behavior correct without any change here) and
 # repackages whatever that hook printed on stdout.
 #
-# The canonical hook already enforces the 24 KB injected-content cap
-# BEFORE this wrapper ever sees the text; this wrapper's own JSON
-# encoding (json.dumps escaping \n, quotes, etc.) can grow the byte count
-# of the final envelope past that cap — that is expected and not a bug
-# here, the cap is a pre-escaping content budget, not a wire-size budget.
+# The canonical hook emits a bounded path-only notice, not index content.
+# stdin is inherited so startup/clear/compact reach the canonical event parser.
 #
 # stderr from the child hook is diagnostic-only and is deliberately NOT
 # folded into stdout: Qwen Code parses stdout as JSON, so any child

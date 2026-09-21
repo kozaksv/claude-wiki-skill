@@ -1,6 +1,6 @@
 {
   "name": "claude-wiki-skill",
-  "version": "4.9.0",
+  "version": "4.10.0",
   "description": "Read and maintain repository wikis in ChatGPT through GitHub.",
   "author": {
     "name": "kozaksv"

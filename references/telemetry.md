@@ -174,3 +174,27 @@ applies **only** when PostToolUse telemetry is confirmed live via a fresh
 `_hooks.post_tool_use_at`, never merely because an index-inject block was
 observed this session.
 
+
+### v4.10 startup diagnostics and completion checkpoints
+
+SessionStart always emits a short path-only notice. Maintenance diagnostics run
+only on `startup`, never `clear` or `compact`; `resume` is ignored. The hook never
+runs LLM lint or injects the index. The optional metadata remains per-clone:
+
+- `hook_version`: installed skill behavior version, not the old constant `1`.
+- `last_lint_fingerprint`: content/path hash saved only after a completed full lint.
+- `last_lint_notice_fingerprint`: suppresses a repeated reminder for the same state.
+- `last_partial_lint_at`: a scoped run, not proof of full verification.
+- `telemetry_first_seen_at`, `telemetry_notice_key`: allow a bounded, deduplicated
+  stale-heartbeat notice without inventing an eligible event.
+
+Hashes include Markdown and policy paths/content, including untracked files,
+renames and deletions; they exclude `.usage.json`, hidden state, archive and logs.
+A bounded or unreadable scan is unknown, not clean. Code/source drift can happen
+without any wiki-file change, so this is not a staleness classifier.
+
+Old `post_tool_use_at` means **unconfirmed telemetry**, not a diagnosis of death.
+The hook cannot infer missed events from a stale counter alone. `index.md`,
+`schema.md`, `log.md`, `log/` and shell reads are excluded by PostToolUse. A concrete
+failure requires independent evidence or a registration/interpreter/write error.
+No automatic raw-transcript scan or synthetic mutating probe runs at startup.

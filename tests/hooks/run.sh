@@ -927,7 +927,7 @@ sa="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json'
 hv="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json')); print(d.get('_hooks',{}).get('hook_version',''))" 2>/dev/null)"
 if [ -n "$sa" ]; then r=0; else r=1; fi
 assert_eq "session-start: heartbeat writes non-empty session_start_at" "0" "$r"
-assert_eq "session-start: heartbeat writes hook_version=1" "1" "$hv"
+assert_eq "session-start: heartbeat writes installed skill version" "$(sed -n 's/^version: "\([^"]*\)"/\1/p' "$ROOT/SKILL.md")" "$hv"
 # valid JSON after the write (atomic tmp+rename, never a half-written file).
 if python3 -c "import json; json.load(open('$fixture/docs/wiki/.usage.json'))" 2>/dev/null; then r=0; else r=1; fi
 assert_eq "session-start: .usage.json still valid JSON after heartbeat" "0" "$r"
@@ -967,8 +967,11 @@ assert_contains "session-start: last_lint_at 8 days old -> reminder present" "$o
 fixture="$(make_fixture)"
 two_days_ago="$(python3 -c "import time; print(time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time()-2*24*3600)))")"
 printf '{"_hooks": {"last_lint_at": "%s"}}' "$two_days_ago" >"$fixture/docs/wiki/.usage.json"
+# A timestamp alone does not prove what was checked. Stamp the actual full
+# checkpoint, then assert no repeated prompt for its unchanged content.
+python3 "$ROOT/hooks/lib/session_health.py" mark-lint --wiki "$fixture/docs/wiki" --scope full
 out="$(CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
-assert_not_contains "session-start: last_lint_at 2 days old -> no reminder" "$out" "wiki lint"
+assert_not_contains "session-start: verified unchanged content -> no reminder" "$out" "wiki lint"
 
 # 6c. Lint reminder: last_lint_at absent entirely -> reminder present.
 fixture="$(make_fixture)"
@@ -1020,7 +1023,7 @@ sa="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json'
 if [ -n "$sa" ]; then r=0; else r=1; fi
 assert_eq "session-start: fresh checkout -> heartbeat written on first session" "0" "$r"
 hv="$(python3 -c "import json; d=json.load(open('$fixture/docs/wiki/.usage.json')); print(d.get('_hooks',{}).get('hook_version',''))" 2>/dev/null)"
-assert_eq "session-start: fresh checkout -> hook_version=1 written on bootstrap" "1" "$hv"
+assert_eq "session-start: fresh checkout -> installed skill version written" "$(sed -n 's/^version: "\([^"]*\)"/\1/p' "$ROOT/SKILL.md")" "$hv"
 if python3 -c "import json; json.load(open('$fixture/docs/wiki/.usage.json'))" 2>/dev/null; then r=0; else r=1; fi
 assert_eq "session-start: fresh checkout -> bootstrapped .usage.json is valid JSON" "0" "$r"
 if [ -L "$fixture/docs/wiki/.usage.json" ]; then r=1; else r=0; fi
@@ -1105,7 +1108,8 @@ out_s1b="$(
   env WIKI_HOOK_CLIENT=claude CLAUDE_PROJECT_DIR="$claude_fixture_s1" QWEN_PROJECT_DIR="$qwen_fixture_s1" \
     bash "$SESSION_START_QWEN_HOOK" 2>/dev/null
 )"
-assert_eq "session-start-qwen: S1b inherited WIKI_HOOK_CLIENT=claude is ignored (hardcoded qwen wins)" "$out" "$out_s1b"
+actx_s1b="$(printf '%s' "$out_s1b" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"].splitlines()[0])')"
+assert_eq "session-start-qwen: S1b inherited WIKI_HOOK_CLIENT=claude is ignored (hardcoded qwen wins)" "$(printf '%s' "$actx_s1" | head -1)" "$actx_s1b"
 
 # 1. Happy path: valid wiki -> exit 0, stdout is valid single-line JSON
 #    wrapping the canonical hook's index injection.
@@ -2370,7 +2374,9 @@ cp "$INSTALL_HOOKS_SCRIPT" "$clone_b/install-hooks.sh"
 # alongside it too, or the copy is not a faithful clone.
 mkdir -p "$clone_a/lib" "$clone_b/lib"
 cp "$SETTINGS_LOCK_LIB" "$clone_a/lib/settings-lock.sh"
+cp "$ROOT/hooks/lib/config_audit.py" "$clone_a/lib/config_audit.py"
 cp "$SETTINGS_LOCK_LIB" "$clone_b/lib/settings-lock.sh"
+cp "$ROOT/hooks/lib/config_audit.py" "$clone_b/lib/config_audit.py"
 env "${WH_ENV[@]}" HOME="$home" bash "$clone_a/install-hooks.sh" >/dev/null 2>&1
 cmd_a="$(json_get "$f" "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
 expected_canon="$home/.claude/skills/wiki/hooks/session-start.sh"
@@ -2954,6 +2960,7 @@ track_tmp "$clone_h"
 mkdir -p "$clone_h/hooks/lib"
 cp "$INSTALL_HOOKS_SCRIPT" "$clone_h/hooks/install-hooks.sh"
 cp "$SETTINGS_LOCK_LIB" "$clone_h/hooks/lib/settings-lock.sh"
+cp "$ROOT/hooks/lib/config_audit.py" "$clone_h/hooks/lib/config_audit.py"
 
 lockdir="$f.lockdir"
 ( sleep 30 ) &

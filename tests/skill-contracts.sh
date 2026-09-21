@@ -585,7 +585,7 @@ skill_release="$(sed -n 's/^version: "\([0-9][0-9.]*\)"$/\1/p' "$ROOT/SKILL.md" 
 plugin_release="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/.codex-plugin/plugin.json")"
 [ "$skill_release" = "$plugin_release" ] ||
   fail "SKILL.md and plugin manifest versions must match"
-grep -Fq "**Skill behavior version: $skill_release**" "$ROOT/README.md" ||
+grep -Fq "**Версія скіла: $skill_release ·" "$ROOT/README.md" ||
   fail "README.md must report the current skill behavior version"
 
 grep -q '| Qwen Code |' "$ROOT/SKILL.md" ||
@@ -661,8 +661,8 @@ grep -qE 'schema major.*skill major|skill major.*schema major' "$ROOT/references
 grep -q 'last_lint_at' "$ROOT/references/operation-lint.md" ||
   fail "operation-lint.md must write _hooks.last_lint_at at the end of a lint run"
 
-grep -q 'last_lint_at' "$ROOT/references/operation-init.md" ||
-  fail "operation-init.md bootstrap must seed _hooks.last_lint_at"
+grep -q 'telemetry_first_seen_at' "$ROOT/references/operation-init.md" ||
+  fail "operation-init.md bootstrap must seed observation metadata, not fabricate lint completion"
 
 # Task 8: hook-file contract guards (v45-hooks) — the hook scripts, installer
 # and version gate must exist, be wired together, and be executable before
@@ -698,8 +698,11 @@ grep -q 'install-hooks.sh' "$ROOT/install.sh" ||
 grep -q 'Session-хуки Claude Code:' "$ROOT/install.sh" ||
   fail "install.sh summary must report the hook registration outcome"
 
-grep -q 'НАСТУПНОЇ сесії' "$ROOT/install.sh" ||
-  fail "install.sh must say hooks take effect from the next session, not the current one"
+grep -q -- '--verify' "$ROOT/install.sh" ||
+  fail "install.sh must verify hook registrations rather than assume a reload"
+
+grep -q -- '--project' "$ROOT/install.sh" ||
+  fail "install.sh must support scoped project migration"
 
 # install.sh must gate hook registration on existence (-f), not the
 # executable bit (-x): the +x bit is commonly lost on Windows clones
@@ -738,8 +741,14 @@ grep -q 'QWEN.md' "$ROOT/references/operation-ingest-source.md" ||
   fail "operation-ingest-source.md must cover QWEN.md as an agent instruction file"
 
 # t16-readme-scenarios: README must document Qwen Code support.
-grep -q "What's new in v4.6" "$ROOT/README.md" ||
-  fail "README.md must document Qwen Code support under a What's new in v4.6 heading"
+grep -q 'Qwen Code' "$ROOT/README.md" ||
+  fail "README.md must document current Qwen Code support"
+
+grep -q '^## Оновлення' "$ROOT/README.md" ||
+  fail "README.md must have a dedicated update section"
+
+grep -q 'README-v4.9.md' "$ROOT/README.md" ||
+  fail "README.md must retain a discoverable historical archive"
 
 grep -q '~/.qwen/skills' "$ROOT/README.md" ||
   fail "README.md must document the ~/.qwen/skills export"

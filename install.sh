@@ -1,17 +1,41 @@
 #!/bin/bash
 set -euo pipefail
 
-REPAIR_EXPORTS=0
-if [ "${1:-}" = "--repair-exports" ]; then
-  REPAIR_EXPORTS=1
-  shift
-  if [ -n "${1:-}" ]; then
-    echo "Помилка: --repair-exports не приймає аргументів. Для переключення версії запустіть install.sh <ref> без --repair-exports."
-    exit 2
-  fi
+# Execute a stable copy: checkout may replace the installer currently running.
+if [ "${WIKI_INSTALL_RUNNING_COPY:-}" != "1" ] && [ -f "${BASH_SOURCE[0]:-}" ]; then
+  installer_copy="$(mktemp)"
+  cat "${BASH_SOURCE[0]}" >"$installer_copy"
+  copy_rc=0
+  WIKI_INSTALL_RUNNING_COPY=1 bash "$installer_copy" "$@" || copy_rc=$?
+  rm -f "$installer_copy"
+  exit "$copy_rc"
 fi
 
-WIKI_VERSION="${1:-master}"
+REPAIR_EXPORTS=0
+SKIP_HOOKS=0
+WIKI_VERSION=master
+REF_GIVEN=0
+PROJECT_ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --repair-exports)
+      [ "$#" -eq 1 ] && [ "$REF_GIVEN" -eq 0 ] && [ "${#PROJECT_ARGS[@]}" -eq 0 ] && [ "$SKIP_HOOKS" -eq 0 ] || {
+        echo 'Помилка: --repair-exports не приймає аргументів.' >&2; exit 2;
+      }
+      REPAIR_EXPORTS=1; shift ;;
+    --skip-hooks) SKIP_HOOKS=1; shift ;;
+    --project)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { echo 'Помилка: --project потребує шляху.' >&2; exit 2; }
+      PROJECT_ARGS+=(--project "$2"); shift 2 ;;
+    --help|-h)
+      echo 'usage: install.sh [ref] [--project PATH ...] [--skip-hooks] | --repair-exports'
+      exit 0 ;;
+    --*) echo "Помилка: невідомий параметр $1" >&2; exit 2 ;;
+    *)
+      [ "$REF_GIVEN" -eq 0 ] || { echo 'Помилка: дозволений лише один ref.' >&2; exit 2; }
+      WIKI_VERSION="$1"; REF_GIVEN=1; shift ;;
+  esac
+done
 
 REPO="https://github.com/kozaksv/claude-wiki-skill.git"
 SKILL_DIR="$HOME/claude-wiki-skill"
@@ -72,6 +96,10 @@ ensure_ref_exists() {
 install_skill_at_ref() {
   local name="$1" repo="$2" dir="$3" link="$4" ref="$5"
   if [ -d "$dir/.git" ]; then
+    if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
+      echo "Помилка: $dir містить локальні зміни — збережіть їх перед оновленням; reset/stash не виконується." >&2
+      return 1
+    fi
     echo "[$name] репо вже існує — переключаю на $ref..."
     git -C "$dir" fetch --tags --force origin || {
       echo "Помилка: не вдалося оновити $dir. Якщо це partial або corrupt clone після обірваного git clone, перейменуйте/видаліть цю директорію і запустіть installer повторно."
@@ -84,6 +112,12 @@ install_skill_at_ref() {
         echo "Помилка: неможливо оновити $dir (можливо, є локальні зміни або git-конфлікт)."
         return 1
       }
+      if git -C "$dir" rev-parse --verify --quiet "origin/$ref^{commit}" >/dev/null; then
+        if [ "$(git -C "$dir" rev-parse HEAD)" != "$(git -C "$dir" rev-parse "origin/$ref^{commit}")" ]; then
+          echo "Помилка: локальна гілка $ref відрізняється від origin/$ref; не оголошую оновлення успішним." >&2
+          return 1
+        fi
+      fi
     fi
   else
     if [ -e "$dir" ]; then
@@ -271,6 +305,12 @@ if ! command -v git &>/dev/null; then
   exit 1
 fi
 
+if [ "${#PROJECT_ARGS[@]}" -eq 0 ]; then
+  current_project="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$current_project" ] && [ "$current_project" != "$HOME" ] && [ "$current_project" != "$SKILL_DIR" ]; then
+    PROJECT_ARGS+=(--project "$current_project")
+  fi
+fi
 mkdir -p "$SKILLS_ROOT"
 
 # 1. Wiki skill — користувацький pin (за замовчуванням master)
@@ -326,14 +366,30 @@ fi
 # canonical entrypoint. A failure here must never abort the wiki install —
 # text/source wiki operations work fine without hooks; only the automated
 # session-start/log-rotation conveniences are lost.
-HOOKS_STATUS="ok"
-if [ -f "$SKILL_LINK/hooks/install-hooks.sh" ]; then
-  if ! bash "$SKILL_LINK/hooks/install-hooks.sh"; then
-    HOOKS_STATUS="failed"
-    echo "Увага: не вдалося зареєструвати session-хуки. Запустіть вручну: bash \"$SKILL_LINK/hooks/install-hooks.sh\""
+HOOKS_STATUS="absent"
+if [ "$SKIP_HOOKS" -eq 1 ]; then
+  HOOKS_STATUS="skipped"
+elif ! command -v python3 >/dev/null 2>&1; then
+  HOOKS_STATUS="failed"
+  echo 'Увага: python3 недоступний — скіл оновлено, але hooks не оновлено/не перевірено.' >&2
+elif [ -f "$SKILL_LINK/hooks/install-hooks.sh" ]; then
+  if [ -f "$SKILL_LINK/hooks/lib/config_audit.py" ]; then
+    if bash "$SKILL_LINK/hooks/install-hooks.sh" --verify ${PROJECT_ARGS[@]+"${PROJECT_ARGS[@]}"}; then
+      HOOKS_STATUS="ok"
+    else
+      HOOKS_STATUS="failed"
+      echo 'Увага: оновлення hooks неповне; дивіться конкретні причини вище.' >&2
+    fi
+  else
+    # A deliberately pinned old ref need not ship the new audit protocol.
+    if bash "$SKILL_LINK/hooks/install-hooks.sh"; then
+      HOOKS_STATUS="legacy"
+      echo 'Увага: цей старий ref не підтримує міграцію/аудит проєктних hooks; verified не підтверджено.' >&2
+    else
+      HOOKS_STATUS="failed"
+    fi
   fi
 else
-  HOOKS_STATUS="absent"
   echo "Увага: install-hooks.sh не знайдено в $SKILL_LINK/hooks — хуки не зареєстровано."
 fi
 
@@ -343,7 +399,8 @@ for status in "$WIKI_AGENTS_STATUS" "$WIKI_GEMINI_STATUS" "$WIKI_QWEN_STATUS" "$
 done
 
 echo ""
-echo "Готово! Встановлено:"
+echo "Скіл встановлено/оновлено; статус hooks наведено окремо:"
+echo "  commit: $(git -C "$SKILL_DIR" rev-parse HEAD)"
 echo "  $SKILL_LINK → $SKILL_DIR  (@ $WIKI_VERSION)"
 echo "  Примітка: ~/.claude/skills — це shared canonical registry; Claude Code не потрібен."
 echo "Cross-agent exports (symlinks to shared canonical):"
@@ -360,7 +417,13 @@ echo "Session-хуки Claude Code:"
 case "$HOOKS_STATUS" in
   ok)
     echo "  зареєстровано в $HOME/.claude/settings.json (SessionStart + PostToolUse)"
-    echo "  діють із НАСТУПНОЇ сесії — поточна зібрала свій контекст до встановлення"
+    echo "  перевірено в зазначеній області; нова сесія зручна для чистої перевірки виводу"
+    ;;
+  skipped)
+    echo "  пропущено явно (--skip-hooks); скіл працює без автоматичних hooks"
+    ;;
+  legacy)
+    echo "  реєстрація виконана старим ref; міграцію/аудит не підтверджено"
     ;;
   failed)
     echo "  не зареєстровано — крок завершився помилкою (повідомлення вище)"
@@ -385,3 +448,6 @@ else
 fi
 echo ""
 echo "Відкрийте проєкт у Claude Code, Codex або Gemini CLI і скажіть: створи вікі"
+
+# Partial hook updates must be visible to callers/CI, not only in scrollback.
+[ "$HOOKS_STATUS" != "failed" ] || exit 3
