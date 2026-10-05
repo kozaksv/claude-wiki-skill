@@ -39,7 +39,12 @@ sys.stdout.write(source + "\0" + cwd + "\0")
   fi
   [ -n "$anchor" ] || anchor="$stdin_cwd"
   [ -n "$anchor" ] || anchor="$(pwd)"
-  wiki="$(discover_wiki "$anchor" 2>/dev/null)"
+  local discovery_rc=0
+  wiki="$(discover_wiki "$anchor" 2>/dev/null)" || discovery_rc=$?
+  if [ "$discovery_rc" -eq 3 ]; then
+    printf '%s\n' 'wiki: same-level pointer conflict; no telemetry writes — wiki doctor'
+    return 0
+  fi
   [ -n "$wiki" ] && [ -f "$wiki/index.md" ] || return 0
   index_path="$wiki/index.md"
   # Escape control characters and backticks in displayed paths without shell eval.

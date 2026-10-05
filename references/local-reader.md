@@ -3,10 +3,11 @@
 Load [reader-core.md](reader-core.md), then:
 
 1. Run the installed skill's `hooks/lib/discover.sh START_DIRECTORY`. This is
-   the same bounded discovery implementation used by the hooks. Set
-   `WIKI_DISCOVERY_AGENT` to `claude`, `codex`, `gemini`, or `qwen` when known;
-   otherwise use its deterministic default priority. Do not reimplement the
-   pointer parser in an ad-hoc shell command.
+   the same bounded discovery implementation used by the hooks. Priority is
+   agent-neutral: AGENTS first within the nearest valid level. Exit 3 means
+   same-level conflict and deliberately returns no writeable wiki path. For a
+   read-only selected-path/conflict report use `scripts/instructions.py audit
+   --project START_DIRECTORY --json`. Do not reimplement the pointer parser.
 2. If no wiki resolves, inspect the requested repository's `docs/wiki/` for
    a partial wiki; distinguish failed reads from missing files. Do not init
    git, provision hooks, sync instruction files or migrate on a query.

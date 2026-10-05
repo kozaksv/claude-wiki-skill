@@ -69,8 +69,11 @@ repositories, local home directories, symlink targets, or submodules.
    pointers. In a subdirectory, walk toward repository root only.
    Prefer a valid `AGENTS.md` pointer for ChatGPT at the nearest level; break
    remaining same-level ties in `CLAUDE.md`, `GEMINI.md`, `QWEN.md` order.
-   An explicit user-selected wiki path takes precedence. Report conflicting
-   valid wikis rather than combining their contents.
+   An explicit user-selected wiki path takes precedence. Inspect all pointers
+   on the selected level. Different valid same-level wikis allow a named,
+   warned read only; unaddressed writes stop. Cross-level differences do not
+   block normal nearest-scope monorepos. Follow the bundled reader contract
+   and discovery-cases.md; local CI alone does not prove this adapter's parity.
 3. If no valid pointer is found, check `docs/wiki/index.md` relative to the
    nearest pointer-bearing directory, the selected directory, and repository
    root, de-duplicating those locations. Never create a second wiki.

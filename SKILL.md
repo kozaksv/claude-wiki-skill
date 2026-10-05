@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.10.0"
+version: "4.11.0"
 description: >
   Read and maintain a project's LLM Wiki: query, init, ingest, edit, lint,
   cleanup, split, protect and status. Use for wiki/вікі requests and
@@ -38,9 +38,9 @@ maintainers regenerate that bundle with `python3 scripts/build_skill.py`.
 
 ## Platform Compatibility (Local Workspace)
 
-| Generic action | Claude Code | Codex | Gemini CLI | Qwen Code |
+| Generic action | Claude Code | Codex | agy CLI | Qwen Code |
 |---|---|---|---|---|
-| Read files | Read | file/shell tools | read_file | read_file |
+| Read files | Read | file/shell tools | native file tools | read_file |
 | Edit files | Edit/Write | apply_patch | file/shell tools | edit/write_file |
 | Run commands | Bash | exec_command | shell tool | shell |
 | Track tasks | TodoWrite | update_plan | native tasks | native tasks |
@@ -71,7 +71,7 @@ hooks may continue their optional local telemetry.
 
 | User intent / operation | Required references |
 |---|---|
-| Update the installed skill / repair hook registration | `references/updating.md` |
+| Update the installed skill / repair hook registration | `references/updating.md`, `references/instructions-audit.md` |
 | Read or change a remote GitHub wiki | `skills/wiki-github/SKILL.md`; it routes reading and writing |
 | Ask project-specific questions | `references/local-reader.md`, `references/reader-core.md`, `references/operation-query.md` |
 | Create / initialize / migrate a local wiki | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/writer-core.md`, `references/telemetry.md`, `references/reflection.md` |
@@ -92,12 +92,17 @@ inventing its instructions.
 ## Local Maintenance Invariants
 
 - One real git clone, one canonical `~/.claude/skills/wiki` entrypoint and
-  symlink exports for Codex, Gemini and Qwen. Claude need not be installed.
+  symlink exports for Codex, agy CLI and Qwen; registry in `lib/harnesses.sh`. Claude need not be installed.
 - Git backs maintenance snapshots and rollback. Discovery walks only to the
   nearest Git boundary and rejects resolved paths escaping the repository.
 - `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md` are pointer sources.
   Validate candidates by their index. A broken active-agent pointer cannot
   hide a valid wiki or authorize creation of another wiki.
+- Shared instruction writes use `references/instructions-audit.md`: only
+  AGENTS.md, no legacy sync or consolidation in release A. Unknown profiles
+  do not block empty-scope Init; known existing fallback rules are preserved.
+- Same-level different valid wiki pointers block unaddressed writes, including
+  hook metadata. Nearest subproject scope is not a conflict with its ancestor.
 - Use the canonical `hooks/lib/discover.sh` parser for local discovery.
   It accepts `## Wiki`, `## Вікі`, case variants and heading suffixes.
 - Track durable protection in `policy.json`; keep usage counters local.

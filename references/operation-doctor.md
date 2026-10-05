@@ -112,3 +112,12 @@ Include concrete findings, not placeholders. Repairs must explain which files
 will change. Hook repair uses `install-hooks.sh --verify --project <root>`;
 actual version update uses `updating.md`. Failed verification is an incomplete
 repair, never a success merely because the text skill is usable.
+
+### Release A instruction/export diagnostics
+
+Use `instructions-audit.md` and `hooks/doctor.sh --project <repo> --json`.
+The nested `instructions` report separates presence, wiki selection, exports
+and untested runtime loading from hook verification. No Claude version floor,
+plugin probe or full effective-loading model. Same-level pointer conflict blocks
+unaddressed writes; cross-level mismatch is warning only. Private fixes are
+release B. Doctor is read-only; explicit repairs require their own scope/consent.
