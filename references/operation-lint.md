@@ -189,9 +189,11 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 - Does an agent instruction file still carry full schema instead of a 1-line pointer? → DECIDE finding: migrate to a 1-line pointer
 - If drift found — propose updating schema
 
-**Release A instruction-write boundary:** load `instructions-audit.md` before
-any instruction edit. Legacy files are report-only, including stale-pointer
-repair; do not condense, delete, or write their rules. Canonical changes require
+**Instruction-write boundary:** load `instructions-audit.md` before any
+instruction edit. Legacy files are report-only, including stale-pointer repair;
+do not condense, delete, or write their rules — consolidation and deletion go
+through `instructions-migration.md`, where check #11 is the optional, skippable
+optimization step on the drafted `AGENTS.md`. Canonical changes require
 preflight/consent. Critical rules and their conditions are KEEP by default;
 changing them is DECIDE, and dead links never authorize deleting a whole rule.
 

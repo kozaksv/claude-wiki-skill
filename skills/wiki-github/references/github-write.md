@@ -18,6 +18,18 @@ when available. Otherwise materialize only the wiki at the selected snapshot,
 ensuring a complete tree and complete contents for catalog regeneration.
 Do not claim a scratch copy is the user's checkout.
 
+## Instruction consolidation (remote)
+
+Consolidating legacy `CLAUDE.md`/`GEMINI.md`/`QWEN.md` into `AGENTS.md` follows
+the shared `instructions-migration.md` rules (bundled helper `scripts/migrate.py`).
+Delete legacy files in a remote change **only after** `migrate.py check --snapshot`
+actually passed on the pinned snapshot and the exact proposed outputs; record the
+command, snapshot SHA and result. Without that run report
+`coverage not machine-validated`, keep the legacy files, and delete only after a
+separate explicit user decision naming those paths. A direct-commit permission is
+not that decision. Remote mode cannot see private files, local settings, backups
+or native loading; never claim the private Claude checkpoints were done.
+
 ## Choose delivery
 
 Use direct mode when the user asks to commit/push to a named branch without a

@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Версія скіла: 4.11.0 · Типовий install ref: `master` · Схема вікі: `4.0`**
+**Версія скіла: 4.12.0 · Типовий install ref: `master` · Схема вікі: `4.0`**
 
 Спільна LLM Wiki для **Claude Code, Codex, agy CLI, Qwen Code та ChatGPT з GitHub**.
 Скіл читає джерела перед відповіддю, зберігає рішення й підтримує Markdown-базу
@@ -301,10 +301,40 @@ skills не видаляються. Після запуску старої ко�
 що exports не перевірені. Повний install зберігає історичну best-effort політику
 export-кроку; repair повертає `2` за неповних exports, hook failure — `3`.
 
-**Реліз B ще не реалізований:** змістовне об’єднання, оптимізація через наявний
-lint, видалення legacy-файлів і автоматизовані private checkpoints не є частиною
-A. Вони описані в епіку #6 та сабепіках #10–#14. Оновіть усі інсталяції перед
-майбутньою спільною міграцією, щоб старі версії не відтворювали дублікати.
+Консолідацію legacy-файлів додано в 4.12 (реліз B) — див. наступний розділ.
+Оновіть усі інсталяції перед спільною міграцією, щоб старі версії не
+відтворювали дублікати.
 
 Приймання A: автоматичні тести плюс окремі live receipts Claude/Codex/Qwen/agy
 і GitHub-адаптера. `not run` не означає pass; див. `docs/release-a-validation.md`.
+
+## Консолідація в AGENTS.md — реліз B (4.12)
+
+Старі `CLAUDE.md`, `.claude/CLAUDE.md`, `GEMINI.md`, `QWEN.md` зводяться в
+`AGENTS.md` кожної області без втрати правил і видаляються лише після погодження.
+Скіл пропонує це один раз після явного оновлення, non-absent init або
+обслуговування вікі; відкладення нічого не блокує. Схема вікі лишається `4.0`.
+
+```bash
+M="$HOME/.claude/skills/wiki/scripts/migrate.py"
+python3 "$M" plan --project "$PWD"              # приватний план у .git/wiki-migration/<id>/
+python3 "$M" approve --plan <plan.json> --all   # після рецензії unique/conflict-фрагментів
+python3 "$M" check --plan <plan.json>           # coverage, critical rules, вікі, бюджети
+python3 "$M" apply --plan <plan.json> --write
+python3 "$M" commit --plan <plan.json>          # один scoped commit
+python3 "$M" rollback --plan <plan.json> --write   # відкат до commit; після — --revert
+```
+
+Детерміновано обробляються ідентичні копії, згенеровані скілом pointer-stubs,
+дублікати й import-redirects; змістовні розбіжності переглядає агент. `check`
+блокує втрату фрагмента чи критичного правила, зміну вибраної вікі (зокрема
+custom pointer), висячі imports, бюджети agy (24 000 байт на файл) і Codex
+(32 KiB на ланцюжок). Symlink `AGENTS.md → CLAUDE.md` матеріалізується до
+видалення цілі. Оптимізація через lint #11 — окремий крок, який можна пропустити.
+
+`CLAUDE.local.md` переноситься автоматично в ігнорований `.claude/rules/` з двома
+перевірками завантаження в нових сесіях (`/context`, потім `/context` + `/memory`):
+`migrate.py private prepare|confirm|switch|recover`. Глобальні налаштування Claude
+не змінюються. Деталі — `references/instructions-migration.md`; квитанції —
+`docs/release-b-validation.md`.
+

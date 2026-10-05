@@ -358,7 +358,7 @@ treat the partial state according to what actually exists (`schema.md`,
 Use a dated entry naming the actual schema/content change. Historical release
 examples moved to `docs/history/instruction-schema-release-log.md`; do not load
 them as current behavior or copy their four-file sync into a new project.
-Instruction layout changes in 4.11 do not require a schema-major migration.
+Instruction layout changes in 4.11–4.12 (AGENTS.md-only, consolidation) do not require a schema-major migration.
 
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.

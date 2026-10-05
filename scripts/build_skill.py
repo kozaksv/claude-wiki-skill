@@ -50,7 +50,9 @@ def main():
             _, after = tail.split(end, 1)
             put(path, before + start + "\n" + export_table() + "\n" + end + after, args.check)
         for relative in ("references/reader-core.md", "references/writer-core.md", "scripts/wiki.py",
-                         "references/discovery-cases.md", "references/discovery-cases.json"):
+                         "references/discovery-cases.md", "references/discovery-cases.json",
+                         "references/instructions-migration.md", "scripts/migrate.py",
+                         "scripts/instructions.py", "hooks/lib/discover.sh", "lib/harnesses.sh"):
             put(ROOT / "skills/wiki-github" / relative, (ROOT / relative).read_bytes(), args.check)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         parser.exit(1, str(exc) + "\n")
