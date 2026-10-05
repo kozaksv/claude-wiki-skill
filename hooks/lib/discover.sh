@@ -75,6 +75,10 @@ _wiki_disc_record() {
   # source, raw pointer, resolved wiki (or empty), reason. NUL framing is
   # applied at the transport boundary, never eval'ed or split on whitespace.
   WIKI_DISC_RECORDS+=("$1" "$2" "$3" "$4")
+  case "$4" in
+    outside_boundary|symlink_escape)
+      printf '[wiki-hook] pointer поза межами репо, ігнорую: %s\n' "${1:-$2}" >&2 ;;
+  esac
 }
 
 _wiki_disc_run() {

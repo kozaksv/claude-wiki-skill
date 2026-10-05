@@ -510,7 +510,7 @@ out="$(discover_wiki "$fixture" 2>/dev/null)"
 assert_eq "QWEN.md-only: pointer in QWEN.md alone resolves the wiki" "$expected" "$out"
 
 # 15. CLAUDE.md and QWEN.md both valid but pointing at DIFFERENT wikis:
-#     CLAUDE.md wins (higher priority, first in the consult order).
+#     Release A reports same-level conflict and returns no writeable path.
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/wiki-hook-test.XXXXXX")"
 track_tmp "$fixture"
 ( cd "$fixture" && git init -q )
@@ -527,9 +527,10 @@ cat >"$fixture/QWEN.md" <<'EOF'
 
 Wiki at `from-qwen/wiki`.
 EOF
-expected="$(real "$fixture/from-claude/wiki")"
-out="$(discover_wiki "$fixture" 2>/dev/null)"
-assert_eq "CLAUDE.md and QWEN.md both valid: CLAUDE.md wins" "$expected" "$out"
+conflict_rc=0
+out="$(discover_wiki "$fixture" 2>/dev/null)" || conflict_rc=$?
+assert_eq "CLAUDE.md and QWEN.md differ on same level: no writeable path" "" "$out"
+assert_eq "same-level conflict has explicit status" "3" "$conflict_rc"
 
 # 16. stale/broken pointer in CLAUDE.md must not mask a valid QWEN.md
 #     pointer in the same directory (agent-neutral scan continues past a
