@@ -13,7 +13,7 @@ bash tests/uninstall.sh
 bash tests/hooks/run.sh
 ```
 
-`tests/test_release_b.py` (29 cases) covers: identical copies, title-only H1
+`tests/test_release_b.py` (28 cases) covers: identical copies, title-only H1
 differences, rules-in-CLAUDE with generated stubs, same-heading conflicts, same
 bytes in different scopes, stub with extra text, full line coverage with
 frontmatter/fences/repeated headings, canonical-only no-op, same-level wiki
