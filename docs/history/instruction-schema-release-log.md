@@ -3,6 +3,15 @@
 Superseded behavior is history, not current instruction-file policy.
 
 ```markdown
+### 4.12.0 (2026-10-05)
+- No schema migration. Release B: deterministic consolidation of legacy
+  instruction files into AGENTS.md (`scripts/migrate.py` plan/check/apply/commit/rollback),
+  automated private CLAUDE.local.md move with two loading checkpoints, update-time proposal.
+
+### 4.11.0 (2026-10-05)
+- No schema migration. Release A: AGENTS.md-only writes, agent-neutral discovery,
+  agy CLI export (`~/.gemini/config/skills`), Gemini CLI retired.
+
 ### 4.0 (2026-05-01)
 - Added `.usage.json` telemetry sidecar
 - Added `wiki_version` frontmatter to schema.md

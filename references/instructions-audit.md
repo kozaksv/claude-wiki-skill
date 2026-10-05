@@ -1,7 +1,8 @@
-# AGENTS.md-only instructions — release A
+# AGENTS.md-only instructions
 
 Applies to Init, ingest, pointer repair and every instruction-file write.
-Release A does **not** consolidate or delete project instruction files. Legacy
+These operations do **not** consolidate or delete project instruction files;
+that is the separately approved workflow in `instructions-migration.md`. Legacy
 `CLAUDE.md`, `GEMINI.md`, `QWEN.md` remain readable, never writable targets.
 
 ## Preflight before writes

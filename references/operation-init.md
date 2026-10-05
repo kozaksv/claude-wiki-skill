@@ -26,7 +26,8 @@ Set up wiki, OR detect existing structure and propose migration.
    In legacy scope without canonical, leave instruction files unchanged and
    report `consolidation required`. Existing custom pointers still work;
    canonical docs/wiki can be initialized with consent without a pointer.
-   New custom pointers requiring legacy-scope changes wait for release B.
+   New custom pointers requiring legacy-scope changes are written by the
+   consolidation workflow (`instructions-migration.md`), not by Init.
 2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
 
    | State | Condition | Action |
@@ -139,7 +140,9 @@ cross-agent readiness. Non-absent Init uses the consent block below.
 ### Non-absent Init consent block
 
 For `current`, `legacy`, `older`, and `newer` states, do not run cross-agent
-repairs silently. Inspect project-local instruction files and global skill
+repairs silently. When legacy instruction files remain, add one line offering
+consolidation (`instructions-migration.md`: prepare plan / defer); deferring
+does not block Init. Inspect project-local instruction files and global skill
 exports first. If no writes are needed, report:
 
 - `Проєктні instruction-файли: OK (no-op)`

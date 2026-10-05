@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.11.0"
+version: "4.12.0"
 description: >
   Read and maintain a project's LLM Wiki: query, init, ingest, edit, lint,
   cleanup, split, protect and status. Use for wiki/вікі requests and
@@ -72,6 +72,7 @@ hooks may continue their optional local telemetry.
 | User intent / operation | Required references |
 |---|---|
 | Update the installed skill / repair hook registration | `references/updating.md`, `references/instructions-audit.md` |
+| Consolidate legacy CLAUDE/GEMINI/QWEN instructions into AGENTS.md | `references/instructions-audit.md`, `references/instructions-migration.md`, `references/operation-lint.md` |
 | Read or change a remote GitHub wiki | `skills/wiki-github/SKILL.md`; it routes reading and writing |
 | Ask project-specific questions | `references/local-reader.md`, `references/reader-core.md`, `references/operation-query.md` |
 | Create / initialize / migrate a local wiki | `references/discovery-versioning.md`, `references/wiki-structure.md`, `references/operation-init.md`, `references/writer-core.md`, `references/telemetry.md`, `references/reflection.md` |
@@ -99,8 +100,9 @@ inventing its instructions.
   Validate candidates by their index. A broken active-agent pointer cannot
   hide a valid wiki or authorize creation of another wiki.
 - Shared instruction writes use `references/instructions-audit.md`: only
-  AGENTS.md, no legacy sync or consolidation in release A. Unknown profiles
-  do not block empty-scope Init; known existing fallback rules are preserved.
+  AGENTS.md, no legacy sync. Unknown profiles do not block empty-scope Init;
+  known existing fallback rules are preserved. Consolidating and deleting
+  legacy files happens only through `references/instructions-migration.md`.
 - Same-level different valid wiki pointers block unaddressed writes, including
   hook metadata. Nearest subproject scope is not a conflict with its ancestor.
 - Use the canonical `hooks/lib/discover.sh` parser for local discovery.

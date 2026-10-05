@@ -459,6 +459,15 @@ grep -q "'agy|.gemini/config/skills|export'" "$ROOT/lib/harnesses.sh" ||
   fail 'agy global export must target ~/.gemini/config/skills (runtime-verified path)'
 grep -q '~/.gemini/config/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" || fail 'agy extractor export missing'
 grep -q 'consolidation_required' "$ROOT/scripts/instructions.py" || fail 'legacy preflight missing'
+# Release B: consolidation helper, routing, bundle and safety guards.
+[ -f "$ROOT/scripts/migrate.py" ] || fail 'migrate.py missing'
+grep -q 'references/instructions-migration.md' "$ROOT/SKILL.md" || fail 'SKILL.md must route consolidation'
+for f in scripts/migrate.py scripts/instructions.py hooks/lib/discover.sh references/instructions-migration.md; do
+  cmp -s "$ROOT/$f" "$ROOT/skills/wiki-github/$f" || fail "bundle stale: $f"
+done
+if grep -n -E 'reset --hard|git", "clean|add", "\.|add", "-A' "$ROOT/scripts/migrate.py"; then fail 'migrate.py must not reset/clean/add everything'; fi
+grep -q 'coverage not machine-validated' "$ROOT/skills/wiki-github/references/github-write.md" || fail 'remote delete gate missing'
+grep -qF '"info" / "exclude"' "$ROOT/scripts/migrate.py" || fail 'private flow must use local exclude'
 grep -q 'No instruction writes' "$ROOT/references/instructions-audit.md" || fail 'legacy write guard missing'
 grep -q 'same-level' "$ROOT/references/reader-core.md" || fail 'shared conflict contract missing'
 grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" || fail 'non-absent consent gate missing'

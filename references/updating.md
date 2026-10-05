@@ -61,14 +61,16 @@ configuration, or remove an unknown hook merely because its command contains
 `wiki`. The source of truth for write safety remains `hooks/install-hooks.sh`
 and the shared `hooks/lib/settings-lock.sh` mutex.
 
-## Release A instruction/export audit
+## Instruction/export audit and consolidation proposal
 
 After an explicit update in the selected projects, run the read-only instruction
-preflight described in `instructions-audit.md`. Report consolidation-required;
-do not migrate or delete project instruction files in this release. An old
+preflight described in `instructions-audit.md`. If legacy instruction files
+remain, propose consolidation once (`instructions-migration.md`): prepare plan /
+defer. Deferring does not block the update. Nothing is migrated without that
+plan's own approval. An old
 installer's running copy may have recreated retired exports: the new installed
 `install.sh --repair-exports` repairs them after the same scoped consent. No
 Gemini CLI settings are written. Unknown Codex profiles alone do not block fresh
 empty-scope init. Claude version checks and global instruction-mode flips are
-not part of this update. Project instruction migration is release B, not a
-successful side effect of installing A.
+not part of this update. Instruction consolidation is a separate approved
+operation, never a silent side effect of installing the skill.
