@@ -1,0 +1,53 @@
+[
+  {
+    "id": "canonical-fallback",
+    "description": "No pointer; canonical wiki",
+    "cwd": "src",
+    "files": {"docs/wiki/index.md": "# Wiki"},
+    "selected": "docs/wiki",
+    "conflict": false
+  },
+  {
+    "id": "stale-canonical",
+    "description": "Stale AGENTS does not hide valid legacy",
+    "files": {"AGENTS.md": "## Wiki\n`missing`", "CLAUDE.md": "## Wiki\n`knowledge/schema.md`", "knowledge/index.md": "# Wiki"},
+    "selected": "knowledge",
+    "conflict": false
+  },
+  {
+    "id": "same-level",
+    "description": "Two valid different wikis at selected level: no writes",
+    "files": {"AGENTS.md": "## Wiki\n`one`", "CLAUDE.md": "## Wiki\n`two`", "one/index.md": "# One", "two/index.md": "# Two"},
+    "selected": "one",
+    "conflict": true
+  },
+  {
+    "id": "nested",
+    "description": "Nearest subproject wins; ancestor mismatch is warning only",
+    "cwd": "component",
+    "files": {"CLAUDE.md": "## Wiki\n`one`", "component/AGENTS.md": "## Wiki\n`wiki`", "one/index.md": "# One", "component/wiki/index.md": "# Two"},
+    "selected": "component/wiki",
+    "conflict": false
+  },
+  {
+    "id": "same-wiki",
+    "description": "Schema/index pointers to same wiki are not conflict",
+    "files": {"AGENTS.md": "## Вікі проєкту\n`knowledge/schema.md`", "CLAUDE.md": "## Wiki\n`knowledge/index.md`", "knowledge/index.md": "# Wiki"},
+    "selected": "knowledge",
+    "conflict": false
+  },
+  {
+    "id": "fenced",
+    "description": "Ignore example pointers inside fenced code",
+    "files": {"AGENTS.md": "```md\n## Wiki\n`missing`\n```\n## Wiki\n`knowledge`\n", "knowledge/index.md": "# Wiki"},
+    "selected": "knowledge",
+    "conflict": false
+  },
+  {
+    "id": "case",
+    "description": "Non-canonical filename is diagnostic, not a portable pointer",
+    "files": {"agents.md": "## Wiki\n`knowledge`", "knowledge/index.md": "# Wiki"},
+    "selected": null,
+    "conflict": false
+  }
+]

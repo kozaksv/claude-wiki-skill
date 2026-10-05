@@ -189,6 +189,12 @@ Some pages are **intentionally rare-read** — security recipes, incident postmo
 - Does an agent instruction file still carry full schema instead of a 1-line pointer? → DECIDE finding: migrate to a 1-line pointer
 - If drift found — propose updating schema
 
+**Release A instruction-write boundary:** load `instructions-audit.md` before
+any instruction edit. Legacy files are report-only, including stale-pointer
+repair; do not condense, delete, or write their rules. Canonical changes require
+preflight/consent. Critical rules and their conditions are KEEP by default;
+changing them is DECIDE, and dead links never authorize deleting a whole rule.
+
 **11. Agent Instruction File Content Verification (Karpathy-style)** — `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and `QWEN.md` are resident or high-priority context paid across sessions. Wiki is lazy (read on demand). The skill **reads discovered instruction files in full** and judges each line/section by content type — **no algorithmic line-count threshold**. Length is a symptom, content-type ratio is the real question.
 
 **Per-line classification** — every line falls into one of these:

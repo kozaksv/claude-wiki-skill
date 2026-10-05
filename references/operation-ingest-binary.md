@@ -30,7 +30,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    Gemini direct export and then the shared canonical entrypoint
    (`~/.claude/skills/doc-extract`). This makes the contract explicit:
    `~/.agents/skills/doc-extract` is the cross-agent default,
-   `~/.gemini/skills/doc-extract` is Gemini's direct user-skill path, and
+   `~/.gemini/antigravity-cli/skills/doc-extract` is Gemini's direct user-skill path, and
    `~/.claude/skills/doc-extract` is the recovery path when exports were
    removed or not yet created.
 
@@ -80,7 +80,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    install-команду wiki stack'а: `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash`.
    Do not send the user to the standalone `doc-extract` installer here: the wiki
    installer provisions the dependency and creates the cross-agent exports
-   (`~/.agents/skills/doc-extract`, `~/.gemini/skills/doc-extract`) expected by
+   (`~/.agents/skills/doc-extract`, `~/.gemini/antigravity-cli/skills/doc-extract`) expected by
    the fallback chain above.
 5. **Move binary → `archive/{category}/{slug}.{ext}`** (per File Naming convention).
    The archive category mirrors the entity path (`entities/{category}/{slug}.md`)

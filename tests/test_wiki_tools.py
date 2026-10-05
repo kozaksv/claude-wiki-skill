@@ -259,7 +259,7 @@ class DiscoveryTests(unittest.TestCase):
                                             env={**os.environ, "LC_ALL": "C"}, capture_output=True, text=True, check=True)
                     self.assertEqual(result.stdout.strip(), str(root / "knowledge/wiki") if valid else "")
 
-    def test_fences_h1_boundary_and_active_agent_priority(self):
+    def test_fences_h1_boundary_and_agent_neutral_conflict(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(["git", "init", "-q", directory], check=True)
@@ -277,9 +277,13 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertEqual(result.strip(), str(root / expected) if expected else "")
             (root / "CLAUDE.md").write_text("## Wiki\n`a`\n")
             (root / "AGENTS.md").write_text("## Wiki\n`b`\n")
-            result = subprocess.check_output(["bash", str(ROOT / "hooks/lib/discover.sh"), directory],
-                                              env={**os.environ, "WIKI_DISCOVERY_AGENT": "codex"}, text=True)
-            self.assertEqual(result.strip(), str(root / "b"))
+            for agent in ("codex", "claude", "qwen", "agy"):
+                result = subprocess.run(["bash", str(ROOT / "hooks/lib/discover.sh"), directory],
+                                        env={**os.environ, "WIKI_DISCOVERY_AGENT": agent},
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 3)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("same-level", result.stderr)
 
 
 if __name__ == "__main__":

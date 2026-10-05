@@ -1,8 +1,10 @@
 ## Step 0: Discover Wiki Location and Schema
 
 For ordinary questions, use `local-reader.md` and `reader-core.md` instead.
-For local maintenance, execute `hooks/lib/discover.sh` for path discovery;
-`WIKI_DISCOVERY_AGENT=claude|codex|gemini|qwen` supplies the active agent.
+For local maintenance, execute `hooks/lib/discover.sh` for path discovery.
+Use `instructions-audit.md` before any instruction write. Priority is agent-
+neutral; `WIKI_DISCOVERY_AGENT` no longer changes selection. A same-level
+conflict returns exit 3 without a path; audit reports the read-only selection.
 Its tested parser is canonical: ignore fenced code, accept Wiki/Вікі H2
 headings with suffixes, stop at H1/H2, and validate within the Git boundary.
 The explanation below defines maintenance state handling after discovery.
@@ -116,7 +118,14 @@ hook provisioning, instruction-file sync, and migration gates do not apply.
    directory structure and the skill has no reliable way to identify
    the matching project root from path strings alone.
 
-2. **Find agent instruction files** — with the git root as the discovery boundary, walk from cwd upward to that root, inclusive. In each visited directory, look for `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `QWEN.md`. If more than one exists, read all of their pointer sections (`## Wiki` / `## Вікі` — defined in step 3) and validate every referenced wiki path by checking for `{wiki}/index.md`. If their wiki pointers conflict, choose only among valid existing wiki directories: prefer the active agent's valid instruction-file pointer when the active agent is clear; otherwise choose the valid wiki found earliest in the cwd → parent walk (nearest to the current working directory). When candidates still tie inside the same directory (active agent unclear, more than one file at that walk depth points at a valid but different wiki), break the tie with the deterministic file-priority order `CLAUDE.md` → `AGENTS.md` → `GEMINI.md` → `QWEN.md`: the first file in that order with a valid pointer wins. If the active agent's pointer is broken/stale but another instruction file points at a valid wiki, use the valid wiki and surface the stale pointer as a DECIDE finding during the next lint/cleanup pass. Never prefer a broken active-agent pointer over a valid wiki on disk.
+2. **Find agent instruction files** — walk cwd to the nearest Git boundary,
+   inclusive. At each level validate exact-case `AGENTS.md`, `CLAUDE.md`,
+   `GEMINI.md`, `QWEN.md` pointers in that order, independent of active agent.
+   Inspect every candidate at the nearest valid level. Same-level different
+   valid wikis: warned read-only selection; no unaddressed writes (including
+   AUTO-lint and hooks) until an explicit target resolves that operation.
+   Root-X/nested-Y: nearest wins, cross-level difference is warning only.
+   Stale pointers do not hide valid ones. See reader-core.md/discovery-cases.md.
 3. **Read the pointer section** — look for the section that declares wiki paths (e.g., "Wiki (`docs/wiki/`)").
 
    **What counts as the pointer section.** A level-2 heading whose text starts with `Wiki` or `Вікі`, case-insensitive, optionally followed by more words. `## Wiki`, `## Вікі`, and `## Вікі проєкту` are all the pointer section; `## Wiki notes` is too. Both spellings are recognized on **read**; `## Wiki` remains the canonical form for **writes** (new pointers and stale-pointer repairs).
@@ -242,84 +251,28 @@ This proposal is provisioning only — it never runs without the conditions
 above, never fires more than once per session, and never overrides an
 explicit prior opt-out.
 
-### Cross-agent instruction-file sync
+### Canonical instruction-file maintenance (release A)
 
-After Step 0 resolves a valid wiki, keep the project-local resident hints in
-sync so every supported agent can rediscover it without user setup. The sync
-target is the directory containing the valid instruction-file pointer. If the
-wiki was found by fallback (`docs/wiki/index.md`) rather than a pointer, use the
-project root under the discovery boundary.
+Load `instructions-audit.md`. No four-file sync remains. Fresh empty-scope Init
+creates only `AGENTS.md`; maintenance/ingest writes shared rules or pointers
+only to an existing regular canonical file after preflight and consent.
+Legacy scope without it: `consolidation required`, no instruction writes.
+Stale legacy pointers are report-only; no placeholder, redirect or symlink is
+created. Scope-aware consolidation and deletion belong to release B.
 
-For each of `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and `QWEN.md` in that target directory:
+For canonical-pointer repairs compute `{schema_path_relative_to_instruction_file}`
+and the index/wiki paths from the canonical file's directory. Keep any pointer
+line that resolves to a valid on-disk wiki unchanged. Before replacing the
+pointer section with the full Session-Start block, preserve custom details;
+never silently discard existing rules. Do not run pointer maintenance during
+status, lint, or query. For non-absent Init states, use the Non-absent Init
+consent block and write only after explicit approval.
 
-- Compute `{schema_path_relative_to_instruction_file}` as the POSIX relative
-  path from that instruction file's directory to the resolved `{wiki}/schema.md`.
-  Compute `{index_path_relative_to_instruction_file}` analogously for `{wiki}/index.md`.
-  Compute `{wiki_dir_relative_to_instruction_file}` as the relative path to the
-  wiki directory itself (no trailing `schema.md` / `index.md`). Do not hard-code
-  `docs/wiki/...` unless that is the actual relative path from the file being written.
-- The canonical `## Wiki` block to write is the **Session-Start Contract pointer**:
-
-  ```
-  ## Wiki
-
-  Wiki at `{wiki_dir_relative_to_instruction_file}`. Schema → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`.
-
-  **ОБОВ'ЯЗКОВО на старті сесії:** прочитай `{index_path_relative_to_instruction_file}` ДО
-  будь-якої project-specific відповіді (як налаштувати X / де лежить Y / як працює Z /
-  «пам'ятаєш як ми...»). Кожна така відповідь МАЄ містити `[[page-name]]` цитати на
-  сторінки вікі. Без цитат — баг, переробити. Memory-first заборонено: якщо вікі
-  суперечить пам'яті — вікі виграє.
-
-  Для пошуку викликай скіл `wiki` (operation: query).
-  ```
-
-  Substitute the three placeholders with real relative paths before writing.
-- If the file is missing, create missing minimal instruction files containing
-  only a short title and the full Session-Start Contract pointer block above.
-- If the file exists and has no pointer section (`## Wiki` / `## Вікі`), append
-  the full pointer block.
-- If the file already has a pointer section that points at the resolved wiki
-  (any pointer line that resolves to a valid on-disk wiki — old one-line form,
-  Session-Start Contract block, absolute path, or repo-root-style path), leave
-  it unchanged. This includes a valid pointer under a `## Вікі` heading: the
-  heading being written in the user's language is not a defect, and renaming it
-  to `## Wiki` would be exactly the formatting migration this rule forbids. The Session-Start Contract block is the canonical form for
-  **new** pointers and **stale-pointer repairs**, not a formatting migration
-  for already-valid pointers. If the user wants to upgrade an existing valid
-  pointer to the new block, that is an explicit `wiki init` / pointer-repair
-  request, not an automatic rewrite.
-- If the file points at a different valid wiki, do not overwrite it silently;
-  surface the conflict as a DECIDE finding during lint/cleanup.
-- If the file points at a stale path and the resolved wiki is valid, repair the
-  stale pointer by replacing the pointer section with the full Session-Start
-  Contract block above (since a stale-pointer repair rewrites that section
-  anyway). **Before overwriting, capture any custom or legacy content in the old
-  pointer section** (extra schema, hand-written notes, non-canonical details)
-  and quote it in the repair response — never silently discard it. Only rewrite
-  the section after that content has been quoted. Repair-time surfacing is
-  informational: Init/pointer-repair has no lint-style action menu, so do not
-  block on a verb choice — record the captured content as a DECIDE finding for
-  the next lint/cleanup pass, where the action menu exists. Mention the repair
-  in the response.
-
-Run this sync during Init and explicit pointer-repair requests. For non-absent
-Init states (`current`, `legacy`, `older`, `newer`), gate writes through the
-Non-absent Init consent block in `references/operation-init.md`; inspect and
-report first, then write only after explicit approval.
-
-Do not run this sync during status, lint, or query; report missing/stale
-pointers as findings and tell the user to run `wiki init` or an explicit
-pointer repair if they want the files written. For ordinary read-only project
-questions, never interrupt the answer solely to create pointer files.
-
-**CRITICAL: Never create a second wiki.** If you find an existing valid wiki, use it. If an agent instruction file references a wiki path, trust it only after verifying that the directory contains `index.md`; stale pointers are cleanup findings, not permission to bootstrap a second wiki. Only create a new wiki when none exists anywhere in the project.
-
-**Monorepo scope:** the supported default is one canonical wiki per git root marker (`.git/` directory or `.git` file). If multiple sub-projects inside the same repo intentionally maintain separate wikis, treat that as an explicit user/project convention: require an instruction-file pointer in or below the sub-project directory and prefer the closest valid pointer found in the cwd → parent walk. Do not infer multiple wikis from sibling directories on your own.
-
-**Why schema.md is preferred over agent instruction file sections:** files like `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and `QWEN.md` can load into resident context on every session start, so every byte there is paid on every turn. Wiki schema is operational metadata for the wiki itself — it's needed only during wiki operations, not on every conversation. Moving it to `{wiki}/schema.md` reduces resident-context bloat without losing anything, because wiki operations always discover the wiki first anyway.
-
-_Note: this is a v3 evolution from Karpathy's original pattern, which placed schema in resident instruction files such as CLAUDE.md/AGENTS.md. The rationale is purely operational (resident-context cost); the spirit (schema as co-evolved governance document) is preserved. Projects following the original pattern (v1–v2) continue to work via the instruction-file fallback._
+**CRITICAL: Never create a second wiki.** Existing valid pointers and canonical
+fallback select the current wiki; missing instruction files are not permission
+for another knowledge store. The default is one canonical wiki per git root marker,
+with explicitly declared nested subproject wikis allowed by nearest-scope rules.
+Schema/procedures stay in schema.md or skill references, not resident context.
 
 ## Versioning & Migration
 
@@ -402,257 +355,11 @@ treat the partial state according to what actually exists (`schema.md`,
 
 `schema.md` carries a `## Migration Log` section that records what changed between versions. Each entry:
 
-```markdown
-### 4.0 (2026-05-01)
-- Added `.usage.json` telemetry sidecar
-- Added `wiki_version` frontmatter to schema.md
-- Added РЕФЛЕКСІЯ block as required behavior
-- Added Tiered crystallization
-- Added `wiki status` operation
-- Reformulated Lint as Karpathy content-verification
+Use a dated entry naming the actual schema/content change. Historical release
+examples moved to `docs/history/instruction-schema-release-log.md`; do not load
+them as current behavior or copy their four-file sync into a new project.
+Instruction layout changes in 4.11 do not require a schema-major migration.
 
-### 4.1 (2026-05-07)
-- No schema migration. Skill behavior changed: removed user-runnable script crystallization tier and added proactive query triggers.
-
-### 4.2 (2026-05-14)
-- No schema migration. Installer/discovery behavior changed: shared canonical cross-agent exports and agent-neutral instruction-file discovery.
-
-### 4.2.1 (2026-05-17)
-- No schema migration. Init behavior changed: cross-agent skill export self-heal
-  during project init and minimal empty-project bootstrap with no invented entity
-  categories.
-
-### 4.2.2 (2026-05-17)
-- No schema migration. Discovery/init behavior changed: cross-agent
-  instruction-file sync keeps `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and
-  `QWEN.md` wiki pointers aligned for existing and newly bootstrapped wikis.
-
-### 4.2.3 (2026-05-17)
-- No schema migration. Tightened repair behavior: instruction pointers use paths
-  relative to each instruction file, status/lint/query stay read-only, and
-  repair-only installer mode reports partial conflicts precisely.
-
-### 4.2.4 (2026-05-17)
-- No schema migration. Tightened consent and planning behavior: non-absent Init
-  repair actions require explicit approval, user-facing plans hide raw template
-  placeholders, and already-valid pointer text is not reformatted.
-
-### 4.2.5 (2026-05-17)
-- No schema migration. Tightened non-absent Init again: project-local pointer
-  writes and global export repairs share one explicit consent block, and
-  migration failure reports use Execute checklist numbering.
-
-### 4.2.6 (2026-05-17)
-- No schema migration. Clarified the consent contract across recovery docs,
-  scenarios, and migration-plan templates: non-absent Init repairs inspect
-  first and write nothing without explicit approval.
-
-### 4.2.7 (2026-05-17)
-- No schema migration. Polished non-absent Init wording: consistent
-  user-facing repair labels, explicit single-repair migration-plan handling,
-  and a stronger recovery diagnostic for exported skills.
-
-### 4.2.8 (2026-05-17)
-- No schema migration. Git is now a hard prerequisite for every wiki operation:
-  non-git Init must ask before running `git init`, and all other non-git wiki
-  operations stop with an explanation instead of creating or using a wiki.
-
-### 4.2.9 (2026-05-17)
-- No schema migration. Step 0 now distinguishes orphan-wiki state (wiki
-  artifacts exist but no git marker) from truly empty projects: any operation
-  in an orphan-wiki project shows an active `git init` repair gate that
-  preserves the existing wiki, instead of suggesting `wiki init` for a wiki
-  that already exists.
-
-### 4.2.10 (2026-05-17)
-- No schema migration. Lint heads-up dialog is now size-gated: wikis with
-  fewer than 20 active unprotected pages start full verification immediately
-  without asking about `швидко` / topic / path scope.
-
-### 4.9.0 (2026-09-19)
-
-- Shared reader/writer contracts and separate filesystem/GitHub adapters.
-- ChatGPT can prepare authorized edits and wiki PRs, not only read.
-- Query does not initiate telemetry, migration or pointer writes.
-- Deterministic optional catalog/index, tracked policy with legacy-pin
-  migration, and a current/history layout; existing v4 Markdown stays readable.
-- The hook emits a small discovery notice and never claims READ FIRST.
-  This supersedes the historical v4.5 injection description below.
-- Wiki/Вікі heading variants and active-agent priorities use the same tested
-  parser for local hooks and maintenance. No schema-major migration.
-
-### 4.8.0 (2026-09-19)
-- No schema migration (`wiki_version` stays `"4.0"`). Add the self-contained
-  `skills/wiki-github/SKILL.md` read adapter and a ChatGPT plugin manifest.
-  Remote queries use the selected repository/ref as their boundary, read
-  through GitHub, and cite actual files without local telemetry or sync.
-  Local installation, hooks, and mutating operation contracts are unchanged.
-
-### 4.7.0 (2026-08-14)
-- No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki migrations
-  required for existing wikis. The РЕФЛЕКСІЯ block's crystallization field is
-  renamed to `Кристалізація:` (it previously carried the automation-era name).
-  This is an agent-visible contract only: the block is printed into the turn and
-  never persisted — `{wiki}/log.md` keeps its own entry format — so nothing on
-  disk is rewritten. The crystallization reference is stripped of scaffolding
-  left by the tier model removed in 4.1 and 4.4. The dead active-state filter is
-  dropped from the lint and `wiki status` subsets: the subset is now filtered by
-  `protected == false` only, and the page counts printed in the lint heads-up are
-  unchanged because that filter always passed everything. The `.usage.json`
-  record shape is unchanged — `state`, `protected` and `archived_at` are still
-  present in every record.
-
-### 4.6.0 (2026-08-13)
-- No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki migrations
-  required for existing wikis. Native Qwen Code support added: agent-neutral
-  discovery now spans four instruction files instead of three —
-  `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md` — as equal pointer
-  sources, all validated the same way (`{wiki}/index.md` must exist).
-  Discovery's bounded walk, Cross-agent instruction-file sync, and the
-  resident-context rationale note all cover `QWEN.md` alongside the other
-  three files. Step 0's file-conflict rule gained an explicit deterministic
-  tie-breaker for the case where the active agent is unclear and more than
-  one instruction file at the same walk depth points at a different valid
-  wiki: fall back to file-priority order `CLAUDE.md` → `AGENTS.md` →
-  `GEMINI.md` → `QWEN.md`, first valid pointer wins. Operation Init mirrors
-  the same four-file coverage (active-agent inference, contract-bound wiki
-  location, project pointer sync, migration-plan templates) and gained a
-  fourth cross-agent skill export check: `~/.qwen/skills/wiki`.
-
-### 4.5.1 (2026-08-10)
-- No schema migration (`wiki_version` stays `"4.0"`); nothing to migrate on
-  existing wikis. Three defects found while bootstrapping a fresh wiki in a
-  Ukrainian-language project:
-  - **The pointer section now also accepts `## Вікі`.** Step 0 matched only
-    `## Wiki`, so an instruction file headed `## Вікі проєкту` read as having no
-    pointer at all. That is a duplication hazard, not a cosmetic miss: for a
-    wiki declared under a Ukrainian heading at a non-canonical path, discovery
-    finds nothing and Init bootstraps a **second** wiki beside the real one.
-    Recognition accepts both spellings; `## Wiki` stays canonical for writes,
-    and a valid pointer under a Ukrainian heading is left unchanged.
-  - **Init keeps the layer directories in git.** `concepts/`, `entities/`, and
-    `transcripts/` are created empty, and git does not track empty directories
-    — so the skeleton the bootstrap plan promises vanished on the first clone.
-    Init now writes a `.gitkeep` into each empty layer directory.
-  - **The installer reports the hook step.** `install.sh` ran
-    `install-hooks.sh` silently and its final summary never mentioned hooks, so
-    the only way to find out whether SessionStart/PostToolUse were registered
-    was to read `~/.claude/settings.json` by hand. The summary now states the
-    outcome and that hooks take effect from the *next* session. The same block
-    called them "git hooks", which they are not.
-
-### 4.5.0 (2026-07-08)
-- No schema migration (`wiki_version` stays `"4.0"`); zero per-wiki
-  migrations required for existing wikis. All new artifacts are host-side:
-  optional global Claude Code session hooks
-  (`~/.claude/skills/wiki/hooks/…`, registered via canonical symlink path in
-  `~/.claude/settings.json`) that auto-inject `{wiki}/index.md` at session
-  start and heartbeat `.usage.json` telemetry, plus the `hooks/` directory
-  shipped inside this skill's own repo. Session-Start Contract clarified:
-  a hook-injected index block satisfies READ FIRST for `index.md` only,
-  never a substitute for reading/citing topic pages, and never proof by
-  itself that PostToolUse telemetry is alive (see `references/telemetry.md`
-  dual-signal rule). New `## Operation: Wiki Doctor`
-  (`references/operation-doctor.md`) diagnoses wiki *and* hook health
-  read-only. New Hook provisioning subsection (this file) offers one-time
-  per-session opt-in installation, gated on Claude Code + a found wiki + no
-  existing inject-block + no `~/.claude/wiki-hooks-optout` marker.
-
-### 4.4.0 (2026-07-07)
-- No schema migration (`wiki_version` stays `"4.0"`); zero migrations required
-  for existing wikis. Crystallization is now wiki-only: the skill tier is
-  removed, so the old delegation-vs-direct-create topology no longer exists.
-  The embedded cleanup-prompt is removed; the cleanup-flow is now
-  single-entry via `wiki status` instead of being offered inline after every
-  reflection. Motivation: prompt fatigue from the emoji cleanup-prompt asking
-  after every reflection, plus an unused skill tier whose
-  installer-safety/export-topology surface never paid off in practice.
-- Hardened alongside the simplification: destructive cleanup ops
-  (`видали`/`merge`/`розбий`) now commit the destructive change itself —
-  snapshot fires only when uncommitted wiki edits exist, no empty marker
-  commits — so `git revert HEAD` genuinely undoes the destruction; lint
-  snapshot staging targets the resolved `{wiki}` path instead of a hard-coded
-  `docs/wiki/`; stale-pointer repair quotes captured legacy `## Wiki` content
-  in the repair response and defers its DECIDE finding to the next lint pass
-  (no interactive dead-end during Init/repair).
-
-### 4.3.0 (2026-06-02)
-- No schema migration (`wiki_version` stays `"4.0"`). New on-disk artifact:
-  `{wiki}/log/{YYYY-MM-DD}_to_{YYYY-MM-DD}.md` shards, created lazily by
-  **log rotation**. `{wiki}/log.md` now has a soft cap of 2000 lines; on
-  each log write, if the file is over cap, the oldest contiguous entries
-  are peeled into a date-range-named shard until the live log drops to
-  ~1000 lines. See `references/wiki-structure.md` → `## Log Rotation` for
-  the algorithm, shard naming, edge cases (single-date overflow, corrupt
-  log, missing `log/` dir, shard write failure), and reading semantics.
-  Existing wikis pick this up organically: an oversized `log.md` rotates
-  on its next log write, no migration prompt. An older skill (≤ 4.2.x)
-  reading a wiki that has rotated still sees a valid `log.md` (it just
-  won't see archived history in `log/`); this is the reason the schema
-  bump was deferred — change is additive, not breaking. Motivation:
-  `log.md` previously grew unbounded; very active wikis would eventually
-  hit the Read-tool pagination cliff at ~2000 lines. Activity-driven
-  rotation (not calendar-driven) bounds live-log size without producing
-  empty/tiny shards for quiet projects.
-
-### 4.2.21 (2026-05-27)
-- No schema migration. Agent-behavior hardening: introduced
-  **Session-Start Contract** in SKILL.md as a NON-NEGOTIABLE block
-  contract — agent must read `{wiki}/index.md` before any
-  project-specific answer in a wiki-backed project, and every such
-  answer must carry `[[page-name]]` citations. Added Red-Flags
-  rationalization table and Session-Start Checklist. Operation Query
-  «Master rule» rephrased as **BLOCKING RULE (NON-NEGOTIABLE)** with
-  explicit «no citations = bug, retry» clause. Cross-agent
-  instruction-file sync now writes a full Session-Start Contract
-  pointer block (not a one-line pointer) to `CLAUDE.md` / `AGENTS.md` /
-  `GEMINI.md` / `QWEN.md` for new pointers and stale-pointer repairs; already-valid
-  pointers are left unchanged (no formatting migration). Empty-Wiki
-  Exception preserved: agent says «у вікі нема, відповідаю з training»
-  and marks topic for crystallization. Motivation: agents were
-  default-answering from memory and skipping wiki reads despite the
-  «proactive query» description; soft language let them rationalize.
-
-### 4.2.20 (2026-05-17)
-- No schema migration. Three contract clarifications close iterations
-  4.2.11–4.2.19, which tried successively to derive a safe
-  project-root guess from the wiki path (walk-up to instruction files,
-  canonical-suffix strip, ambiguity tie-breakers, single/two-candidate
-  menus, absolute-path override with validation, pre-bootstrap stray
-  scan). Each closed one edge case (nested cwd, pointer escaping
-  upward, canonical-vs-legacy ambiguity, non-standard layouts, broad
-  `/` or `$HOME` overrides, false positives on ordinary `docs/index.md`,
-  partial-wiki misclassification as absent) and surfaced another:
-
-  - **Orphan-wiki repair is fully manual.** When a wiki exists on
-    disk but no git marker does, the gate is informational only —
-    explains the situation, lists the manual fix (`cd` to project
-    root → `git init` → retry), and ends the operation. The skill
-    never runs `git init` for an orphan-wiki state under any
-    condition. `[y]` is reserved exclusively for the absent-state
-    Init gate.
-
-  - **Wiki location is contract-bound.** A project's wiki lives at
-    `docs/wiki/` or wherever a `## Wiki` pointer in `CLAUDE.md` /
-    `AGENTS.md` / `GEMINI.md` / `QWEN.md` resolves to. If Step 0 finds neither,
-    the project is considered to have no wiki — period. Init does
-    not scan for stray `index.md` or wiki-like content in
-    non-canonical locations. Users who want a wiki outside
-    `docs/wiki/` must declare it via a `## Wiki` pointer before
-    running any wiki operation; otherwise Init bootstraps a fresh
-    wiki at the canonical path.
-
-  - **Partial wiki state is detected and protected.** A wiki
-    directory with wiki-owned files (`schema.md`, `log.md`,
-    `.usage.json`, `concepts/`, `entities/`, `transcripts/`,
-    `archive/`) but missing `index.md` is partial state, not
-    absent. Step 0 halts with an informational gate listing the
-    found files and the manual recovery options (restore
-    `index.md` from git history, or move the directory aside and
-    re-init). Init's absent-state bootstrap does not run on
-    partial wikis, so existing `schema.md`, `log.md`, telemetry,
-    and concept pages are never overwritten.
-```
 
 When proposing a migration plan, the skill reads its own SKILL.md frontmatter `version` and the wiki's `schema.md` `## Migration Log` to determine what changed.
 

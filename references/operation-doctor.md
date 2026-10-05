@@ -29,8 +29,9 @@ interpreting legacy protection. `maintenance-and-mistakes.md` covers known pitfa
 
 **(1) Pointers.** Validate discovered `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` and
 `QWEN.md` Wiki/Вікі pointers against the actual index. Missing or stale pointers
-are reported, not rewritten. Repair uses the existing explicit pointer-repair or
-`wiki init` workflow; never initialize a second wiki.
+are reported, not rewritten. Release A repair uses `instructions-audit.md`:
+only an existing regular AGENTS.md may be repaired after consent; legacy pointers
+remain report-only/consolidation-required. Never initialize a second wiki.
 
 **(2) Schema.** Compare the **major** of `wiki_version` and the skill version.
 Compare schema major against skill major, never full version equality.
@@ -52,8 +53,11 @@ Use `writer-core.md` and `telemetry.md` for recovery, never invent a doctor-only
 reset mechanism. A new absent sidecar and a corrupt existing sidecar are different.
 
 **(4) Canonical install and exports.** Check that `~/.claude/skills/wiki` resolves
-to the intended Git checkout, then verify `~/.agents/skills/wiki`,
-`~/.gemini/skills/wiki` and `~/.qwen/skills/wiki` exports. Report actual commit,
+to the intended Git checkout, then verify the active exports from
+`lib/harnesses.sh`: `~/.agents/skills/wiki`,
+`~/.gemini/antigravity-cli/skills/wiki`, and `~/.qwen/skills/wiki`.
+Old `.gemini/skills` entries are retirement findings, not required exports.
+Report actual commit,
 behavior version and local modifications when accessible; do not infer latest
 remote state from a version string. Export repair is `install.sh --repair-exports`.
 
@@ -112,3 +116,12 @@ Include concrete findings, not placeholders. Repairs must explain which files
 will change. Hook repair uses `install-hooks.sh --verify --project <root>`;
 actual version update uses `updating.md`. Failed verification is an incomplete
 repair, never a success merely because the text skill is usable.
+
+### Release A instruction/export diagnostics
+
+Use `instructions-audit.md` and `hooks/doctor.sh --project <repo> --json`.
+The nested `instructions` report separates presence, wiki selection, exports
+and untested runtime loading from hook verification. No Claude version floor,
+plugin probe or full effective-loading model. Same-level pointer conflict blocks
+unaddressed writes; cross-level mismatch is warning only. Private fixes are
+release B. Doctor is read-only; explicit repairs require their own scope/consent.
