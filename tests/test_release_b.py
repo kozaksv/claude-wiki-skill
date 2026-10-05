@@ -331,5 +331,95 @@ class PrivateTests(Repo):
         with self.assertRaises(M.MigrationError): M.private_prepare(self.repo, "CLAUDE.local.md", "other", True)
 
 
+class ReviewRegressionTests(Repo):
+    def migrate(self, message="m"):
+        plan = self.approve_all(self.plan())
+        M.apply(plan, self.repo, write=True)
+        return plan, M.commit(plan, self.repo, message)
+
+    def test_commit_rename_unicode_and_spaces(self):
+        self.write("CLAUDE.md", "# P\n\n## X\n\n- extra\n")
+        self.write("документи/CLAUDE.md", "# Д\n\n## Y\n\n- y\n")
+        self.write("my docs/CLAUDE.md", "# S\n\n## Z\n\n- z\n")
+        self.commit_all()
+        plan, done = self.migrate()
+        self.assertEqual(done["status"], "committed")
+        state = json.loads((M.migration_dir(self.repo, plan["id"]) / "state.json").read_text())
+        self.assertEqual(state["status"], "committed")
+
+    def test_revert_preview_and_untracked_restore(self):
+        self.git("commit", "--allow-empty", "-qm", "base")
+        self.write("CLAUDE.md", "# P\n\n## X\n\n- keep\n")
+        plan = self.approve_all(self.plan())
+        M.apply(plan, self.repo, write=True); M.commit(plan, self.repo, "m")
+        head = self.git("rev-parse", "HEAD")
+        self.assertEqual(M.rollback(plan, self.repo, write=False, revert=True)["status"], "preview")
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        result = M.rollback(plan, self.repo, write=True, revert=True)
+        self.assertEqual(result["status"], "reverted")
+        self.assertIn("keep", (self.repo / "CLAUDE.md").read_text())
+
+    def test_partial_output_failure_is_recoverable(self):
+        for d in ("a", "b"):
+            self.write(f"{d}/AGENTS.md", f"# {d}\n"); self.write(f"{d}/CLAUDE.md", f"# {d}\n\n## R\n\n- rule {d}\n")
+        self.commit_all()
+        plan = self.approve_all(self.plan())
+        os.chmod(self.repo / "b", 0o555); self.addCleanup(os.chmod, self.repo / "b", 0o755)
+        with self.assertRaises(OSError): M.apply(plan, self.repo, write=True)
+        result = M.rollback(plan, self.repo, write=True)
+        self.assertEqual((self.repo / "a/AGENTS.md").read_text(), "# a\n")
+        self.assertEqual(result["skipped"], [])
+
+    def test_custom_title_in_stub_is_not_dropped(self):
+        stub = "# Acme: ALWAYS run make lint before commit\n\n## Wiki\n\nWiki schema and operations → `docs/wiki/schema.md`. Skill: `wiki`.\n"
+        self.write("CLAUDE.md", stub); self.commit_all()
+        plan = self.plan()
+        self.assertIn("ALWAYS run make lint", plan["outputs"][0]["content"])
+        self.write("AGENTS.md", "# Other\n"); self.commit_all()
+        plan = self.approve_all(self.plan())
+        self.assertFalse(M.check(plan, self.repo)["ok"])  # dropped title carries a critical rule
+
+    def test_relocated_and_inline_imports(self):
+        self.write(".claude/rules/style.md", "x\n")
+        self.write(".claude/CLAUDE.md", "# C\n\n## Style\n\n@rules/style.md\n")
+        self.write("GEMINI.md", "# G\n\n## More\n\nSee @QWEN.md for details.\n"); self.write("QWEN.md", "# Q\n\n## Q\n\n- q\n")
+        self.commit_all()
+        plan = self.approve_all(self.plan())
+        content = plan["outputs"][0]["content"]
+        self.assertIn("@.claude/rules/style.md", content)
+        plan["decisions"]["includes_approved"] = True
+        self.assertTrue(any("@QWEN.md" in e for e in M.check(plan, self.repo)["errors"]))
+        plan["outputs"][0]["content"] += "\nUse @testing-library/react and ping @alice.\n"
+        self.assertFalse(any("testing-library" in d or "alice" in d for d in M.check(plan, self.repo)["decisions_needed"]))
+
+    def test_commit_refuses_preexisting_untracked_canonical(self):
+        self.write("CLAUDE.md", RULES); self.commit_all(); self.write("AGENTS.md", "# P\n\n- my private wip\n")
+        plan = self.approve_all(self.plan())
+        M.apply(plan, self.repo, write=True)
+        with self.assertRaises(M.MigrationError): M.commit(plan, self.repo, "m")
+
+    def test_wiki_notes_heading_and_distinct_title(self):
+        self.write("AGENTS.md", "# Title A\n\n## Rules\n\n- ok\n")
+        self.write("CLAUDE.md", "# Title B\n\n## Rules\n\n- ok\n\n## Wiki conventions\n\n- Use kebab-case page names.\n")
+        self.commit_all()
+        plan = self.plan()
+        content = plan["outputs"][0]["content"]
+        self.assertIn("## Notes from the CLAUDE.md wiki section\n\n- Use kebab-case page names.", content)
+        h1 = [c for c in plan["coverage"] if c["fragment"] == "CLAUDE.md#1"][0]
+        self.assertFalse(h1["approved"])
+
+    def test_private_name_validated_and_crlf_preserved(self):
+        self.write("AGENTS.md", "# P\r\n\r\n## R\r\n\r\n- a\r\n")
+        self.write("CLAUDE.md", "# P\r\n\r\n## S\r\n\r\n- b\r\n"); self.commit_all()
+        plan = self.approve_all(self.plan())
+        self.assertIn("- a\r\n", plan["outputs"][0]["content"])
+        self.assertNotIn("\n", plan["outputs"][0]["content"].replace("\r\n", ""))
+        self.write("CLAUDE.local.md", "x\n")
+        exclude = self.repo / ".git/info/exclude"
+        before = exclude.read_text() if exclude.exists() else ""
+        with self.assertRaises(M.MigrationError): M.private_prepare(self.repo, "CLAUDE.local.md", "../../../esc", True)
+        self.assertEqual(exclude.read_text() if exclude.exists() else "", before)
+
+
 if __name__ == "__main__":
     unittest.main()

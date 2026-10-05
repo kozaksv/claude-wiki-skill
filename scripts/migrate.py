@@ -77,6 +77,11 @@ def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     return proc
 
 
+def read_raw(path: Path) -> str:
+    """Decode without newline translation so CRLF files keep their bytes."""
+    return path.read_bytes().decode("utf-8")
+
+
 def norm_apostrophe(text: str) -> str:
     return text.replace("’", "'").replace("ʼ", "'")
 
@@ -321,9 +326,9 @@ def plan_scope(plan: dict[str, Any], root: Path, scope: str, files: dict[str, di
     canonical_text = ""
     materialize = False
     if canonical_kind == "file":
-        canonical_text = (root / canonical_rel).read_text(encoding="utf-8")
+        canonical_text = read_raw(root / canonical_rel)
     elif canonical_kind == "symlink":
-        canonical_text = (root / canonical_rel).read_text(encoding="utf-8")
+        canonical_text = read_raw(root / canonical_rel)
         materialize = True
     # A materialized alias is covered via its target; its text still feeds dedupe.
     canonical_frags = fragments(canonical_rel, canonical_text, scope) if canonical_text else []
@@ -345,7 +350,7 @@ def plan_scope(plan: dict[str, Any], root: Path, scope: str, files: dict[str, di
                 findings.append({"level": "blocked", "code": "unknown_alias", "path": rel, "detail": os.readlink(path)}); return
             plan["deletes"].append({"path": rel, "kind": "symlink", "link_target": os.readlink(path), "reason": "alias of canonical"})
             continue
-        text = path.read_text(encoding="utf-8")
+        text = read_raw(path)
         frags = fragments(rel, text, scope)
         plan["fragments"].extend(frags)
         if materialize and is_alias_of_canonical:
@@ -358,6 +363,9 @@ def plan_scope(plan: dict[str, Any], root: Path, scope: str, files: dict[str, di
         stub = all(f["kind"] in ("h1", "pointer") for f in frags) and any(f["kind"] == "pointer" for f in frags) \
             and all(pointer_is_template(f) for f in frags if f["kind"] == "pointer")
         whole_identical = canonical_kind == "file" and norm_block(strip_h1(text)) == norm_block(strip_h1(canonical_text))
+        src_h1 = next((f for f in frags if f["kind"] == "h1"), None)
+        if stub and src_h1 is not None and (draft_h1 is None or h1_key(src_h1["heading"]) != h1_key(draft_h1["heading"])):
+            stub = False  # a custom title is content, not part of the generated template
         for f in frags:
             entry = {"fragment": f["id"], "destination": canonical_rel, "approved": True}
             if f["kind"] == "pointer":
@@ -367,8 +375,9 @@ def plan_scope(plan: dict[str, Any], root: Path, scope: str, files: dict[str, di
                 if not template:
                     custom = "\n".join(l for l in f["text"].splitlines()[1:] if l.strip() and not is_template(l))
                     f["class"] = "unique"
-                    entry.update(disposition="placed", approved=False, note="pointer section carries custom text; keep it in canonical")
-                    draft = append_block(draft, f"{custom}\n")
+                    entry.update(disposition="placed", approved=False, note="pointer section carries custom text; kept under a non-pointer heading")
+                    placed = f"## Notes from the {rel} wiki section\n\n{custom}\n"
+                    draft = append_block(draft, placed)
                     f["placed_text"] = custom
                 else:
                     entry.update(disposition="pointer", note="regenerated as canonical Wiki block" if not canonical_pointer_ok else "canonical pointer already valid")
@@ -376,12 +385,12 @@ def plan_scope(plan: dict[str, Any], root: Path, scope: str, files: dict[str, di
                     pointer_needed = True
                 if not pointer_ok:
                     plan["findings"].append({"level": "warning", "code": "stale_legacy_pointer", "path": rel})
-            elif stub:
+            elif stub and f["kind"] in ("h1", "pointer"):
                 f["class"] = "generated-pointer-stub"; entry.update(disposition="stub")
             elif redirect_targets(f, path.parent, root) and redirect_targets(f, path.parent, root) <= set(files):
                 f["class"] = "contained-exact"
                 entry.update(disposition="duplicate", note="import redirect to a consolidated instruction file")
-            elif whole_identical or f["sha256"] in seen:
+            elif (whole_identical and f["kind"] != "h1") or f["sha256"] in seen:
                 f["class"] = "identical" if whole_identical else "contained-exact"
                 entry.update(disposition="duplicate", duplicate_of=seen.get(f["sha256"], canonical_rel))
             elif f["kind"] == "h1":
@@ -406,6 +415,10 @@ def plan_scope(plan: dict[str, Any], root: Path, scope: str, files: dict[str, di
                 if len(kept) != len(f["text"].splitlines(keepends=True)):
                     f["placed_text"] = "".join(kept)
                     entry["note"] = "import of a consolidated file removed from draft; review the surrounding redirect prose"
+                if path.parent != (root / canonical_rel).parent:
+                    moved = rewrite_imports(f.get("placed_text", f["text"]), path.parent, (root / canonical_rel).parent)
+                    if moved != f.get("placed_text", f["text"]):
+                        f["placed_text"] = moved; entry["note"] = "relative imports recomputed for the new directory"
                 draft = append_block(draft, f.get("placed_text", f["text"]))
                 seen[f["sha256"]] = f["id"]
                 if key: headings.setdefault(key, f["id"])
@@ -448,7 +461,9 @@ def strip_h1(text: str) -> str:
 
 def append_block(draft: str, block: str) -> str:
     if not draft.strip(): return block if block.endswith("\n") else block + "\n"
-    return draft.rstrip("\n") + "\n\n" + block.rstrip("\n") + "\n"
+    eol = "\r\n" if "\r\n" in draft else "\n"
+    body = block.replace("\r\n", "\n").rstrip("\n").replace("\n", eol)
+    return draft.rstrip("\r\n") + eol + eol + body + eol
 
 
 def pointer_resolves(fragment: dict[str, Any], base: Path, root: Path, wiki_rel: str | None) -> bool:
@@ -514,7 +529,7 @@ def check(plan: dict[str, Any], root: Path, snapshot: bool = False) -> dict[str,
         p = src["path"]
         if p in deleted: continue
         if p in outputs: final_text[p] = outputs[p]
-        elif src["kind"] == "file": final_text[p] = (root / p).read_text(encoding="utf-8")
+        elif src["kind"] == "file": final_text[p] = read_raw(root / p)
     for p, content in outputs.items(): final_text[p] = content
     # coverage
     covered: dict[str, int] = {}
@@ -555,10 +570,16 @@ def check(plan: dict[str, Any], root: Path, snapshot: bool = False) -> dict[str,
     # portability and agy rules
     for p, t in final_text.items():
         for line in t.splitlines():
-            match = IMPORT_LINE.match(line)
-            target = ((root / p).parent / match.group(1)).resolve() if match else None
-            if target is not None and AUDIT.inside(target, root) and target.relative_to(root).as_posix() in deleted:
-                errors.append(f"{p}: import {line.strip()} points at a deleted legacy file")
+            for match in CLAUDE_IMPORT.finditer(line):
+                token = match.group(2).rstrip(".,;:)")
+                if "." not in token.rsplit("/", 1)[-1].lstrip("."): continue  # @mention or npm scope, not a file import
+                if token.startswith("~"): continue
+                target = ((root / p).parent / token).resolve()
+                rel = target.relative_to(root).as_posix() if AUDIT.inside(target, root) else None
+                if rel is not None and rel in deleted:
+                    errors.append(f"{p}: import @{token} points at a deleted legacy file")
+                elif rel is not None and rel not in final_text and not target.exists():
+                    decisions.append(f"{p}: import @{token} target not found")
     for p, t in final_text.items():
         if AGY_INCLUDE.search(t) or any(CLAUDE_IMPORT.search(l) and l.lstrip().startswith("@") for l in t.splitlines()):
             if not plan.get("decisions", {}).get("includes_approved"):
@@ -684,9 +705,9 @@ def apply(plan: dict[str, Any], root: Path, write: bool) -> dict[str, Any]:
         state["paths"][rel] = pre
     save(mdir / "state.json", state)
     for out in plan["outputs"]:
-        atomic_replace(root / out["path"], out["content"])
         state["paths"][out["path"]]["written_sha256"] = sha(out["content"])
-    save(mdir / "state.json", state)
+        save(mdir / "state.json", state)  # recorded before the write so a crash is recoverable
+        atomic_replace(root / out["path"], out["content"])
     for item in plan["deletes"]:
         path = root / item["path"]
         now = file_state(path)
@@ -722,11 +743,15 @@ def commit(plan: dict[str, Any], root: Path, message: str) -> dict[str, Any]:
         pre = state["paths"][rel]
         if pre["kind"] != "missing" and pre.get("tracked") and not pre.get("clean"):
             raise MigrationError(f"{rel} had pre-existing user changes; commit it manually after review")
+        if pre["kind"] == "file" and not pre.get("tracked"):
+            raise MigrationError(f"{rel} existed untracked before migration; review and commit it manually")
     new_files = [rel for rel in paths if not state["paths"][rel].get("tracked") and (root / rel).exists()]
     if new_files: git(root, "add", "--", *new_files)
     git(root, "commit", "--only", "-q", "-m", message, "--", *paths)
     sha_commit = head_commit(root)
-    changed = set(git(root, "show", "--name-only", "--format=", sha_commit).stdout.split())
+    changed = {p for p in git(root, "-c", "core.quotepath=off", "show", "--no-renames", "-z", "--name-only",
+                              "--format=", sha_commit).stdout.split("\0") if p.strip("\n")}
+    changed = {p.strip("\n") for p in changed}
     if changed != set(paths): raise MigrationError(f"commit content mismatch: {sorted(changed ^ set(paths))}")
     state.update(status="committed", commit=sha_commit); save(mdir / "state.json", state)
     return {"status": "committed", "commit": sha_commit, "paths": paths}
@@ -738,14 +763,21 @@ def rollback(plan: dict[str, Any], root: Path, write: bool, revert: bool = False
     state = load(mdir / "state.json")
     if state["status"] == "committed":
         if not revert: return {"status": "committed", "next": f"git revert {state['commit']} (or rerun with --revert)"}
-        if write: git(root, "revert", "--no-edit", state["commit"])
+        if not write: return {"status": "preview", "would": f"git revert --no-edit {state['commit']}"}
+        git(root, "revert", "--no-edit", state["commit"])
+        restored = []
+        for rel, pre in state["paths"].items():
+            if pre.get("backup") and not pre.get("tracked") and not os.path.lexists(root / rel):
+                atomic_replace(root / rel, Path(pre["backup"]).read_bytes().decode("utf-8")); restored.append(rel)
         state["status"] = "reverted"; save(mdir / "state.json", state)
-        return {"status": "reverted"}
+        return {"status": "reverted", "restored_untracked": restored}
     actions, skipped = [], []
     for rel, pre in state["paths"].items():
         path = root / rel
         now = file_state(path)
         written = pre.get("written_sha256")
+        if written and now == {k: pre[k] for k in ("kind", "sha256", "link_target") if k in pre}:
+            continue  # the write never happened (failure before it); nothing to restore
         if written and now.get("sha256") != written and not pre.get("deleted"):
             skipped.append(f"{rel}: edited after migration; left as is"); continue
         if pre.get("deleted") and now["kind"] != "missing":
@@ -759,7 +791,7 @@ def rollback(plan: dict[str, Any], root: Path, write: bool, revert: bool = False
             if os.path.lexists(path): os.unlink(path)
             os.symlink(pre["link_target"], path)
         elif pre.get("backup"):
-            atomic_replace(path, Path(pre["backup"]).read_text(encoding="utf-8"))
+            atomic_replace(path, Path(pre["backup"]).read_bytes().decode("utf-8"))
         elif pre.get("clean") and state.get("base"):
             git(root, "restore", f"--source={state['base']}", "--worktree", "--", rel)
         else:
@@ -792,6 +824,8 @@ def rewrite_imports(text: str, src_dir: Path, dest_dir: Path) -> str:
 
 def private_prepare(root: Path, source: str, name: str, write: bool) -> dict[str, Any]:
     root = root.resolve()
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name) or ".." in name:
+        raise MigrationError("rules name must be a plain file name")
     src = root / source
     if AUDIT.kind(src) != "file" or Path(source).name != PRIVATE: raise MigrationError("source must be a regular CLAUDE.local.md")
     if git(root, "ls-files", "--error-unmatch", "--", source, check=False).returncode == 0:

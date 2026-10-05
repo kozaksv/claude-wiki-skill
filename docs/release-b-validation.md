@@ -13,7 +13,7 @@ bash tests/uninstall.sh
 bash tests/hooks/run.sh
 ```
 
-`tests/test_release_b.py` (28 cases) covers: identical copies, title-only H1
+`tests/test_release_b.py` (36 cases) covers: identical copies, title-only H1
 differences, rules-in-CLAUDE with generated stubs, same-heading conflicts, same
 bytes in different scopes, stub with extra text, full line coverage with
 frontmatter/fences/repeated headings, canonical-only no-op, same-level wiki
@@ -24,6 +24,15 @@ missing, agy/Codex budgets, includes, agy `trigger` validation, snapshot mode,
 apply+commit with unrelated staged changes, rollback of tracked/untracked/new
 files, untracked canonical backup, concurrent edit, custom wiki rediscovery, and
 the private state machine with exclude/recover/tracked refusal.
+
+## Independent review
+
+A fresh reviewer agent reproduced 8 defects (commit verification on renames/unicode/spaces,
+`rollback --revert` preview and untracked restore, partial-write recovery, custom H1 in stubs,
+relocated/inline imports, committing a pre-existing untracked `AGENTS.md`, lost headings/titles,
+private name validation/CRLF). All were fixed with regression tests
+(`ReviewRegressionTests`) and re-verified by the same reviewer. Known safe limitation:
+`GEMINI.md → CLAUDE.md` without `AGENTS.md` is blocked as an unknown alias.
 
 ## Real-layout dry runs (owner's 10 wiki projects, scratch mirrors only)
 
