@@ -125,7 +125,7 @@ are not a reason to delete supported exports or to claim a runtime test.
 |---|---|---|
 | claude | `~/.claude/skills/wiki` | canonical |
 | codex | `~/.agents/skills/wiki` | export |
-| agy | `~/.gemini/antigravity-cli/skills/wiki` | export |
+| agy | `~/.gemini/config/skills/wiki` | export |
 | qwen | `~/.qwen/skills/wiki` | export |
 <!-- harness-exports:end -->
 
@@ -181,7 +181,7 @@ migration plan so there is one consent flow.
   2. {additional schema/content migration step, if any}
   ...
   N-1. Проєктні instruction-файли — погоджений ремонт лише наявного AGENTS.md; legacy scope: звіт consolidation required
-  N. Глобальні skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/antigravity-cli/skills/wiki` / `~/.qwen/skills/wiki`, якщо відсутні або broken
+  N. Глобальні skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/config/skills/wiki` / `~/.qwen/skills/wiki`, якщо відсутні або broken
 
 Зроблю всі N кроків одразу? [y] / [n] / [пропусти крок N]
 ```
@@ -261,7 +261,7 @@ order steps differently for safe creation, migration, and failure reporting.
   9. archive/ — поза wiki (gitignored)
   10. AGENTS.md — створити лише після empty-scope preflight або доповнити наявний canonical; legacy scope: без instruction-записів, consolidation required
   11. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
-  12. Cross-agent skill exports — перевірити `~/.agents/skills/wiki`, `~/.gemini/antigravity-cli/skills/wiki` і `~/.qwen/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
+  12. Cross-agent skill exports — перевірити `~/.agents/skills/wiki`, `~/.gemini/config/skills/wiki` і `~/.qwen/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
 
 [y] так, створи все  /  [n] скасувати
 ```

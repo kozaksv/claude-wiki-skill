@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Canonical registry. Records: id, relative user skill root, entrypoint kind.
 # Runtime loading is NOT inferred from these filesystem registrations.
+# agy CLI 1.2.16 loads global skills from ~/.gemini/config/skills (runtime probe,
+# PR #15); ~/.gemini/antigravity-cli/skills was not scanned despite web docs.
 wiki_harness_records() {
   printf '%s\n' \
     'claude|.claude/skills|canonical' \
     'codex|.agents/skills|export' \
-    'agy|.gemini/antigravity-cli/skills|export' \
+    'agy|.gemini/config/skills|export' \
     'qwen|.qwen/skills|export'
 }
 
@@ -55,7 +57,7 @@ wiki_ensure_export() {
 
 wiki_retire_gemini_export() {
   local skill="$1" source="$HOME/.claude/skills/$1"
-  local old="$HOME/.gemini/skills/$1" replacement="$HOME/.gemini/antigravity-cli/skills/$1"
+  local old="$HOME/.gemini/skills/$1" replacement="$HOME/.gemini/config/skills/$1"
   [ -e "$old" ] || [ -L "$old" ] || return 0
   if ! wiki_export_parent_safe "$old" || [ ! -L "$old" ] || [ "$(readlink "$old")" != "$source" ]; then
     echo "[$skill] retired export conflict (preserved): $old"; return 2

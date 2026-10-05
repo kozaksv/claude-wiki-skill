@@ -55,7 +55,7 @@ reset mechanism. A new absent sidecar and a corrupt existing sidecar are differe
 **(4) Canonical install and exports.** Check that `~/.claude/skills/wiki` resolves
 to the intended Git checkout, then verify the active exports from
 `lib/harnesses.sh`: `~/.agents/skills/wiki`,
-`~/.gemini/antigravity-cli/skills/wiki`, and `~/.qwen/skills/wiki`.
+`~/.gemini/config/skills/wiki`, and `~/.qwen/skills/wiki`.
 Old `.gemini/skills` entries are retirement findings, not required exports.
 Report actual commit,
 behavior version and local modifications when accessible; do not infer latest

@@ -455,7 +455,9 @@ grep -rq 'Кристалізація:' "$ROOT/tests/scenarios/reflection-trigger
 for ref in operation-init.md operation-ingest-source.md operation-lint.md discovery-versioning.md; do
   grep -q 'instructions-audit.md' "$ROOT/references/$ref" || fail "$ref must route instruction writes through preflight"
 done
-grep -q '~/.gemini/antigravity-cli/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" || fail 'agy extractor export missing'
+grep -q "'agy|.gemini/config/skills|export'" "$ROOT/lib/harnesses.sh" ||
+  fail 'agy global export must target ~/.gemini/config/skills (runtime-verified path)'
+grep -q '~/.gemini/config/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" || fail 'agy extractor export missing'
 grep -q 'consolidation_required' "$ROOT/scripts/instructions.py" || fail 'legacy preflight missing'
 grep -q 'No instruction writes' "$ROOT/references/instructions-audit.md" || fail 'legacy write guard missing'
 grep -q 'same-level' "$ROOT/references/reader-core.md" || fail 'shared conflict contract missing'

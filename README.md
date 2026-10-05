@@ -38,7 +38,7 @@
 |---|---|---|
 | claude | `~/.claude/skills/wiki` | canonical |
 | codex | `~/.agents/skills/wiki` | export |
-| agy | `~/.gemini/antigravity-cli/skills/wiki` | export |
+| agy | `~/.gemini/config/skills/wiki` | export |
 | qwen | `~/.qwen/skills/wiki` | export |
 <!-- harness-exports:end -->
 

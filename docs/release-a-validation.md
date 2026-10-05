@@ -49,9 +49,9 @@ The reviewer's real HOME was not changed.
 | Surface | Observed evidence | Remaining acceptance work |
 |---|---|---|
 | Claude Code | Root/nested AGENTS with tools disabled; local-blocker control; compact; wiki query using PR skill and PR hook passed | `/memory` interactive view was not run; behavioral evidence is recorded, not a fabricated UI receipt |
-| Codex | Root/nested and fallback control passed | Wiki query used the global **master** skill; rerun with the PR skill for #9 |
-| agy CLI | Root/nested and wiki query using workspace PR skill passed | Global CLI skill loading was not run; temporary-HOME filesystem checks are not equivalent |
-| Qwen Code | No completed model runs | API 403 `Access to model denied`; wiki query and duplicate-registration check remain unverified |
+| Codex | Root/nested and fallback control passed; wiki query rerun on `c3e8356` with the repo-level PR skill (`4.11.0`, PR `discover.sh`) passed with no writes | — |
+| agy CLI | Root/nested and wiki query using workspace PR skill passed. Global path probe (agy 1.2.16, `--sandbox`, unique probe skill via symlink): `~/.gemini/antigravity-cli/skills` 0/3 loads; `~/.gemini/config/skills` 3 loads, 3 empty print-mode responses, 0 refusals. Registry switched to `~/.gemini/config/skills` | Real-HOME export receipt is recorded after release in #9 |
+| Qwen Code | No completed model runs (API 403 `Access to model denied`) | Excluded from release A acceptance by owner decision; unverified, not a pass |
 | ChatGPT/GitHub | Seven portable discovery scenarios exercised through the connected GitHub tools | See the separate bounded [connector receipt](release-a-github-receipt.md); this does not validate native CLI sessions |
 
 A CI pass is not a receipt for Claude, Codex, Qwen or agy model sessions.

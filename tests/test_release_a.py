@@ -240,7 +240,7 @@ class ExportTests(Workspace):
         foreign.symlink_to("/nonexistent/foreign")
         self.assertEqual(self.repair().returncode, 0)
         self.assertFalse(old.is_symlink())
-        for relative in (".agents/skills", ".qwen/skills", ".gemini/antigravity-cli/skills"):
+        for relative in (".agents/skills", ".qwen/skills", ".gemini/config/skills"):
             self.assertEqual(os.readlink(self.home / relative / "wiki"), str(self.home / ".claude/skills/wiki"))
         self.assertTrue(foreign.is_symlink())
         self.assertEqual(self.repair().returncode, 0)
@@ -248,7 +248,7 @@ class ExportTests(Workspace):
 
     def test_new_conflict_preserves_old(self):
         old = self.old_link()
-        self.write(self.home / ".gemini/antigravity-cli/skills/wiki", "foreign")
+        self.write(self.home / ".gemini/config/skills/wiki", "foreign")
         self.assertEqual(self.repair().returncode, 2)
         self.assertTrue(old.is_symlink())
 
@@ -264,7 +264,7 @@ class ExportTests(Workspace):
     def test_unsafe_parent_preserved(self):
         old = self.old_link()
         external = self.home / "external"; external.mkdir()
-        (self.home / ".gemini/antigravity-cli").symlink_to(external)
+        (self.home / ".gemini/config").symlink_to(external)
         self.assertEqual(self.repair().returncode, 2)
         self.assertTrue(old.is_symlink())
         self.assertEqual(list(external.iterdir()), [])
@@ -275,7 +275,7 @@ class ExportTests(Workspace):
         old.symlink_to(self.home / ".claude/skills/doc-extract")
         self.assertEqual(self.repair().returncode, 2)
         self.assertTrue(old.is_symlink())
-        self.assertTrue((self.home / ".gemini/antigravity-cli/skills/wiki/SKILL.md").is_file())
+        self.assertTrue((self.home / ".gemini/config/skills/wiki/SKILL.md").is_file())
 
 
 class HookConflictTests(Workspace):

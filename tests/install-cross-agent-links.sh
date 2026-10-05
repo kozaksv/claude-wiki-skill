@@ -97,8 +97,8 @@ CLAUDE_WIKI="$HOME_DIR/.claude/skills/wiki"
 CLAUDE_DOC_EXTRACT="$HOME_DIR/.claude/skills/doc-extract"
 AGENTS_WIKI="$HOME_DIR/.agents/skills/wiki"
 AGENTS_DOC_EXTRACT="$HOME_DIR/.agents/skills/doc-extract"
-AGY_WIKI="$HOME_DIR/.gemini/antigravity-cli/skills/wiki"
-AGY_DOC_EXTRACT="$HOME_DIR/.gemini/antigravity-cli/skills/doc-extract"
+AGY_WIKI="$HOME_DIR/.gemini/config/skills/wiki"
+AGY_DOC_EXTRACT="$HOME_DIR/.gemini/config/skills/doc-extract"
 QWEN_WIKI="$HOME_DIR/.qwen/skills/wiki"
 QWEN_DOC_EXTRACT="$HOME_DIR/.qwen/skills/doc-extract"
 LOG="$TMP/install.log"
@@ -243,7 +243,7 @@ HOME_DOC_REF="$TMP/home-doc-ref"
 mkdir -p "$HOME_DOC_REF"
 DOC_EXTRACT_EXPECTED_REF=stable-doc WIKI_DOC_EXTRACT_REF=stable-doc PATH="$BIN_DIR:$PATH" HOME="$HOME_DOC_REF" bash "$ROOT/install.sh" >"$TMP/install-doc-ref.log" 2>&1
 expect_link_target "$HOME_DOC_REF/.agents/skills/doc-extract" "$HOME_DOC_REF/.claude/skills/doc-extract"
-expect_link_target "$HOME_DOC_REF/.gemini/antigravity-cli/skills/doc-extract" "$HOME_DOC_REF/.claude/skills/doc-extract"
+expect_link_target "$HOME_DOC_REF/.gemini/config/skills/doc-extract" "$HOME_DOC_REF/.claude/skills/doc-extract"
 grep -q "doc-extract.*(@ stable-doc)" "$TMP/install-doc-ref.log" || {
   echo "expected doc-extract summary to show env-selected ref"
   exit 1
@@ -289,7 +289,7 @@ mkdir -p "$HOME_REPAIR_EXPORTS/.claude/skills"
 ln -s "$ROOT" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports.log" 2>&1
 expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
-expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/antigravity-cli/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/config/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 expect_link_target "$HOME_REPAIR_EXPORTS/.qwen/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 [ ! -e "$HOME_REPAIR_EXPORTS/.agents/skills/doc-extract" ] || {
   echo "repair-exports should not create doc-extract export when canonical doc-extract is absent"
@@ -305,7 +305,7 @@ grep -q 'Cross-agent export targets' "$TMP/install-repair-exports.log" || {
 }
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_EXPORTS" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-exports-2.log" 2>&1
 expect_link_target "$HOME_REPAIR_EXPORTS/.agents/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
-expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/antigravity-cli/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
+expect_link_target "$HOME_REPAIR_EXPORTS/.gemini/config/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 expect_link_target "$HOME_REPAIR_EXPORTS/.qwen/skills/wiki" "$HOME_REPAIR_EXPORTS/.claude/skills/wiki"
 if grep -q 'пропущено' "$TMP/install-repair-exports-2.log"; then
   echo "idempotent repair should not report skipped exports"
@@ -328,7 +328,7 @@ DOC
 ln -s "$HOME_REPAIR_DOC/claude-doc-extract-skill" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
 PATH="$BIN_DIR:$PATH" HOME="$HOME_REPAIR_DOC" bash "$ROOT/install.sh" --repair-exports >"$TMP/install-repair-doc.log" 2>&1
 expect_link_target "$HOME_REPAIR_DOC/.agents/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
-expect_link_target "$HOME_REPAIR_DOC/.gemini/antigravity-cli/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
+expect_link_target "$HOME_REPAIR_DOC/.gemini/config/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
 expect_link_target "$HOME_REPAIR_DOC/.qwen/skills/doc-extract" "$HOME_REPAIR_DOC/.claude/skills/doc-extract"
 grep -q "$HOME_REPAIR_DOC/.agents/skills/doc-extract" "$TMP/install-repair-doc.log" || {
   echo "expected repair summary to include doc-extract exports"
@@ -547,10 +547,10 @@ for link in \
   "$HOME_ROUNDTRIP/.claude/skills/wiki" \
   "$HOME_ROUNDTRIP/.claude/skills/doc-extract" \
   "$HOME_ROUNDTRIP/.agents/skills/wiki" \
-  "$HOME_ROUNDTRIP/.gemini/antigravity-cli/skills/wiki" \
+  "$HOME_ROUNDTRIP/.gemini/config/skills/wiki" \
   "$HOME_ROUNDTRIP/.qwen/skills/wiki" \
   "$HOME_ROUNDTRIP/.agents/skills/doc-extract" \
-  "$HOME_ROUNDTRIP/.gemini/antigravity-cli/skills/doc-extract" \
+  "$HOME_ROUNDTRIP/.gemini/config/skills/doc-extract" \
   "$HOME_ROUNDTRIP/.qwen/skills/doc-extract"; do
   [ ! -e "$link" ] && [ ! -L "$link" ] || {
     echo "expected uninstall to remove round-trip symlink: $link"
@@ -561,6 +561,6 @@ PATH="$BIN_DIR:$PATH" HOME="$HOME_ROUNDTRIP" bash "$ROOT/install.sh" >"$TMP/inst
 expect_link_target "$HOME_ROUNDTRIP/.agents/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"
 expect_link_target "$HOME_ROUNDTRIP/.qwen/skills/wiki" "$HOME_ROUNDTRIP/.claude/skills/wiki"
 expect_link_target "$HOME_ROUNDTRIP/.qwen/skills/doc-extract" "$HOME_ROUNDTRIP/.claude/skills/doc-extract"
-expect_link_target "$HOME_ROUNDTRIP/.gemini/antigravity-cli/skills/doc-extract" "$HOME_ROUNDTRIP/.claude/skills/doc-extract"
+expect_link_target "$HOME_ROUNDTRIP/.gemini/config/skills/doc-extract" "$HOME_ROUNDTRIP/.claude/skills/doc-extract"
 
 echo "install cross-agent links: ok"

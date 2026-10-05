@@ -87,6 +87,6 @@ class ReviewRecoveryTests(Workspace):
 
     def test_binary_example_uses_agy_not_retired_export(self):
         text = (ROOT / "references/operation-ingest-binary.md").read_text()
-        self.assertIn('"$HOME/.gemini/antigravity-cli/skills/doc-extract"', text)
+        self.assertIn('"$HOME/.gemini/config/skills/doc-extract"', text)
         self.assertNotIn('"$HOME/.gemini/skills/doc-extract"', text)
         self.assertNotIn("Gemini's direct", text)
