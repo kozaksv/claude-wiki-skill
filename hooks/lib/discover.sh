@@ -1,252 +1,173 @@
 #!/usr/bin/env bash
-# hooks/lib/discover.sh
-#
-# Wiki discovery for hook scripts. Provides `discover_wiki <start_dir>`:
-# find the nearest resident `## Wiki` pointer walking up from <start_dir>
-# to the git-root boundary, falling back to docs/wiki/ when no pointer
-# resolves. In each directory ALL agent instruction files (CLAUDE.md,
-# AGENTS.md, GEMINI.md, QWEN.md) are consulted and the first pointer that
-# actually VALIDATES (resolved index.md inside the boundary) wins —
-# agent-neutral discovery. A stale/broken pointer never stops the search:
-# the remaining files of the same directory are still tried, and the
-# walk-up continues to higher directories, so a stale nested CLAUDE.md can
-# mask neither a valid AGENTS.md/GEMINI.md/QWEN.md pointer beside it nor a
-# valid root-level one.
-#
-# Discovery is FAIL-CLOSED without git: with no git toplevel we
-# refuse to establish a boundary and resolve nothing (Session-Start
-# Contract requires a git marker; an orphan / non-git tree must not resolve
-# or mutate a wiki). Every candidate is boundary-guarded on its RESOLVED
-# index.md so a malicious/broken pointer or a symlink escape can never leak
-# content from outside the project root into an LLM context (see
-# docs/superpowers/plans/2026-07-08-v45-hooks.md Task 1 and
-# references/discovery-versioning.md Step 0).
-#
-# set -euo pipefail safety: this lib is sourced by hook scripts that may
-# run under `set -euo pipefail`. Every internal command-substitution here
-# is written so it NEVER propagates a non-zero status into the caller's
-# assignment (which set -e would treat as fatal): realpath/git/awk-pipe
-# failures are swallowed to empty output + exit 0, and callers branch on
-# emptiness instead of exit status.
-#
-# Pure bash, no stdin parsing here — callers (session-start.sh,
-# post-tool-use.sh) own the stdin-JSON contract per Claude Code hooks docs.
+# One local pointer parser for hooks and the read-only instruction audit.
+# AGENTS first *within* the nearest valid level; legacy remains readable.
+# Default interface: path on stdout, or empty on absent/error. Conflict returns
+# 3 with no path: callers must not write telemetry to an ambiguous wiki.
+# --records is a NUL-delimited internal transport for scripts/instructions.py.
 
-# ---- internal helpers (prefixed to avoid clashing when sourced alongside
-# other hook libs, e.g. version-gate.sh, in the same shell) ----
-
-_wiki_disc_realpath() {
-  # $1 = path (may not exist). Always suppress the underlying realpath's
-  # own stderr noise for missing paths (spec: "без stderr-шуму"). The
-  # trailing `|| true` keeps this at exit 0 for a missing path so a
-  # `x="$(_wiki_disc_realpath ...)"` assignment can never trip a set -e
-  # caller; callers already branch on empty output.
-  realpath "$1" 2>/dev/null || true
-}
-
-_wiki_disc_boundary_ok() {
-  # $1 = already-realpath'd absolute path (in practice always a resolved
-  #      index.md FILE, never the boundary dir itself)
-  # $2 = already-realpath'd absolute boundary root
-  # Must be STRICTLY inside $2, never equal to it. An exact match means
-  # index.md resolved (e.g. via a symlink) to the boundary root itself;
-  # the caller then does `dirname` on that, which yields the boundary's
-  # PARENT — an escape outside the project. See
-  # references/discovery-versioning.md Step 0 symlink-escape note.
-  case "$1" in
-    "$2"/*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
+_wiki_disc_realpath() { realpath "$1" 2>/dev/null || true; }
+_wiki_disc_boundary_ok() { case "$1" in "$2"/*) return 0 ;; *) return 1 ;; esac; }
 
 _wiki_disc_extract_pointer() {
-  # Canonical parser for references/reader-core.md's pointer grammar.
-  # Explicit Cyrillic cases work even with byte-oriented awk / LC_ALL=C.
-  local file="$1" out
-  out="$(
-    awk '
-      { sub(/\r$/, "") }
-      {
-        line=$0; sub(/^ ? ? ?/, "", line)
-        if (line ~ /^(```|~~~)/) {
-          c=substr(line,1,1); n=0
-          while (substr(line,n+1,1)==c) n++
-          rest=substr(line,n+1)
-          if (!fence) { fence=c; fence_len=n }
-          else if (fence==c && n>=fence_len && rest ~ /^[[:space:]]*$/) fence=""
-          next
-        }
-        if (fence) next
-        if (line ~ /^##[[:space:]]+([Ww][Ii][Kk][Ii]|(В|в)(І|і)(К|к)(І|і))([[:space:][:punct:]]|$)/) {
-          insec=1; next
-        }
-        if (line ~ /^##?[[:space:]]/) insec=0
-        if (insec && match(line, /`[^`]+`/)) {
-          print substr(line,RSTART+1,RLENGTH-2); exit
-        }
+  local out
+  out="$(awk '
+    { sub(/\r$/, "") }
+    {
+      line=$0; sub(/^ ? ? ?/, "", line)
+      if (line ~ /^(```|~~~)/) {
+        c=substr(line,1,1); n=0
+        while (substr(line,n+1,1)==c) n++
+        rest=substr(line,n+1)
+        if (!fence) { fence=c; fence_len=n }
+        else if (fence==c && n>=fence_len && rest ~ /^[[:space:]]*$/) fence=""
+        next
       }
-    ' "$file"
-  )" || true
+      if (fence) next
+      if (line ~ /^##[[:space:]]+([Ww][Ii][Kk][Ii]|(В|в)(І|і)(К|к)(І|і))([[:space:][:punct:]]|$)/) {
+        insec=1; next
+      }
+      if (line ~ /^##?[[:space:]]/) insec=0
+      if (insec && match(line, /`[^`]+`/)) {
+        print substr(line,RSTART+1,RLENGTH-2); exit
+      }
+    }
+  ' "$1")" || true
   printf '%s' "$out"
 }
 
-_wiki_disc_dir_pointers() {
-  # $1 = directory. Try the known active agent first, then the stable
-  # CLAUDE/AGENTS/GEMINI/QWEN default order, de-duplicated. Print all
-  # pointers so the caller can continue past stale candidates. Empty = none.
-  local dir="$1" name raw preferred="" seen=" "
-  case "${WIKI_DISCOVERY_AGENT:-${WIKI_HOOK_CLIENT:-}}" in
-    claude) preferred=CLAUDE.md ;;
-    codex) preferred=AGENTS.md ;;
-    gemini) preferred=GEMINI.md ;;
-    qwen) preferred=QWEN.md ;;
+_wiki_disc_normalize_pointer() {
+  case "$1" in
+    */schema.md) printf '%s' "${1%/schema.md}" ;;
+    */index.md) printf '%s' "${1%/index.md}" ;;
+    schema.md|index.md) printf '.' ;;
+    *) printf '%s' "$1" ;;
   esac
-  for name in $preferred CLAUDE.md AGENTS.md GEMINI.md QWEN.md; do
-    case "$seen" in *" $name "*) continue ;; esac
-    seen="$seen$name "
-    [ -f "$dir/$name" ] || continue
-    raw="$(_wiki_disc_extract_pointer "$dir/$name")"
-    [ -n "$raw" ] && printf '%s\n' "$raw"
-  done
-  return 0
 }
 
-_wiki_disc_normalize_pointer() {
-  # $1 = raw pointer string extracted from a "## Wiki" section. The
-  # documented OLD one-line pointer format points directly AT the wiki's
-  # schema or index file (e.g. `knowledge/wiki/schema.md`), not at its
-  # containing directory. Downstream code (_wiki_disc_candidate) always
-  # appends "/index.md" to build the file it validates, so a pointer that
-  # already ends in schema.md/index.md must first be stripped down to its
-  # containing dir — otherwise the appended index.md lands under
-  # .../schema.md/index.md (schema.md treated as a directory) and the
-  # pointer never resolves, silently masking a valid non-default/custom
-  # wiki (fixwave0-4). Only the TRAILING filename is stripped so a
-  # directory that merely contains "schema.md"/"index.md" as a path
-  # segment elsewhere is left untouched.
-  local p="$1"
-  case "$p" in
-    */schema.md) printf '%s' "${p%/schema.md}" ;;
-    */index.md) printf '%s' "${p%/index.md}" ;;
-    schema.md | index.md) printf '%s' "." ;;
-    *) printf '%s' "$p" ;;
-  esac
+_wiki_disc_exact_file() {
+  # A direct -f test is case-insensitive on common macOS filesystems.
+  local entry
+  for entry in "$1"/*; do
+    [ "${entry##*/}" = "$2" ] && [ -f "$entry" ] && return 0
+  done
+  return 1
 }
 
 _wiki_disc_candidate() {
-  # $1 = candidate wiki-dir (unvalidated, may be relative-looking or
-  #      contain .. segments; not yet realpath'd)
-  # $2 = boundary_real (already realpath'd)
-  # On success prints the validated absolute wiki dir and returns 0.
-  # On failure prints nothing, emits the standard stderr notice, and
-  # returns 1. discovery continues (walk-up / fallback) after failure.
-  local candidate="$1" boundary_real="$2"
-  local idx_real
-  idx_real="$(_wiki_disc_realpath "$candidate/index.md")"
-  if [ -z "$idx_real" ] || ! _wiki_disc_boundary_ok "$idx_real" "$boundary_real"; then
-    echo "[wiki-hook] pointer поза межами репо, ігнорую: $candidate" >&2
-    return 1
+  # Sets result/reason in this shell; never opens index.md or an external wiki.
+  local candidate="$1" boundary="$2" index_real dir_real
+  WIKI_DISC_CANDIDATE=""; WIKI_DISC_REASON="missing"
+  dir_real="$(_wiki_disc_realpath "$candidate")"
+  if [ -n "$dir_real" ] && [ "$dir_real" != "$boundary" ] && ! _wiki_disc_boundary_ok "$dir_real" "$boundary"; then
+    WIKI_DISC_REASON=outside_boundary; return 0
   fi
-  [ -f "$candidate/index.md" ] || return 1
-  dirname "$idx_real"
-  return 0
+  index_real="$(_wiki_disc_realpath "$candidate/index.md")"
+  if [ -n "$index_real" ] && ! _wiki_disc_boundary_ok "$index_real" "$boundary"; then
+    WIKI_DISC_REASON=symlink_escape; return 0
+  fi
+  if [ -d "$candidate" ]; then WIKI_DISC_REASON=no_index; fi
+  [ -n "$index_real" ] && [ -f "$candidate/index.md" ] || return 0
+  WIKI_DISC_CANDIDATE="$(dirname "$index_real")"
+  WIKI_DISC_REASON=valid
 }
 
-discover_wiki() {
-  # $1 = optional start_dir. WIKI_HOOK_CLIENT is a private transport signal
-  # from the canonical hook to this lib — NOT a user-facing setting — and is
-  # accepted only on exact equality with "qwen". It orders exactly the two
-  # env fallback rungs below (both read from the same environment); both
-  # stay in the chain as each other's mutual fallback. Default (no signal,
-  # or any value other than exact "qwen"): $CLAUDE_PROJECT_DIR, then
-  # $QWEN_PROJECT_DIR. With WIKI_HOOK_CLIENT=qwen: $QWEN_PROJECT_DIR, then
-  # $CLAUDE_PROJECT_DIR. Either way pwd is the final fallback — this is a
-  # plain if-chain, no command substitution feeds an assignment directly, so
-  # it stays safe under `set -euo pipefail` (an unset/empty var under `:-`
-  # never trips set -e).
-  local start="${1:-}"
+_wiki_disc_record() {
+  # source, raw pointer, resolved wiki (or empty), reason. NUL framing is
+  # applied at the transport boundary, never eval'ed or split on whitespace.
+  WIKI_DISC_RECORDS+=("$1" "$2" "$3" "$4")
+}
+
+_wiki_disc_run() {
+  local start="${1:-}" all_levels="${2:-0}" git_top dir parent name raw file_real candidate
+  local level_first level_conflict seen loc old duplicate
+  WIKI_DISC_ROOT=""; WIKI_DISC_SELECTED=""; WIKI_DISC_LEVEL=""
+  WIKI_DISC_CONFLICT=0; WIKI_DISC_NEAREST_POINTER=""; WIKI_DISC_RECORDS=()
   if [ -z "$start" ]; then
-    if [ "${WIKI_HOOK_CLIENT:-}" = "qwen" ]; then
-      start="${QWEN_PROJECT_DIR:-}"
-      [ -n "$start" ] || start="${CLAUDE_PROJECT_DIR:-}"
+    if [ "${WIKI_HOOK_CLIENT:-}" = qwen ]; then
+      start="${QWEN_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
     else
-      start="${CLAUDE_PROJECT_DIR:-}"
-      [ -n "$start" ] || start="${QWEN_PROJECT_DIR:-}"
+      start="${CLAUDE_PROJECT_DIR:-${QWEN_PROJECT_DIR:-}}"
     fi
     [ -n "$start" ] || start="$(pwd)"
   fi
   [ -d "$start" ] || return 0
-
-  # Walk-up boundary: the git toplevel of start. FAIL-CLOSED — with no git
-  # toplevel we resolve nothing at all. Wiki discovery is git-backed (the
-  # Session-Start Contract requires a git marker); legalizing a boundary at
-  # $CLAUDE_PROJECT_DIR for an orphan / non-git tree would let hook writes
-  # create or mutate a wiki (.usage.json) in a state Step 0 must block
-  # (codex-атк P1). The `|| true` keeps the failing rev-parse from aborting
-  # a set -e caller before we can fail-closed on empty output.
-  local git_top
   git_top="$(git -C "$start" rev-parse --show-toplevel 2>/dev/null || true)"
   [ -n "$git_top" ] || return 0
-
-  local boundary_real start_real
-  boundary_real="$(_wiki_disc_realpath "$git_top")"
-  start_real="$(_wiki_disc_realpath "$start")"
-  [ -n "$boundary_real" ] && [ -n "$start_real" ] || return 0
-
-  # Phase 1: walk from start_real up to boundary_real (inclusive). In each
-  # directory validate EVERY pointer found there immediately; the first
-  # pointer whose resolved index.md passes the boundary guard wins. A
-  # stale/broken/out-of-bounds pointer never stops the search — remaining
-  # pointers in the same directory are tried, then the walk continues
-  # upward (agy-атк P1: a stale nested pointer must not mask a valid
-  # root-level custom-path pointer). found_config_dir remembers the
-  # NEAREST directory that carried any pointer at all — Phase 2 uses it
-  # as the first fallback anchor regardless of pointer validity.
-  local dir="$start_real" found_config_dir="" wiki_dir="" raws raw candidate
+  WIKI_DISC_ROOT="$(_wiki_disc_realpath "$git_top")"
+  start="$(_wiki_disc_realpath "$start")"
+  [ -n "$start" ] && [ -n "$WIKI_DISC_ROOT" ] || return 0
+  if [ "$start" != "$WIKI_DISC_ROOT" ] && ! _wiki_disc_boundary_ok "$start" "$WIKI_DISC_ROOT"; then return 0; fi
+  dir="$start"
   while :; do
-    raws="$(_wiki_disc_dir_pointers "$dir")"
-    if [ -n "$raws" ]; then
-      [ -n "$found_config_dir" ] || found_config_dir="$dir"
-      while IFS= read -r raw; do
-        [ -n "$raw" ] || continue
-        raw="$(_wiki_disc_normalize_pointer "$raw")"
-        case "$raw" in
-          /*) candidate="$raw" ;;
-          *) candidate="$dir/$raw" ;;
-        esac
-        if wiki_dir="$(_wiki_disc_candidate "$candidate" "$boundary_real")"; then
-          printf '%s\n' "$wiki_dir"
-          return 0
+    level_first=""; level_conflict=0
+    for name in AGENTS.md CLAUDE.md GEMINI.md QWEN.md; do
+      _wiki_disc_exact_file "$dir" "$name" || continue
+      file_real="$(_wiki_disc_realpath "$dir/$name")"
+      if ! _wiki_disc_boundary_ok "$file_real" "$WIKI_DISC_ROOT"; then
+        _wiki_disc_record "$dir/$name" "" "" symlink_escape
+        continue
+      fi
+      raw="$(_wiki_disc_extract_pointer "$dir/$name")"
+      [ -n "$raw" ] || continue
+      [ -n "$WIKI_DISC_NEAREST_POINTER" ] || WIKI_DISC_NEAREST_POINTER="$dir"
+      candidate="$(_wiki_disc_normalize_pointer "$raw")"
+      case "$candidate" in
+        *$'\n'*|*$'\r'*|*://*) _wiki_disc_record "$dir/$name" "$raw" "" invalid_pointer; continue ;;
+        /*) : ;;
+        *) candidate="$dir/$candidate" ;;
+      esac
+      _wiki_disc_candidate "$candidate" "$WIKI_DISC_ROOT"
+      _wiki_disc_record "$dir/$name" "$raw" "$WIKI_DISC_CANDIDATE" "$WIKI_DISC_REASON"
+      if [ -n "$WIKI_DISC_CANDIDATE" ]; then
+        if [ -z "$level_first" ]; then level_first="$WIKI_DISC_CANDIDATE"
+        elif [ "$level_first" != "$WIKI_DISC_CANDIDATE" ]; then level_conflict=1
         fi
-        # broken / out-of-bounds pointer -> try the next one / keep walking
-      done <<<"$raws"
+      fi
+    done
+    if [ -n "$level_first" ] && [ -z "$WIKI_DISC_SELECTED" ]; then
+      WIKI_DISC_SELECTED="$level_first"; WIKI_DISC_LEVEL="$dir"; WIKI_DISC_CONFLICT="$level_conflict"
+      [ "$all_levels" = 1 ] || return 0
     fi
-    [ "$dir" = "$boundary_real" ] && break
-    local parent
-    parent="$(dirname "$dir")"
-    [ "$parent" != "$dir" ] || break
+    [ "$dir" != "$WIKI_DISC_ROOT" ] || break
+    parent="$(dirname "$dir")"; [ "$parent" != "$dir" ] || break
     dir="$parent"
   done
-
-  # Phase 2: fallback docs/wiki/index.md, tried at (in order, de-duped):
-  # the found config file's dir, start_real, boundary_real. Same guard.
-  local seen=" " loc
-  for loc in "$found_config_dir" "$start_real" "$boundary_real"; do
+  [ -z "$WIKI_DISC_SELECTED" ] || return 0
+  local -a tried=()
+  for loc in "$WIKI_DISC_NEAREST_POINTER" "$start" "$WIKI_DISC_ROOT"; do
     [ -n "$loc" ] || continue
-    case "$seen" in
-      *" $loc "*) continue ;;
-    esac
-    seen="$seen$loc "
-    local wiki_dir
-    if wiki_dir="$(_wiki_disc_candidate "$loc/docs/wiki" "$boundary_real")"; then
-      printf '%s\n' "$wiki_dir"
+    duplicate=0
+    for old in ${tried[@]+"${tried[@]}"}; do [ "$loc" != "$old" ] || duplicate=1; done
+    [ "$duplicate" = 0 ] || continue
+    tried+=("$loc")
+    _wiki_disc_candidate "$loc/docs/wiki" "$WIKI_DISC_ROOT"
+    _wiki_disc_record "" "$loc/docs/wiki" "$WIKI_DISC_CANDIDATE" "$WIKI_DISC_REASON"
+    if [ -n "$WIKI_DISC_CANDIDATE" ]; then
+      WIKI_DISC_SELECTED="$WIKI_DISC_CANDIDATE"; WIKI_DISC_LEVEL="$loc"
       return 0
     fi
   done
-
   return 0
 }
 
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-  discover_wiki "$@"
+discover_wiki() {
+  _wiki_disc_run "${1:-}" 0
+  if [ "$WIKI_DISC_CONFLICT" = 1 ]; then
+    printf '%s\n' 'wiki: same-level pointer conflict; no telemetry writes' >&2
+    return 3
+  fi
+  [ -z "$WIKI_DISC_SELECTED" ] || printf '%s\n' "$WIKI_DISC_SELECTED"
+  return 0
+}
+
+wiki_discovery_records() {
+  _wiki_disc_run "${1:-}" 1
+  printf '%s\0' "$WIKI_DISC_ROOT" "$WIKI_DISC_SELECTED" "$WIKI_DISC_LEVEL" "$WIKI_DISC_CONFLICT"
+  if [ "${#WIKI_DISC_RECORDS[@]}" -gt 0 ]; then printf '%s\0' "${WIKI_DISC_RECORDS[@]}"; fi
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  if [ "${1:-}" = --records ]; then shift; wiki_discovery_records "${1:-}"
+  else discover_wiki "${1:-}"
+  fi
 fi
