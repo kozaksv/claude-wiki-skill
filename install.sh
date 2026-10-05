@@ -167,7 +167,9 @@ repair_cross_agent_exports() {
   fi
   if [ ! -e "$SKILL_LINK" ]; then
     echo "Помилка: битий canonical wiki symlink: $SKILL_LINK → $(readlink "$SKILL_LINK")"
-    echo "Запустіть повну інсталяцію: bash install.sh"
+    echo "Перевірте шлях і target вручну. Installer не замінює цей link автоматично."
+    printf 'Після перевірки видаліть лише сам битий symlink (без -r): rm -- %q\n' "$SKILL_LINK"
+    echo "Потім запустіть повну інсталяцію зі свіжого installer: bash install.sh"
     return 1
   fi
   if [ ! -f "$SKILL_LINK/SKILL.md" ]; then

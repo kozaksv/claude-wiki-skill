@@ -6,6 +6,24 @@
 # --records is a NUL-delimited internal transport for scripts/instructions.py.
 
 _wiki_disc_realpath() { realpath "$1" 2>/dev/null || true; }
+
+_wiki_disc_lexical_path() {
+  # Absolute dot-segment normalization without requiring the target to exist.
+  # Keep this separate from physical resolution: a symlink followed by /..
+  # can have different semantics, so successful candidates still need realpath.
+  local rest="$1" part normalized=""
+  case "$rest" in /*) ;; *) return 1 ;; esac
+  while [ -n "$rest" ]; do
+    part="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    case "$part" in
+      ""|.) : ;;
+      ..) normalized="${normalized%/*}" ;;
+      *) normalized="$normalized/$part" ;;
+    esac
+  done
+  printf '%s' "${normalized:-/}"
+}
 _wiki_disc_boundary_ok() { case "$1" in "$2"/*) return 0 ;; *) return 1 ;; esac; }
 
 _wiki_disc_extract_pointer() {
@@ -55,11 +73,24 @@ _wiki_disc_exact_file() {
 
 _wiki_disc_candidate() {
   # Sets result/reason in this shell; never opens index.md or an external wiki.
-  local candidate="$1" boundary="$2" index_real dir_real
+  local candidate="$1" boundary="$2" index_real dir_real lexical lexical_inside=0
   WIKI_DISC_CANDIDATE=""; WIKI_DISC_REASON="missing"
+  lexical="$(_wiki_disc_lexical_path "$candidate")" || {
+    WIKI_DISC_REASON=invalid_pointer; return 0;
+  }
+  if [ "$lexical" = "$boundary" ] || _wiki_disc_boundary_ok "$lexical" "$boundary"; then
+    lexical_inside=1
+  fi
   dir_real="$(_wiki_disc_realpath "$candidate")"
-  if [ -n "$dir_real" ] && [ "$dir_real" != "$boundary" ] && ! _wiki_disc_boundary_ok "$dir_real" "$boundary"; then
-    WIKI_DISC_REASON=outside_boundary; return 0
+  if [ "$lexical_inside" = 0 ]; then
+    # Outside remains outside even when BSD realpath cannot resolve a missing
+    # target. Preserve validated local absolute aliases (/var -> /private/var)
+    # only when their physical target is actually inside this repository.
+    if [ -z "$dir_real" ] || { [ "$dir_real" != "$boundary" ] && ! _wiki_disc_boundary_ok "$dir_real" "$boundary"; }; then
+      WIKI_DISC_REASON=outside_boundary; return 0
+    fi
+  elif [ -n "$dir_real" ] && [ "$dir_real" != "$boundary" ] && ! _wiki_disc_boundary_ok "$dir_real" "$boundary"; then
+    WIKI_DISC_REASON=symlink_escape; return 0
   fi
   index_real="$(_wiki_disc_realpath "$candidate/index.md")"
   if [ -n "$index_real" ] && ! _wiki_disc_boundary_ok "$index_real" "$boundary"; then

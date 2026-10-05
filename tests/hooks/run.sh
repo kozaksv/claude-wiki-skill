@@ -15,6 +15,11 @@
 
 set -uo pipefail
 
+# macOS can expose TMPDIR as /var while discovery returns /private/var.
+# Normalize only the shared fixture root, preserving intentional test symlinks.
+TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+export TMPDIR
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DISCOVER_LIB="$ROOT/hooks/lib/discover.sh"
 VERSION_GATE_LIB="$ROOT/hooks/lib/version-gate.sh"

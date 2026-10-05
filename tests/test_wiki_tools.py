@@ -19,7 +19,7 @@ class WikiTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.write("index.md", "# Wiki\n\nCurated guidance stays here.\n")
         self.write("concepts/topic.md", "# Topic\n\n## Current\nUse the new flow.\n")
         self.wiki = wiki.Wiki(self.root)
@@ -229,7 +229,7 @@ class WikiTests(unittest.TestCase):
 class DiscoveryTests(unittest.TestCase):
     def test_partial_wiki_or_directory_index_is_not_valid_discovery(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             subprocess.run(["git", "init", "-q", directory], check=True)
             (root / "docs/wiki").mkdir(parents=True)
             (root / "AGENTS.md").write_text("## Вікі\n`docs/wiki`\n")
@@ -248,7 +248,7 @@ class DiscoveryTests(unittest.TestCase):
             "## Вікіпедія": False,
         }
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             subprocess.run(["git", "init", "-q", directory], check=True)
             (root / "knowledge/wiki").mkdir(parents=True)
             (root / "knowledge/wiki/index.md").write_text("# Wiki")
@@ -261,7 +261,7 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_fences_h1_boundary_and_agent_neutral_conflict(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             subprocess.run(["git", "init", "-q", directory], check=True)
             for name in ("a", "b"):
                 (root / name).mkdir()
