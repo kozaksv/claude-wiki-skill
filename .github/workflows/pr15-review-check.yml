@@ -1,0 +1,55 @@
+name: PR15 review candidate validation
+on:
+  push:
+    branches: [work/pr15-review-build-20261005]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.prepare.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+      - id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=973703640942a4c6a7a9fde8ba31baa2b48e8187
+          cp .github/pr15-review-patch.py "$RUNNER_TEMP/pr15-review-patch.py"
+          git checkout --detach "$base"
+          python3 "$RUNNER_TEMP/pr15-review-patch.py"
+          test ! -e .github/pr15-review-patch.py
+          test ! -e .github/workflows/pr15-review-check.yml
+          git add -- .github/workflows/wiki-contracts.yml hooks/lib/discover.sh install.sh references/operation-ingest-binary.md tests/test_release_a.py tests/test_wiki_tools.py tests/test_hook_upgrade.py tests/hooks/run.sh tests/test_pr15_review.py docs/release-a-validation.md skills/wiki-github
+          git diff --cached --check
+          git diff --cached --stat
+          git config user.name 'kozaksv'
+          git config user.email 'kozaksv@users.noreply.github.com'
+          tree=$(git write-tree)
+          commit=$(printf '%s\n' 'fix: address PR15 portability and repair review' '' 'Normalize test fixture roots, stabilize missing/outside discovery reasons,' 'retain validated physical aliases, document canonical-link recovery,' 'fix the agy binary-ingest example and run contracts on Linux and macOS.' '' 'Refs #7, #8, #9; native acceptance remains separate.' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/work/pr15-review-candidate-20261005"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "CANDIDATE_COMMIT=$commit"
+          echo "CANDIDATE_TREE=$tree"
+  tests:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - run: python3 scripts/build_skill.py --check
+      - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - run: bash tests/skill-contracts.sh
+      - run: bash tests/install-cross-agent-links.sh
+      - run: bash tests/uninstall.sh
