@@ -3,6 +3,10 @@
 Superseded behavior is history, not current instruction-file policy.
 
 ```markdown
+### 4.12.1 (2026-10-05)
+- No schema migration. Installer is pipe-safe (`curl … | bash` cannot run a truncated
+  download); README uses the plain one-liner and the «онови wiki-скіл» agent path.
+
 ### 4.12.0 (2026-10-05)
 - No schema migration. Release B: deterministic consolidation of legacy
   instruction files into AGENTS.md (`scripts/migrate.py` plan/check/apply/commit/rollback),

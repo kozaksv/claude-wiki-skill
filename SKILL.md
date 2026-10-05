@@ -1,6 +1,6 @@
 ---
 name: wiki
-version: "4.12.0"
+version: "4.12.1"
 description: >
   Read and maintain a project's LLM Wiki: query, init, ingest, edit, lint,
   cleanup, split, protect and status. Use for wiki/вікі requests and

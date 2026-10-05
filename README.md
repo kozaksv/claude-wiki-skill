@@ -1,6 +1,6 @@
 # Wiki Skill
 
-**Версія скіла: 4.12.0 · Типовий install ref: `master` · Схема вікі: `4.0`**
+**Версія скіла: 4.12.1 · Типовий install ref: `master` · Схема вікі: `4.0`**
 
 Спільна LLM-вікі проєкту для **Claude Code, Codex, agy CLI, Qwen Code та ChatGPT з GitHub**.
 Агент спершу читає вікі, відповідає з посиланнями на прочитані сторінки й зберігає
@@ -28,14 +28,10 @@
 інсталятор. Claude Code встановлювати не обов’язково.
 
 ```bash
-(
-  set -eu
-  installer="$(mktemp)"
-  trap 'rm -f "$installer"' EXIT
-  curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh -o "$installer"
-  bash "$installer" master
-)
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
+
+Інсталятор написаний так, що обірване завантаження нічого не виконає.
 
 Інсталятор створює один клон і посилання на нього для кожного агента:
 
@@ -63,20 +59,15 @@ bash "$HOME/.claude/skills/doc-extract/bin/doctor.sh"
 
 ## Оновлення
 
-> **Оновлюйте через свіжий інсталятор, а не лише `git pull`.** Git оновлює файли,
-> але не мігрує реєстрації хуків і посилання агентів.
-
-З каталогу Git-проєкту, де ви користуєтеся вікі:
+Найпростіше — попросіть агента: **«онови wiki-скіл»**. Або з каталогу Git-проєкту,
+де ви користуєтеся вікі:
 
 ```bash
-(
-  set -eu
-  installer="$(mktemp)"
-  trap 'rm -f "$installer"' EXIT
-  curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh -o "$installer"
-  bash "$installer" master --project "$PWD"
-)
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash
 ```
+
+Оновлюйте саме так, а не лише `git pull`: Git оновлює файли, але не мігрує
+реєстрації хуків і посилання агентів.
 
 Оновлення:
 
@@ -86,10 +77,11 @@ bash "$HOME/.claude/skills/doc-extract/bin/doctor.sh"
    вибраних проєктах;
 4. перечитує налаштування й звітує про результат.
 
-Кілька проєктів або worktree передавайте явно — інсталятор не обходить весь HOME:
+Поточний проєкт підхоплюється автоматично. Кілька проєктів або worktree передайте
+явно — інсталятор не обходить весь HOME:
 
 ```bash
-bash "$HOME/.claude/skills/wiki/install.sh" master --project /path/a --project /path/b
+curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash -s -- master --project /path/a --project /path/b
 ```
 
 | Результат | Що означає |

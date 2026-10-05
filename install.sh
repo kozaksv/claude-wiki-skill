@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# Pipe-safe: bash parses this whole brace group before running any of it, so
+# `curl … | bash` cannot execute a truncated download, and child commands never
+# read the rest of the script from stdin.
+{
+
 # Execute a stable copy: checkout may replace the installer currently running.
 if [ "${WIKI_INSTALL_RUNNING_COPY:-}" != "1" ] && [ -f "${BASH_SOURCE[0]:-}" ]; then
   installer_copy="$(mktemp)"
@@ -307,3 +312,4 @@ echo "Відкрийте проєкт у Claude Code, Codex, agy CLI або Qwen
 
 # Partial hook updates must be visible to callers/CI, not only in scrollback.
 [ "$HOOKS_STATUS" != "failed" ] || exit 3
+}
