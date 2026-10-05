@@ -132,7 +132,8 @@ def preflight(cwd: Path, home: Path) -> dict[str, Any]:
     present = list(dict.fromkeys(str(p) for p in paths if os.path.lexists(p)))
     canonical = cwd / "AGENTS.md"
     exact = any(p.name == "AGENTS.md" for p in cwd.iterdir())
-    if exact and kind(canonical) == "file":
+    collision = any(p.name.casefold() == "agents.md" and p.name != "AGENTS.md" for p in cwd.iterdir())
+    if exact and kind(canonical) == "file" and not collision:
         state = "canonical_present"
     elif present:
         state = "consolidation_required"

@@ -180,6 +180,42 @@ class AuditTests(Workspace):
         self.assertEqual(preflight["state"], "consolidation_required")
 
 
+    def test_legacy_preflight_does_not_write(self):
+        self.wiki("docs/wiki")
+        self.write(self.repo / "CLAUDE.md", "# Rules\nKeep all original rules.\n")
+        self.write(self.repo / "GEMINI.md", "## Wiki\n`docs/wiki`\n")
+        before = {p.name: p.read_bytes() for p in self.repo.glob("*.md")}
+        report = self.audit()["projects"][0]["preflight"]
+        self.assertEqual(report["state"], "consolidation_required")
+        self.assertFalse(report["allow_create_agents"])
+        self.assertFalse(report["allow_update_agents"])
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.repo.glob("*.md")})
+        self.assertFalse((self.repo / "AGENTS.md").exists())
+
+    def test_case_collision_is_not_writable(self):
+        self.write(self.repo / "AGENTS.md", "# Canonical")
+        self.write(self.repo / "agents.md", "# Different")
+        names = {p.name for p in self.repo.iterdir()}
+        if not {"AGENTS.md", "agents.md"} <= names:
+            self.skipTest("fixture needs a case-sensitive filesystem")
+        report = self.audit()["projects"][0]["preflight"]
+        self.assertFalse(report["allow_update_agents"])
+        self.assertEqual(report["state"], "consolidation_required")
+
+    def test_presence_all_names_at_cwd_and_ancestor(self):
+        ancestor = self.home / "workspace"
+        cwd = ancestor / "project"
+        cwd.mkdir(parents=True)
+        for name in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
+            self.write(ancestor / name, "private ancestor")
+            self.write(cwd / name, "private project")
+        with patch.object(Path, "read_text", side_effect=AssertionError("opened")), patch.object(AUDIT, "command", side_effect=AssertionError("spawned")):
+            blockers = AUDIT.claude_blockers(cwd, self.home)
+        for name in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
+            self.assertIn(str(cwd / name), blockers)
+            self.assertIn(str(ancestor / name), blockers)
+
+
 class ExportTests(Workspace):
     def setUp(self):
         super().setUp()

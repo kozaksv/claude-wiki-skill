@@ -130,14 +130,17 @@ load_harness_registry() {
   local registry
   if [ -n "${WIKI_INSTALL_SOURCE_DIR:-}" ]; then
     registry="$WIKI_INSTALL_SOURCE_DIR/lib/harnesses.sh"
-    if [ -f "$registry" ]; then
+    if [ -f "$registry" ] && [ -f "$WIKI_INSTALL_SOURCE_DIR/SKILL.md" ] &&
+       [ -f "$WIKI_INSTALL_SOURCE_DIR/install.sh" ] &&
+       cmp -s "$WIKI_INSTALL_SOURCE_DIR/install.sh" "${BASH_SOURCE[0]}"; then
       source "$registry"
       HARNESS_REGISTRY_READY=1
       return 0
     fi
   fi
-  registry="$SKILL_LINK/lib/harnesses.sh"
-  if [ -f "$registry" ]; then
+  registry="$SKILL_DIR/lib/harnesses.sh"
+  if [ -L "$SKILL_LINK" ] && [ "$(readlink "$SKILL_LINK")" = "$SKILL_DIR" ] &&
+     [ -d "$SKILL_DIR/.git" ] && [ -f "$registry" ]; then
     source "$registry"
     HARNESS_REGISTRY_READY=1
     return 0

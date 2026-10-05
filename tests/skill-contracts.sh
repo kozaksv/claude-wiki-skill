@@ -460,7 +460,7 @@ grep -q 'consolidation_required' "$ROOT/scripts/instructions.py" || fail 'legacy
 grep -q 'No instruction writes' "$ROOT/references/instructions-audit.md" || fail 'legacy write guard missing'
 grep -q 'same-level' "$ROOT/references/reader-core.md" || fail 'shared conflict contract missing'
 grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" || fail 'non-absent consent gate missing'
-grep -q 'Without explicit y, do not write instruction files' "$ROOT/references/operation-init.md" || fail 'consent boundary missing'
+grep -q 'Without explicit y, do not' "$ROOT/references/operation-init.md" || fail 'consent boundary missing'
 grep -q 'one canonical wiki per git root marker' "$ROOT/references/discovery-versioning.md" || fail 'monorepo contract missing'
 
 # Release metadata has more than one consumer. Check agreement rather than

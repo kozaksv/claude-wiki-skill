@@ -507,7 +507,7 @@ grep -q 'foreign qwen content' "$HOME_QWEN_REAL_DIR/.qwen/skills/wiki/foreign-fi
   echo "expected foreign file inside .qwen/skills/wiki to remain untouched"
   exit 1
 }
-grep -q "$HOME_QWEN_REAL_DIR/.qwen/skills/wiki .*пропущено" "$TMP/install-qwen-real-dir.log" || {
+grep -q "пропущено.*$HOME_QWEN_REAL_DIR/.qwen/skills/wiki" "$TMP/install-qwen-real-dir.log" || {
   echo "expected .qwen/skills/wiki real-directory conflict to be reported as skipped"
   exit 1
 }
@@ -524,11 +524,11 @@ PATH="$BIN_DIR:$PATH" HOME="$HOME_BLOCKED_EXPORT" bash "$ROOT/install.sh" >"$TMP
   echo "did not expect .agents wiki export when .agents is a plain file"
   exit 1
 }
-grep -q "$HOME_BLOCKED_EXPORT/.agents існує і не є директорією" "$TMP/install-blocked-export.log" || {
+grep -q "unsafe parent.*$HOME_BLOCKED_EXPORT/.agents/skills/wiki" "$TMP/install-blocked-export.log" || {
   echo "expected blocked export root file-vs-directory conflict to be reported"
   exit 1
 }
-grep -q "$HOME_BLOCKED_EXPORT/.agents/skills/wiki .*пропущено" "$TMP/install-blocked-export.log" || {
+grep -q "пропущено.*$HOME_BLOCKED_EXPORT/.agents/skills/wiki" "$TMP/install-blocked-export.log" || {
   echo "expected blocked .agents wiki export to be marked skipped in summary"
   exit 1
 }
