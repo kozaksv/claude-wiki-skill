@@ -18,7 +18,7 @@ class Workspace(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.home = Path(self.tmp.name) / "home with spaces"
+        self.home = Path(self.tmp.name).resolve() / "home with spaces"
         self.home.mkdir()
         self.repo = self.home / "project"
         self.repo.mkdir()
@@ -126,7 +126,7 @@ class DiscoveryTests(Workspace):
         cases = json.loads((ROOT / "references/discovery-cases.json").read_text())
         for case in cases:
             with self.subTest(case=case["id"]), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
+                root = Path(tmp).resolve()
                 subprocess.run(["git", "init", "-q", str(root)], check=True, env=self.env)
                 for path, text in case["files"].items(): self.write(root / path, text)
                 cwd = root / case.get("cwd", "."); cwd.mkdir(exist_ok=True, parents=True)

@@ -34,7 +34,7 @@ class UpgradeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="wiki-upgrade-")
         self.addCleanup(self.temp.cleanup)
-        self.base = Path(self.temp.name)
+        self.base = Path(self.temp.name).resolve()
         self.home = self.base / "home"
         self.home.mkdir()
         (self.home / ".claude/skills").mkdir(parents=True)
@@ -176,7 +176,7 @@ class SessionHealthTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="wiki-health-")
         self.addCleanup(self.temp.cleanup)
-        self.project = Path(self.temp.name)
+        self.project = Path(self.temp.name).resolve()
         subprocess.run(["git", "init", "-q", str(self.project)], check=True)
         self.wiki = self.project / "docs/wiki"
         (self.wiki / "concepts").mkdir(parents=True)

@@ -19,7 +19,7 @@ class WikiTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.write("index.md", "# Wiki\n\nCurated guidance stays here.\n")
         self.write("concepts/topic.md", "# Topic\n\n## Current\nUse the new flow.\n")
         self.wiki = wiki.Wiki(self.root)

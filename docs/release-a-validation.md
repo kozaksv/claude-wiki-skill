@@ -49,3 +49,24 @@ For each receipt record commit, surface, cwd/scenario, command or interaction,
 observed result and pass/fail/not-run. Do not include private rules or credentials.
 The release remains pending when required runs are missing, even when code
 review and all automated checks have passed.
+
+## Reviewer receipts on `9737036` — 2026-10-05
+
+Source: [review and native receipts](https://github.com/kozaksv/claude-wiki-skill/pull/15#issuecomment-5994628035).
+The reviewer found no code blockers; these are reviewer-observed runs on the
+original PR commit, not reruns by the editing agent and not blanket validation
+of subsequent commits. The real HOME was not changed.
+
+| Surface | Observed evidence | Remaining acceptance work |
+|---|---|---|
+| Claude | Root/nested AGENTS with tools disabled; local blocker control; compact; wiki query using PR skill and PR hook | `/memory` interactive view not run; behavioral evidence is recorded, not a fabricated UI receipt |
+| Codex | Root/nested and fallback control passed | Wiki query used the global **master** skill; rerun with the PR skill for #9 |
+| agy | Root/nested and wiki query using workspace PR skill passed | Global CLI export runtime not run; temporary-HOME filesystem check is not equivalent |
+| Qwen | No completed model runs | API 403 `Access to model denied`; query and duplicate-skill check remain unverified |
+| GitHub agent | Not run on the reviewer's stand | Connector scenario receipt still required |
+
+The reviewer also reproduced macOS fixture path mismatches (`/var` versus
+`/private/var`). The follow-up normalizes test fixture roots, makes missing
+outside-pointer reasons independent of `realpath` behavior, preserves safe
+physical aliases, and adds Ubuntu/macOS CI. Native model receipts remain
+separate from these deterministic regression tests.
