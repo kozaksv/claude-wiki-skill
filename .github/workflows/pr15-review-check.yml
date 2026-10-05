@@ -32,13 +32,16 @@ jobs:
           PY
           test ! -e .github/pr15-review-patch.py
           test ! -e .github/workflows/pr15-review-check.yml
-          git add -- .github/workflows/wiki-contracts.yml hooks/lib/discover.sh install.sh references/operation-ingest-binary.md tests/test_release_a.py tests/test_wiki_tools.py tests/test_hook_upgrade.py tests/hooks/run.sh tests/test_pr15_review.py docs/release-a-validation.md skills/wiki-github
+          # The runner token can publish source but not workflow changes.
+          # Apply the reviewed permanent CI matrix separately through the connector.
+          git show "$base:.github/workflows/wiki-contracts.yml" > .github/workflows/wiki-contracts.yml
+          git add -- hooks/lib/discover.sh install.sh references/operation-ingest-binary.md tests/test_release_a.py tests/test_wiki_tools.py tests/test_hook_upgrade.py tests/hooks/run.sh tests/test_pr15_review.py docs/release-a-validation.md skills/wiki-github
           git diff --cached --check
           git diff --cached --stat
           git config user.name 'kozaksv'
           git config user.email 'kozaksv@users.noreply.github.com'
           tree=$(git write-tree)
-          commit=$(printf '%s\n' 'fix: address PR15 portability and repair review' '' 'Normalize test fixture roots, stabilize missing/outside discovery reasons,' 'retain validated physical aliases, document canonical-link recovery,' 'fix the agy binary-ingest example and run contracts on Linux and macOS.' '' 'Refs #7, #8, #9; native acceptance remains separate.' | git commit-tree "$tree" -p "$base")
+          commit=$(printf '%s\n' 'fix: address PR15 portability and repair review' '' 'Normalize test fixture roots, stabilize missing/outside discovery reasons,' 'retain validated physical aliases, document canonical-link recovery,' 'and fix the agy binary-ingest example.' '' 'Refs #7, #8, #9; native acceptance remains separate.' | git commit-tree "$tree" -p "$base")
           git push origin "$commit:refs/heads/work/pr15-review-candidate-20261005"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "CANDIDATE_COMMIT=$commit"
