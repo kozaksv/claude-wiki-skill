@@ -19,7 +19,7 @@ class WikiTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.write("index.md", "# Wiki\n\nCurated guidance stays here.\n")
         self.write("concepts/topic.md", "# Topic\n\n## Current\nUse the new flow.\n")
         self.wiki = wiki.Wiki(self.root)
@@ -229,7 +229,7 @@ class WikiTests(unittest.TestCase):
 class DiscoveryTests(unittest.TestCase):
     def test_partial_wiki_or_directory_index_is_not_valid_discovery(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             subprocess.run(["git", "init", "-q", directory], check=True)
             (root / "docs/wiki").mkdir(parents=True)
             (root / "AGENTS.md").write_text("## Вікі\n`docs/wiki`\n")
@@ -248,7 +248,7 @@ class DiscoveryTests(unittest.TestCase):
             "## Вікіпедія": False,
         }
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             subprocess.run(["git", "init", "-q", directory], check=True)
             (root / "knowledge/wiki").mkdir(parents=True)
             (root / "knowledge/wiki/index.md").write_text("# Wiki")
@@ -259,9 +259,9 @@ class DiscoveryTests(unittest.TestCase):
                                             env={**os.environ, "LC_ALL": "C"}, capture_output=True, text=True, check=True)
                     self.assertEqual(result.stdout.strip(), str(root / "knowledge/wiki") if valid else "")
 
-    def test_fences_h1_boundary_and_active_agent_priority(self):
+    def test_fences_h1_boundary_and_agent_neutral_conflict(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             subprocess.run(["git", "init", "-q", directory], check=True)
             for name in ("a", "b"):
                 (root / name).mkdir()
@@ -277,9 +277,13 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertEqual(result.strip(), str(root / expected) if expected else "")
             (root / "CLAUDE.md").write_text("## Wiki\n`a`\n")
             (root / "AGENTS.md").write_text("## Wiki\n`b`\n")
-            result = subprocess.check_output(["bash", str(ROOT / "hooks/lib/discover.sh"), directory],
-                                              env={**os.environ, "WIKI_DISCOVERY_AGENT": "codex"}, text=True)
-            self.assertEqual(result.strip(), str(root / "b"))
+            for agent in ("codex", "claude", "qwen", "agy"):
+                result = subprocess.run(["bash", str(ROOT / "hooks/lib/discover.sh"), directory],
+                                        env={**os.environ, "WIKI_DISCOVERY_AGENT": agent},
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 3)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("same-level", result.stderr)
 
 
 if __name__ == "__main__":

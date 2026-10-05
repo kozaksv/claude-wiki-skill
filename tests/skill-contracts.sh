@@ -451,131 +451,19 @@ grep -rq "$legacy_reflection_field" "$ROOT/references/" "$ROOT/SKILL.md" "$ROOT/
 grep -rq 'Кристалізація:' "$ROOT/tests/scenarios/reflection-triggers.md" ||
   fail "reflection-triggers scenarios must show the Кристалізація: field in expected block output"
 
-grep -q '~/.gemini/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" ||
-  fail "doc-extract fallback must include Gemini direct export"
-
-grep -q 'Cross-agent skill availability' "$ROOT/references/operation-init.md" ||
-  fail "init reference must include cross-agent skill availability self-heal"
-
-grep -q '~/.agents/skills/wiki' "$ROOT/references/operation-init.md" ||
-  fail "init reference must ensure Codex can discover the wiki skill"
-
-grep -q 'install.sh' "$ROOT/references/operation-init.md" ||
-  fail "init reference must point agents at the installer for skill exports"
-
-grep -q -- '--repair-exports' "$ROOT/references/operation-init.md" ||
-  fail "init reference must use repair-only installer mode for skill exports"
-
-grep -q 'Cross-agent instruction-file sync' "$ROOT/references/discovery-versioning.md" ||
-  fail "discovery reference must define cross-agent instruction-file sync"
-
-grep -q 'Cross-agent instruction-file sync' "$ROOT/references/operation-init.md" ||
-  fail "init reference must include cross-agent instruction-file sync"
-
-grep -q '{schema_path_relative_to_instruction_file}' "$ROOT/references/discovery-versioning.md" ||
-  fail "instruction-file sync must compute schema pointer relative to each instruction file"
-
-grep -q 'replacing the pointer section with the full Session-Start' "$ROOT/references/discovery-versioning.md" ||
-  fail "instruction-file sync must repair a stale pointer by rewriting the pointer section with the Session-Start Contract block"
-
-grep -q 'never silently discard' "$ROOT/references/discovery-versioning.md" ||
-  fail "stale-pointer repair must surface pre-existing custom ## Wiki content as a DECIDE finding before overwriting"
-
-grep -q 'Do not run this sync during status, lint, or query' "$ROOT/references/discovery-versioning.md" ||
-  fail "status/lint/query must remain read-only unless the user explicitly asks for pointer repair"
-
-grep -q 'Cross-agent skill exports' "$ROOT/references/operation-init.md" ||
-  fail "init bootstrap plan must disclose cross-agent skill export repair"
-
-grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" ||
-  fail "init reference must consent-gate repairs for current/legacy/older/newer states"
-
-grep -q 'Проєктні instruction-файли потребують ремонту' "$ROOT/references/operation-init.md" ||
-  fail "non-absent init consent block must include project-local pointer repairs"
-
-grep -q 'Глобальні skill exports потребують ремонту' "$ROOT/references/operation-init.md" ||
-  fail "non-absent init consent block must include global export repairs in the user-facing language"
-
-if grep -q 'Project-local instruction files: OK' "$ROOT/references/operation-init.md"; then
-  fail "non-absent init no-op labels must not mix English project-local status text into the UA flow"
-fi
-
-if ! awk '/write only after explicit approval\./ { getline; exit ($0 == "" ? 0 : 1) }' \
-  "$ROOT/references/discovery-versioning.md"; then
-  fail "discovery sync consent gate and read-only invariant should be separate paragraphs"
-fi
-
-if ! tr '\n' ' ' <"$ROOT/references/operation-init.md" |
-  grep -q 'Without explicit y, do not write instruction files'; then
-  fail "non-absent init must not write pointer files without consent"
-fi
-
-if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" |
-  grep -q 'For non-absent Init states'; then
-  fail "instruction-file sync reference must point non-absent init writes at the consent block"
-fi
-
-grep -q 'listing only the project-local repair' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
-  fail "Scenario 3c2 must document consent-gated project-local pointer repair"
-
-grep -q 'listing only the global export repair' "$ROOT/tests/scenarios/cross-agent-discovery.md" ||
-  fail "cross-agent scenarios must cover exports-only non-absent init repair"
-
-# These exact README phrasing guards intentionally protect documentation-side
-# consent invariants. Wordsmithing is fine, but update the docs and guards
-# together so review can see the contract changed intentionally.
-grep -q 'Без \[y\] жодних файлів не пишеться' "$ROOT/README.md" ||
-  fail "README recovery docs must say non-absent init repairs require explicit consent"
-
-grep -q 'Combined migration plan with export repair' "$ROOT/references/operation-init.md" ||
-  fail "legacy/older init must show how export repair is integrated into migration plans"
-
-grep -q 'Зроблю всі N кроків одразу' "$ROOT/references/operation-init.md" ||
-  fail "combined migration plan must use computed N, not a literal step count"
-
-if ! tr '\n' ' ' <"$ROOT/references/operation-init.md" |
-  grep -q 'Either, both, or neither repair step may be needed'; then
-  fail "combined migration plan must clarify single-repair and no-repair cases"
-fi
-
-if grep -q 'Зроблю всі 3 кроки одразу' "$ROOT/references/operation-init.md"; then
-  fail "combined migration plan must not hard-code a literal step count"
-fi
-
-grep -q 'outcome checklist, not an execution-order trace' "$ROOT/references/operation-init.md" ||
-  fail "init plan must clarify plan-vs-execute ordering"
-
-grep -q 'Use Execute checklist numbering' "$ROOT/references/discovery-versioning.md" ||
-  fail "partial-failure reporting must clarify which step numbering to use"
-
-grep -q 'any pointer line that resolves to a valid on-disk wiki' "$ROOT/references/discovery-versioning.md" ||
-  fail "instruction-file sync must define behavior for valid but non-canonical pointer text"
-
-if grep -q 'create missing minimal instruction files with "Wiki schema → {schema_path_relative_to_instruction_file}"' "$ROOT/references/operation-init.md"; then
-  fail "init user-facing plan must not leak raw schema_path_relative_to_instruction_file placeholder"
-fi
-
-grep -q 'AGENTS.md' "$ROOT/references/operation-init.md" ||
-  fail "init reference must ensure Codex project pointer files are covered"
-
-grep -q 'GEMINI.md' "$ROOT/references/operation-init.md" ||
-  fail "init reference must ensure Gemini project pointer files are covered"
-
-grep -q 'create missing minimal instruction files' "$ROOT/references/discovery-versioning.md" ||
-  fail "discovery reference must allow safe creation of missing agent pointer files"
-
-grep -q 'empty project' "$ROOT/references/operation-init.md" ||
-  fail "init reference must define empty-project bootstrap behavior"
-
-grep -q 'do not ask the user for more project information' "$ROOT/references/operation-init.md" ||
-  fail "empty-project init must not ask for extra project information"
-
-grep -q 'entities/.*empty directory' "$ROOT/references/operation-init.md" ||
-  fail "empty-project init must keep entities/ empty"
-
-if grep -q 'no code signals.*people/' "$ROOT/references/operation-init.md"; then
-  fail "no-code project detection must not invent people/documents categories"
-fi
+# Release A replaces four-file sync assertions with canonical write guards.
+for ref in operation-init.md operation-ingest-source.md operation-lint.md discovery-versioning.md; do
+  grep -q 'instructions-audit.md' "$ROOT/references/$ref" || fail "$ref must route instruction writes through preflight"
+done
+grep -q "'agy|.gemini/config/skills|export'" "$ROOT/lib/harnesses.sh" ||
+  fail 'agy global export must target ~/.gemini/config/skills (runtime-verified path)'
+grep -q '~/.gemini/config/skills/doc-extract' "$ROOT/references/operation-ingest-binary.md" || fail 'agy extractor export missing'
+grep -q 'consolidation_required' "$ROOT/scripts/instructions.py" || fail 'legacy preflight missing'
+grep -q 'No instruction writes' "$ROOT/references/instructions-audit.md" || fail 'legacy write guard missing'
+grep -q 'same-level' "$ROOT/references/reader-core.md" || fail 'shared conflict contract missing'
+grep -q 'Non-absent Init consent block' "$ROOT/references/operation-init.md" || fail 'non-absent consent gate missing'
+grep -q 'Without explicit y, do not' "$ROOT/references/operation-init.md" || fail 'consent boundary missing'
+grep -q 'one canonical wiki per git root marker' "$ROOT/references/discovery-versioning.md" || fail 'monorepo contract missing'
 
 # Release metadata has more than one consumer. Check agreement rather than
 # pinning a historical release while README or plugin metadata quietly drifts.
@@ -603,10 +491,10 @@ grep -q 'operation-doctor.md' "$ROOT/SKILL.md" ||
 grep -q 'wiki-hooks-optout' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery-versioning.md must define the wiki-hooks-optout marker"
 
-grep -q '### 4.5.0' "$ROOT/references/discovery-versioning.md" ||
+grep -q '### 4.5.0' "$ROOT/docs/history/instruction-schema-release-log.md" ||
   fail "discovery-versioning.md Migration Log must have a ### 4.5.0 entry"
 
-grep -q '### 4.5.1' "$ROOT/references/discovery-versioning.md" ||
+grep -q '### 4.5.1' "$ROOT/docs/history/instruction-schema-release-log.md" ||
   fail "discovery-versioning.md Migration Log must have a ### 4.5.1 entry"
 
 # t14-refs-discovery: Qwen Code is now a fourth agent-instruction-file source
@@ -617,7 +505,7 @@ grep -q 'QWEN.md' "$ROOT/references/discovery-versioning.md" ||
   fail "discovery-versioning.md must cover QWEN.md as an agent instruction file"
 
 if ! tr '\n' ' ' <"$ROOT/references/discovery-versioning.md" |
-  grep -q 'CLAUDE.md`.*AGENTS.md`.*GEMINI.md`.*QWEN.md`'; then
+  grep -q 'AGENTS.md`.*CLAUDE.md`.*GEMINI.md`.*QWEN.md`'; then
   fail "discovery-versioning.md must document the deterministic CLAUDE.md -> AGENTS.md -> GEMINI.md -> QWEN.md pointer priority order"
 fi
 
@@ -627,10 +515,10 @@ grep -q 'QWEN.md' "$ROOT/references/operation-init.md" ||
 grep -qF '~/.qwen/skills' "$ROOT/references/operation-init.md" ||
   fail "operation-init.md Cross-agent skill availability must check ~/.qwen/skills/wiki"
 
-grep -q '### 4.6.0' "$ROOT/references/discovery-versioning.md" ||
+grep -q '### 4.6.0' "$ROOT/docs/history/instruction-schema-release-log.md" ||
   fail "discovery-versioning.md Migration Log must have a ### 4.6.0 entry"
 
-grep -q '### 4.7.0' "$ROOT/references/discovery-versioning.md" ||
+grep -q '### 4.7.0' "$ROOT/docs/history/instruction-schema-release-log.md" ||
   fail "discovery-versioning.md Migration Log must have a ### 4.7.0 entry"
 
 skill_version="$(sed -n 's/^version: "\([0-9][0-9]*\)\..*/\1/p' "$ROOT/SKILL.md" | head -1)"

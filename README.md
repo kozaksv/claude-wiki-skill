@@ -1,8 +1,8 @@
 # Wiki Skill
 
-**Версія скіла: 4.10.0 · Типовий install ref: `master` · Схема вікі: `4.0`**
+**Версія скіла: 4.11.0 · Типовий install ref: `master` · Схема вікі: `4.0`**
 
-Спільна LLM Wiki для **Claude Code, Codex, Gemini CLI, Qwen Code та ChatGPT з GitHub**.
+Спільна LLM Wiki для **Claude Code, Codex, agy CLI, Qwen Code та ChatGPT з GitHub**.
 Скіл читає джерела перед відповіддю, зберігає рішення й підтримує Markdown-базу
 знань проєкту. Сховище — ваш Git-репозиторій, а не пам’ять окремого чату.
 
@@ -31,13 +31,16 @@
 
 Інсталятор створює одну копію скіла та посилання на неї:
 
-```text
-~/claude-wiki-skill                       Git-клон
-~/.claude/skills/wiki                 -> ~/claude-wiki-skill
-~/.agents/skills/wiki                 -> ~/.claude/skills/wiki
-~/.gemini/skills/wiki                 -> ~/.claude/skills/wiki
-~/.qwen/skills/wiki                   -> ~/.claude/skills/wiki
-```
+Реальний клон: `~/claude-wiki-skill`; решта шляхів — посилання.
+
+<!-- harness-exports:start -->
+| Harness | Global wiki entrypoint | Kind |
+|---|---|---|
+| claude | `~/.claude/skills/wiki` | canonical |
+| codex | `~/.agents/skills/wiki` | export |
+| agy | `~/.gemini/config/skills/wiki` | export |
+| qwen | `~/.qwen/skills/wiki` | export |
+<!-- harness-exports:end -->
 
 Окремо встановлюється optional `doc-extract`, зафіксований на known-good commit.
 Без нього доступні всі операції з Markdown; недоступний лише `ingest-binary`.
@@ -97,7 +100,7 @@ bash "$HOME/.claude/skills/wiki/install.sh" master \
   --project /path/to/project-b
 ```
 
-Цю коротку команду використовуйте **після першого оновлення до 4.10+**.
+Цю коротку команду використовуйте **після першого оновлення до 4.11+**.
 Для переходу зі старого інсталятора використовуйте блок із `curl` вище.
 
 ### Як зрозуміти результат
@@ -268,3 +271,40 @@ bash "$HOME/.claude/skills/wiki/uninstall.sh"
 
 Історичний README збережено для довідки; старі таблиці тегів і контракти hooks
 не є інструкцією для поточної версії.
+
+## AGENTS.md-only — реліз A (4.11)
+
+Нові спільні правила створюються лише в `AGENTS.md`. У порожньому проєкті
+невідомі Codex profiles не блокують init. Якщо вже є legacy/fallback instructions,
+короткий AGENTS-stub не створюється; скіл повідомляє `consolidation required`.
+Ingest і stale-pointer repair також не пишуть у старі instruction-файли.
+Наявні custom pointers працюють; у legacy scope можна використовувати
+`docs/wiki/` без нового pointer. Новий custom path, що вимагає instruction-змін,
+чекає на консолідацію B. Наявні проєктні файли A не видаляє.
+
+```bash
+python3 "$HOME/.claude/skills/wiki/scripts/instructions.py" audit --project "$PWD" --json
+bash "$HOME/.claude/skills/wiki/hooks/doctor.sh" --project "$PWD" --json
+```
+
+Аудит показує layout, вибрану вікі, старі blocker-файли Claude й exports окремо
+від hook verification. **Версію Claude не перевіряємо.** Конфлікт різних валідних
+вікі в одній директорії зупиняє неадресовані записи, навіть телеметрію hooks;
+окремі вікі кореня й вкладеного компонента не блокують роботу.
+
+**Gemini CLI більше не підтримується; з Google-харнесів — лише agy CLI.**
+Новий installer спочатку перевіряє agy export, потім прибирає лише exact-owned
+`~/.gemini/skills/wiki` / `doc-extract` links. За конфлікту заміни старий link
+зберігається з попередженням. `.gemini` tree, settings, credentials і сторонні
+skills не видаляються. Після запуску старої копії installer перевірте новим
+`install.sh --repair-exports`. Старий pinned ref без registry явно повідомляє,
+що exports не перевірені. Повний install зберігає історичну best-effort політику
+export-кроку; repair повертає `2` за неповних exports, hook failure — `3`.
+
+**Реліз B ще не реалізований:** змістовне об’єднання, оптимізація через наявний
+lint, видалення legacy-файлів і автоматизовані private checkpoints не є частиною
+A. Вони описані в епіку #6 та сабепіках #10–#14. Оновіть усі інсталяції перед
+майбутньою спільною міграцією, щоб старі версії не відтворювали дублікати.
+
+Приймання A: автоматичні тести плюс окремі live receipts Claude/Codex/Qwen/agy
+і GitHub-адаптера. `not run` не означає pass; див. `docs/release-a-validation.md`.

@@ -27,10 +27,10 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    ask user to confirm or edit
 4. **Extract text → transcript (via `doc-extract` skill):**
    Prefer the neutral export path. If it is missing or broken, fall back to the
-   Gemini direct export and then the shared canonical entrypoint
+   agy CLI direct export and then the shared canonical entrypoint
    (`~/.claude/skills/doc-extract`). This makes the contract explicit:
    `~/.agents/skills/doc-extract` is the cross-agent default,
-   `~/.gemini/skills/doc-extract` is Gemini's direct user-skill path, and
+   `~/.gemini/config/skills/doc-extract` is agy CLI's direct user-skill path, and
    `~/.claude/skills/doc-extract` is the recovery path when exports were
    removed or not yet created.
 
@@ -40,7 +40,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    TRANSCRIPT_OUT="<wiki>/transcripts/<slug>.md"
    DOC_EXTRACT_ROOT="$HOME/.agents/skills/doc-extract"
    if [ ! -x "$DOC_EXTRACT_ROOT/bin/extract.sh" ]; then
-     DOC_EXTRACT_ROOT="$HOME/.gemini/skills/doc-extract"
+     DOC_EXTRACT_ROOT="$HOME/.gemini/config/skills/doc-extract"
    fi
    if [ ! -x "$DOC_EXTRACT_ROOT/bin/extract.sh" ]; then
      DOC_EXTRACT_ROOT="$HOME/.claude/skills/doc-extract"
@@ -80,7 +80,7 @@ Process a binary artifact (PDF, DOCX, image) into the wiki and archive.
    install-команду wiki stack'а: `curl -fsSL https://raw.githubusercontent.com/kozaksv/claude-wiki-skill/master/install.sh | bash`.
    Do not send the user to the standalone `doc-extract` installer here: the wiki
    installer provisions the dependency and creates the cross-agent exports
-   (`~/.agents/skills/doc-extract`, `~/.gemini/skills/doc-extract`) expected by
+   (`~/.agents/skills/doc-extract`, `~/.gemini/config/skills/doc-extract`) expected by
    the fallback chain above.
 5. **Move binary → `archive/{category}/{slug}.{ext}`** (per File Naming convention).
    The archive category mirrors the entity path (`entities/{category}/{slug}.md`)

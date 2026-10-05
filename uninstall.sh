@@ -42,9 +42,6 @@ while [ "$#" -gt 0 ]; do
 done
 
 SKILLS_ROOT="$HOME/.claude/skills"
-AGENTS_SKILLS_ROOT="$HOME/.agents/skills"
-GEMINI_SKILLS_ROOT="$HOME/.gemini/skills"
-QWEN_SKILLS_ROOT="$HOME/.qwen/skills"
 
 SKILL_DIR="$HOME/claude-wiki-skill"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
@@ -54,6 +51,11 @@ HOOKS_FAILED=0
 
 remove_symlink_entry() {
   local path="$1" expected_target="$2"
+  if ! wiki_export_parent_safe "$path"; then
+    echo "$path — skipped (unsafe parent)"
+    SKIPPED=1
+    return 0
+  fi
   if [ -L "$path" ]; then
     local current
     current="$(readlink "$path")"
@@ -62,7 +64,8 @@ remove_symlink_entry() {
       SKIPPED=1
       return 0
     fi
-    rm "$path"
+    [ -L "$path" ] && [ "$(readlink "$path")" = "$expected_target" ] || { SKIPPED=1; return 0; }
+    rm -- "$path"
     echo "$path — removed symlink (was → $current)"
     return 0
   fi
@@ -142,6 +145,15 @@ SETTINGS_FILES=("$CLAUDE_SETTINGS" "$QWEN_SETTINGS")
 # installer. Sourced from THIS script's own directory: uninstall.sh always
 # ships inside the clone, so the lib sits next to it.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Registry is loaded from this trusted script checkout, not a foreign export.
+if [ -f "$SELF_DIR/lib/harnesses.sh" ]; then
+  source "$SELF_DIR/lib/harnesses.sh"
+else
+  echo 'wiki: harness registry unavailable; preserving exports'
+  wiki_export_parent_safe() { return 1; }
+  wiki_harness_records() { return 0; }
+  SKIPPED=1
+fi
 LOCK_LIB="$SELF_DIR/hooks/lib/settings-lock.sh"
 LOCK_LIB_OK=0
 if [ -f "$LOCK_LIB" ]; then
@@ -210,21 +222,22 @@ if [ -d "$SKILL_DIR/.git" ] && [ -f "$HOOK_UNINSTALLER" ]; then
   fi
 fi
 
-# Remove exports first so canonical links do not become dangling during a
-# partial uninstall.
-remove_symlink_entry "$AGENTS_SKILLS_ROOT/wiki" "$SKILLS_ROOT/wiki"
-remove_symlink_entry "$GEMINI_SKILLS_ROOT/wiki" "$SKILLS_ROOT/wiki"
-remove_symlink_entry "$QWEN_SKILLS_ROOT/wiki" "$SKILLS_ROOT/wiki"
-remove_symlink_entry "$AGENTS_SKILLS_ROOT/doc-extract" "$SKILLS_ROOT/doc-extract"
-remove_symlink_entry "$GEMINI_SKILLS_ROOT/doc-extract" "$SKILLS_ROOT/doc-extract"
-remove_symlink_entry "$QWEN_SKILLS_ROOT/doc-extract" "$SKILLS_ROOT/doc-extract"
+# Remove supported exports and exact-owned retired links before canonical.
+while IFS='|' read -r id relative entry_kind; do
+  [ "$entry_kind" = export ] || continue
+  for skill in wiki doc-extract; do
+    remove_symlink_entry "$HOME/$relative/$skill" "$SKILLS_ROOT/$skill"
+  done
+done < <(wiki_harness_records)
+for skill in wiki doc-extract; do
+  remove_symlink_entry "$HOME/.gemini/skills/$skill" "$SKILLS_ROOT/$skill"
+done
 remove_symlink_entry "$SKILLS_ROOT/wiki" "$SKILL_DIR"
 remove_symlink_entry "$SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_DIR"
-
-rmdir "$AGENTS_SKILLS_ROOT" 2>/dev/null || true
-rmdir "$GEMINI_SKILLS_ROOT" 2>/dev/null || true
-rmdir "$QWEN_SKILLS_ROOT" 2>/dev/null || true
-rmdir "$SKILLS_ROOT" 2>/dev/null || true
+while IFS='|' read -r id relative entry_kind; do
+  if wiki_export_parent_safe "$HOME/$relative/entry"; then rmdir "$HOME/$relative" 2>/dev/null || true; fi
+done < <(wiki_harness_records)
+if wiki_export_parent_safe "$HOME/.gemini/skills/entry"; then rmdir "$HOME/.gemini/skills" 2>/dev/null || true; fi
 
 # ---------------------------------------------------------------------------
 # CRITICAL SECTION (t12-orphan-guard-locks / codex-атк P1, wave3)

@@ -1,3 +1,7 @@
+> Release A: old four-file sync expectations below are historical. Current
+> instruction/discovery behavior is tested by `test_release_a.py` and normative
+> `references/discovery-cases.json`; unchanged no-Git/schema cases still apply.
+
 # Scenario: Cross-agent discovery and instruction-file sync
 
 These scenarios exercise the agent-neutral discovery contract for Claude,

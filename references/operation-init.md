@@ -18,7 +18,15 @@ Set up wiki, OR detect existing structure and propose migration.
 
 ### Discovery
 
-1. **Find agent instruction files** by running `## Step 0: Discover Wiki Location and Schema` first. Use the same bounded walk (`cwd` → nearest git marker ancestor, inclusive; `.git/` directory or `.git` file), the same git prerequisite gate, the same pointer validation (`{wiki}/index.md` must exist), and the same conflict rule (never let a stale active-agent pointer override another file's valid wiki). Use existing files when present and keep their wiki pointers in sync. Infer the active agent from the runtime context when it is explicit (Claude → `CLAUDE.md`, Codex → `AGENTS.md`, Gemini → `GEMINI.md`, Qwen → `QWEN.md`). If none exists during fresh bootstrap, create the pointer file that matches the active agent. If the active agent is unclear, ask which agent file to create; only default to `CLAUDE.md` when the user wants the legacy convention or does not care.
+1. **Find agent instruction files** with Step 0 and the same Git boundary.
+   Before the first init write, load `instructions-audit.md` and audit the
+   instruction directory. Wiki-absent is not instruction-empty. Fresh empty
+   scope can create AGENTS even when effective Codex profiles are unknown;
+   a known existing legacy/fallback file cannot be shadowed by a short stub.
+   In legacy scope without canonical, leave instruction files unchanged and
+   report `consolidation required`. Existing custom pointers still work;
+   canonical docs/wiki can be initialized with consent without a pointer.
+   New custom pointers requiring legacy-scope changes wait for release B.
 2. **Determine wiki state** (5-state model, aligned with `## Versioning & Migration > State detection on Step 0`):
 
    | State | Condition | Action |
@@ -96,53 +104,37 @@ After git exists, the git root is the project boundary for this Init run. Do not
 attach a non-git directory to a parent/sibling wiki, and do not bootstrap a wiki
 outside the git root.
 
-### Cross-agent instruction-file sync
+### Canonical instruction-file maintenance
 
-For fresh `absent` bootstrap, Init runs the `Cross-agent instruction-file sync`
-contract from `references/discovery-versioning.md` after creating the wiki. This
-means `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and `QWEN.md` in the project pointer
-directory all get the same short `## Wiki` pointer after the user approves the
-bootstrap plan. The pointer path must be computed as
-`{schema_path_relative_to_instruction_file}` for each file, not copied as a
-literal `docs/wiki/schema.md` unless that is the correct relative path.
-
-Do not treat a `CLAUDE.md`-only current wiki as fully initialized for cross-agent
-use. If Codex opens that project later, `AGENTS.md` needs its own resident hint;
-if Gemini opens it, `GEMINI.md` needs one too; if Qwen opens it, `QWEN.md` needs
-one too. For non-absent states, inspect
-these files first and use the Non-absent Init consent block before writing any
-missing or stale project-local pointers.
+Use `instructions-audit.md` for preflight and every pointer action. Create only
+AGENTS.md in a genuinely empty instruction scope. In an existing regular
+AGENTS.md, preserve rules and valid Wiki/Вікі blocks; repair only a stale
+canonical block after showing its custom content. Legacy files are never
+created or modified, including stale-pointer repair. Instruction aliases are
+consolidation-required, not writable through their target.
 
 ### Cross-agent skill availability
 
-Init must leave the wiki usable from the next agent the user opens. During Init
-(including `current`, `absent`, `older`, and `legacy` outcomes), inspect the
-global `wiki` skill exports before the final response:
+Check the shared canonical `~/.claude/skills/wiki`, then registry-derived
+exports. The Bootstrap plan template (step 12) lists this check. An export means
+filesystem availability, not verified runtime loading. Missing CLI binaries
+are not a reason to delete supported exports or to claim a runtime test.
 
-1. Check the shared canonical entrypoint: `~/.claude/skills/wiki`.
-2. Check the Codex export: `~/.agents/skills/wiki`.
-3. Check the Gemini export: `~/.gemini/skills/wiki`.
-4. Check the Qwen export: `~/.qwen/skills/wiki`.
-5. If any export is missing, broken, or points somewhere other than the shared
-   canonical entrypoint, disclose the repair in the Init plan. After consent,
-   locate the installed skill repository from `~/.claude/skills/wiki` and run
-   `install.sh --repair-exports` once to repair exports without cloning,
-   fetching, or switching refs. The repair mode is idempotent and preserves
-   conflicting non-owned paths. If every export is already valid, this step is a
-   no-op and should be reported as such.
-6. If `install.sh` is unavailable, report the exact missing/broken export and
-   tell the user that Codex/Gemini/Qwen may not discover `wiki` until that
-   symlink is repaired. Do not claim cross-agent readiness unless
-   `~/.agents/skills/wiki` reaches the same `SKILL.md` as
-   `~/.claude/skills/wiki`.
+<!-- harness-exports:start -->
+| Harness | Global wiki entrypoint | Kind |
+|---|---|---|
+| claude | `~/.claude/skills/wiki` | canonical |
+| codex | `~/.agents/skills/wiki` | export |
+| agy | `~/.gemini/config/skills/wiki` | export |
+| qwen | `~/.qwen/skills/wiki` | export |
+<!-- harness-exports:end -->
 
-For `absent`, this repair appears in the Bootstrap plan template (step 12). For
-non-absent states, it appears in the Non-absent Init consent block or, for
-`legacy` / `older`, in the Combined migration plan.
-
-This check is intentionally part of project Init, not only first-time global
-install: many users create a wiki in Claude first and then open Codex. The
-project wiki may be valid while the Codex skill alias is missing.
+If repairs are needed, disclose them in the plan. After consent run the installed
+new `install.sh --repair-exports` once. It performs no fetch/ref switch, creates
+and verifies agy's export before retiring exact-owned old Gemini links, and
+preserves conflicting foreign paths. Optional doc-extract is independent.
+Report missing/broken exports if the installer is unavailable, never invent
+cross-agent readiness. Non-absent Init uses the consent block below.
 
 ### Non-absent Init consent block
 
@@ -188,8 +180,8 @@ migration plan so there is one consent flow.
   1. {schema/content migration step}
   2. {additional schema/content migration step, if any}
   ...
-  N-1. Проєктні instruction-файли — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md`, якщо відсутні або stale
-  N. Глобальні skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/skills/wiki` / `~/.qwen/skills/wiki`, якщо відсутні або broken
+  N-1. Проєктні instruction-файли — погоджений ремонт лише наявного AGENTS.md; legacy scope: звіт consolidation required
+  N. Глобальні skill exports — полагодити `~/.agents/skills/wiki` / `~/.gemini/config/skills/wiki` / `~/.qwen/skills/wiki`, якщо відсутні або broken
 
 Зроблю всі N кроків одразу? [y] / [n] / [пропусти крок N]
 ```
@@ -265,11 +257,11 @@ order steps differently for safe creation, migration, and failure reporting.
   5. docs/wiki/concepts/ — порожня папка (+ `.gitkeep`, бо git не зберігає порожніх папок)
   6. docs/wiki/entities/ — {entities-step}
   7. docs/wiki/transcripts/ — порожня папка (+ `.gitkeep`)
-  8. docs/wiki/.usage.json — телеметрія, порожня крім `_hooks.last_lint_at = now`
+  8. docs/wiki/.usage.json — телеметрія з `_hooks.telemetry_first_seen_at`, без удаваного lint
   9. archive/ — поза wiki (gitignored)
-  10. Agent instruction file(s) — синхронізувати `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md` через Cross-agent instruction-file sync; create missing minimal instruction files with a relative "Wiki schema → ..." path computed per file (usually `docs/wiki/schema.md`)
+  10. AGENTS.md — створити лише після empty-scope preflight або доповнити наявний canonical; legacy scope: без instruction-записів, consolidation required
   11. .gitignore — додати "archive/" і "docs/wiki/.usage.json"
-  12. Cross-agent skill exports — перевірити `~/.agents/skills/wiki`, `~/.gemini/skills/wiki` і `~/.qwen/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
+  12. Cross-agent skill exports — перевірити `~/.agents/skills/wiki`, `~/.gemini/config/skills/wiki` і `~/.qwen/skills/wiki`; якщо exports валідні, no-op; якщо ні, запустити `install.sh --repair-exports`
 
 [y] так, створи все  /  [n] скасувати
 ```
@@ -302,7 +294,10 @@ After consent:
    ---
    ```
 
-   Add a single `## Wiki` pointer through Cross-agent instruction-file sync: ensure `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and `QWEN.md` each point to _"Wiki schema and operations → `{schema_path_relative_to_instruction_file}`. Skill: `wiki`."_ Create missing minimal instruction files as needed. For v1/v2 migrations, move existing instruction-file schema sections into `schema.md`, then let Cross-agent instruction-file sync (see `references/discovery-versioning.md`) own the `## Wiki` section: it rewrites that section to the canonical Session-Start Contract block and surfaces any extra legacy schema/details that lived there as a DECIDE finding before overwriting. Do not hand-edit only the pointer line here — the sync rules in `references/discovery-versioning.md` are the single source of truth for what happens to the `## Wiki` section.
+   Apply `instructions-audit.md`: a single relative Wiki block only in an
+   allowed AGENTS.md. Do not edit legacy instruction schemas/pointers in A;
+   report consolidation-required and preserve originals. A separate, approved
+   wiki-schema migration cannot authorize legacy instruction writes.
 6a. Create `{wiki}/.usage.json`. This is the telemetry sidecar — see `## Telemetry Sidecar`. It is not a bare empty dict: seed it with the reserved `_hooks` metadata key so a freshly bootstrapped wiki isn't immediately flagged as overdue for lint (see `references/telemetry.md` → reserved `_hooks` key):
 
     ```json
@@ -314,7 +309,7 @@ After consent:
 7. Delete approved duplicates
 8. Update `index.md` (three sections: Concepts | Entities | Transcripts)
 9. Append `log.md` with migration record
-10. Run `Cross-agent instruction-file sync` and `Cross-agent skill availability`; include both results in the final `Перевірив:` list
+10. Report `Canonical instruction-file maintenance` and `Cross-agent skill availability`; include both results in the final `Перевірив:` list
 
 ### Versioning during Init
 

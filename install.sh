@@ -6,7 +6,7 @@ if [ "${WIKI_INSTALL_RUNNING_COPY:-}" != "1" ] && [ -f "${BASH_SOURCE[0]:-}" ]; 
   installer_copy="$(mktemp)"
   cat "${BASH_SOURCE[0]}" >"$installer_copy"
   copy_rc=0
-  WIKI_INSTALL_RUNNING_COPY=1 bash "$installer_copy" "$@" || copy_rc=$?
+  WIKI_INSTALL_RUNNING_COPY=1 WIKI_INSTALL_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" bash "$installer_copy" "$@" || copy_rc=$?
   rm -f "$installer_copy"
   exit "$copy_rc"
 fi
@@ -41,9 +41,6 @@ REPO="https://github.com/kozaksv/claude-wiki-skill.git"
 SKILL_DIR="$HOME/claude-wiki-skill"
 SKILLS_ROOT="$HOME/.claude/skills"
 SKILL_LINK="$SKILLS_ROOT/wiki"
-AGENTS_SKILLS_ROOT="$HOME/.agents/skills"
-GEMINI_SKILLS_ROOT="$HOME/.gemini/skills"
-QWEN_SKILLS_ROOT="$HOME/.qwen/skills"
 
 DOC_EXTRACT_REPO="https://github.com/kozaksv/claude-doc-extract-skill.git"
 DOC_EXTRACT_DIR="$HOME/claude-doc-extract-skill"
@@ -66,11 +63,6 @@ set_skill_link() {
     local current
     current="$(readlink "$link")"
     if [ "$current" = "$target_dir" ]; then
-      return 0
-    fi
-    if [ ! -e "$link" ]; then
-      echo "[$name] замінюю битий canonical link: $link"
-      ln -sfn "$target_dir" "$link"
       return 0
     fi
     echo "Помилка: $link вже вказує на $current — не перезаписую canonical link. Видаліть його вручну або перемкніть самостійно."
@@ -132,83 +124,33 @@ install_skill_at_ref() {
   set_skill_link "$name" "$dir" "$link"
 }
 
-export_skill_link() {
-  local name="$1" source_link="$2" export_link="$3"
-  local export_root
-  export_root="$(dirname "$export_link")"
-  local probe="$export_root"
-  while [ ! -e "$probe" ]; do
-    local parent
-    parent="$(dirname "$probe")"
-    [ "$parent" = "$probe" ] && break
-    probe="$parent"
-  done
-  if [ -e "$probe" ] && [ ! -d "$probe" ]; then
-    echo "Увага: export root $probe існує і не є директорією — export пропущено."
-    return 2
-  fi
-  if ! mkdir -p "$export_root"; then
-    echo "Увага: Не вдалося створити export directory: $export_root — export пропущено."
-    return 2
-  fi
-
-  if [ -L "$export_link" ]; then
-    local current
-    current="$(readlink "$export_link")"
-    if [ "$current" = "$source_link" ]; then
-      echo "[$name] export вже існує: $export_link → $source_link"
+HARNESS_REGISTRY_READY=0
+load_harness_registry() {
+  [ "$HARNESS_REGISTRY_READY" = 0 ] || return 0
+  local registry
+  if [ -n "${WIKI_INSTALL_SOURCE_DIR:-}" ]; then
+    registry="$WIKI_INSTALL_SOURCE_DIR/lib/harnesses.sh"
+    if [ -f "$registry" ] && [ -f "$WIKI_INSTALL_SOURCE_DIR/SKILL.md" ] &&
+       [ -f "$WIKI_INSTALL_SOURCE_DIR/install.sh" ] &&
+       cmp -s "$WIKI_INSTALL_SOURCE_DIR/install.sh" "${BASH_SOURCE[0]}"; then
+      source "$registry"
+      HARNESS_REGISTRY_READY=1
       return 0
     fi
-    if [ ! -e "$export_link" ]; then
-      echo "[$name] замінюю битий export: $export_link"
-      if ln -sfn "$source_link" "$export_link"; then
-        return 0
-      fi
-      echo "Увага: Не вдалося створити export: $export_link → $source_link"
-      return 2
-    fi
-    echo "Увага: $export_link вже вказує на $current — не перезаписую."
-    return 2
   fi
-
-  if [ -e "$export_link" ]; then
-    echo "Увага: $export_link вже існує і не є symlink — не перезаписую."
-    return 2
-  fi
-
-  if ln -s "$source_link" "$export_link"; then
-    echo "[$name] export: $export_link → $source_link"
+  registry="$SKILL_DIR/lib/harnesses.sh"
+  if [ -L "$SKILL_LINK" ] && [ "$(readlink "$SKILL_LINK")" = "$SKILL_DIR" ] &&
+     [ -d "$SKILL_DIR/.git" ] && [ -f "$registry" ]; then
+    source "$registry"
+    HARNESS_REGISTRY_READY=1
     return 0
   fi
-  echo "Увага: Не вдалося створити export: $export_link → $source_link"
-  return 2
+  echo 'wiki: harness registry unavailable in this pinned ref; exports not verified' >&2
+  return 1
 }
 
-status_tag() {
-  case "$1" in
-    skipped) printf '  (пропущено)' ;;
-    *)       : ;;
-  esac
-}
-
-print_export_summary() {
-  local link="$1" expected="$2" status="$3"
-  if [ -L "$link" ]; then
-    local current
-    current="$(readlink "$link")"
-    if [ "$current" = "$expected" ]; then
-      echo "  $link → $current"
-    else
-      echo "  $link → $current$(status_tag "$status"; printf ' — expected %s' "$expected")"
-    fi
-    return 0
-  fi
-  if [ -e "$link" ]; then
-    echo "  $link$(status_tag "$status"; printf ' — існує і не є symlink; expected %s' "$expected")"
-    return 0
-  fi
-  echo "  $link$(status_tag "$status"; printf ' — не створено; expected %s' "$expected")"
-}
+# Retain an available current registry in memory before checkout changes refs.
+load_harness_registry 2>/dev/null || true
 
 repair_cross_agent_exports() {
   echo "=== Wiki Skill — repair cross-agent exports ==="
@@ -225,7 +167,9 @@ repair_cross_agent_exports() {
   fi
   if [ ! -e "$SKILL_LINK" ]; then
     echo "Помилка: битий canonical wiki symlink: $SKILL_LINK → $(readlink "$SKILL_LINK")"
-    echo "Запустіть повну інсталяцію: bash install.sh"
+    echo "Перевірте шлях і target вручну. Installer не замінює цей link автоматично."
+    printf 'Після перевірки видаліть лише сам битий symlink (без -r): rm -- %q\n' "$SKILL_LINK"
+    echo "Потім запустіть повну інсталяцію зі свіжого installer: bash install.sh"
     return 1
   fi
   if [ ! -f "$SKILL_LINK/SKILL.md" ]; then
@@ -234,60 +178,9 @@ repair_cross_agent_exports() {
     return 1
   fi
 
-  local wiki_agents_status="ok"
-  local wiki_gemini_status="ok"
-  local wiki_qwen_status="ok"
-  local doc_agents_status="ok"
-  local doc_gemini_status="ok"
-  local doc_qwen_status="ok"
-  local doc_extract_present=0
-
-  if ! export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"; then
-    wiki_agents_status="skipped"
-  fi
-  if ! export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"; then
-    wiki_gemini_status="skipped"
-  fi
-  if ! export_skill_link "wiki" "$SKILL_LINK" "$QWEN_SKILLS_ROOT/wiki"; then
-    wiki_qwen_status="skipped"
-  fi
-
-  if [ -e "$DOC_EXTRACT_LINK/SKILL.md" ]; then
-    doc_extract_present=1
-    if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$AGENTS_SKILLS_ROOT/doc-extract"; then
-      doc_agents_status="skipped"
-    fi
-    if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$GEMINI_SKILLS_ROOT/doc-extract"; then
-      doc_gemini_status="skipped"
-    fi
-    if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$QWEN_SKILLS_ROOT/doc-extract"; then
-      doc_qwen_status="skipped"
-    fi
-  fi
-
-  local any_skipped=0
-  for status in "$wiki_agents_status" "$wiki_gemini_status" "$wiki_qwen_status" "$doc_agents_status" "$doc_gemini_status" "$doc_qwen_status"; do
-    [ "$status" = "skipped" ] && any_skipped=1
-  done
-
-  echo ""
+  load_harness_registry || return 2
   echo "Cross-agent export targets:"
-  print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_agents_status"
-  print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_gemini_status"
-  print_export_summary "$QWEN_SKILLS_ROOT/wiki" "$SKILL_LINK" "$wiki_qwen_status"
-  if [ "$doc_extract_present" -eq 1 ]; then
-    print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_agents_status"
-    print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_gemini_status"
-    print_export_summary "$QWEN_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$doc_qwen_status"
-  else
-    echo "  $DOC_EXTRACT_LINK — optional doc-extract canonical не знайдено; exports не створювались"
-  fi
-  if [ "$any_skipped" -eq 1 ]; then
-    echo ""
-    echo "Увага: частину exports пропущено через конфлікти. Повідомлення вище показують фактичні шляхи."
-    return 2
-  fi
-  return 0
+  wiki_reconcile_exports
 }
 
 if [ "$REPAIR_EXPORTS" -eq 1 ]; then
@@ -316,49 +209,20 @@ mkdir -p "$SKILLS_ROOT"
 # 1. Wiki skill — користувацький pin (за замовчуванням master)
 install_skill_at_ref "wiki" "$REPO" "$SKILL_DIR" "$SKILL_LINK" "$WIKI_VERSION"
 
-# 2. Cross-agent wiki exports — ~/.claude/skills лишається shared canonical registry.
-# Codex uses ~/.agents/skills as its shared user skill path in the current
-# Codex skill runtime. Gemini CLI documents ~/.gemini/skills and
-# ~/.agents/skills as user-skill discovery locations:
-# https://geminicli.com/docs/cli/using-agent-skills/#discovery-tiers
-# Лінкуємо на canonical entrypoint, не на realpath, щоб перемикання canonical версії
-# автоматично підхоплювали Codex і Gemini.
-WIKI_AGENTS_STATUS="ok"
-WIKI_GEMINI_STATUS="ok"
-WIKI_QWEN_STATUS="ok"
-DOC_AGENTS_STATUS="ok"
-DOC_GEMINI_STATUS="ok"
-DOC_QWEN_STATUS="ok"
-
-if ! export_skill_link "wiki" "$SKILL_LINK" "$AGENTS_SKILLS_ROOT/wiki"; then
-  WIKI_AGENTS_STATUS="skipped"
-fi
-if ! export_skill_link "wiki" "$SKILL_LINK" "$GEMINI_SKILLS_ROOT/wiki"; then
-  WIKI_GEMINI_STATUS="skipped"
-fi
-if ! export_skill_link "wiki" "$SKILL_LINK" "$QWEN_SKILLS_ROOT/wiki"; then
-  WIKI_QWEN_STATUS="skipped"
-fi
-
-# 3. doc-extract (optional dependency for ingest-binary). It is pinned to a
-# known-good commit for reproducible wiki installs; WIKI_DOC_EXTRACT_REF can
-# override it when deliberately testing/upgrading the extractor contract.
-# Keep wiki available even if this dependency cannot be installed; text/source
-# wiki operations still work.
+# 2. Optional extractor. The shared registry exports only installed skills.
 DOC_EXTRACT_INSTALLED=0
 if install_skill_at_ref "doc-extract" "$DOC_EXTRACT_REPO" "$DOC_EXTRACT_DIR" "$DOC_EXTRACT_LINK" "$DOC_EXTRACT_REF"; then
   DOC_EXTRACT_INSTALLED=1
-  if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$AGENTS_SKILLS_ROOT/doc-extract"; then
-    DOC_AGENTS_STATUS="skipped"
-  fi
-  if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$GEMINI_SKILLS_ROOT/doc-extract"; then
-    DOC_GEMINI_STATUS="skipped"
-  fi
-  if ! export_skill_link "doc-extract" "$DOC_EXTRACT_LINK" "$QWEN_SKILLS_ROOT/doc-extract"; then
-    DOC_QWEN_STATUS="skipped"
-  fi
 else
   echo "Увага: doc-extract не встановлено. Wiki skill працюватиме, але ingest-binary буде недоступний до повторного встановлення."
+fi
+
+# 3. Active exports and exact-owned retirement use one lifecycle.
+EXPORTS_STATUS=0
+if load_harness_registry; then
+  wiki_reconcile_exports || EXPORTS_STATUS=$?
+else
+  EXPORTS_STATUS=2
 fi
 
 # 4. Git hooks (best-effort). Registers the wiki skill's global Claude Code
@@ -394,24 +258,16 @@ else
 fi
 
 ANY_SKIPPED=0
-for status in "$WIKI_AGENTS_STATUS" "$WIKI_GEMINI_STATUS" "$WIKI_QWEN_STATUS" "$DOC_AGENTS_STATUS" "$DOC_GEMINI_STATUS" "$DOC_QWEN_STATUS"; do
-  [ "$status" = "skipped" ] && ANY_SKIPPED=1
-done
+[ "$EXPORTS_STATUS" -eq 0 ] || ANY_SKIPPED=1
 
 echo ""
 echo "Скіл встановлено/оновлено; статус hooks наведено окремо:"
 echo "  commit: $(git -C "$SKILL_DIR" rev-parse HEAD)"
 echo "  $SKILL_LINK → $SKILL_DIR  (@ $WIKI_VERSION)"
 echo "  Примітка: ~/.claude/skills — це shared canonical registry; Claude Code не потрібен."
-echo "Cross-agent exports (symlinks to shared canonical):"
-print_export_summary "$AGENTS_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_AGENTS_STATUS"
-print_export_summary "$GEMINI_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_GEMINI_STATUS"
-print_export_summary "$QWEN_SKILLS_ROOT/wiki" "$SKILL_LINK" "$WIKI_QWEN_STATUS"
+echo "Cross-agent exports: detailed results above (not runtime verification)"
 if [ "$DOC_EXTRACT_INSTALLED" -eq 1 ]; then
   echo "  $DOC_EXTRACT_LINK → $DOC_EXTRACT_DIR  (@ $DOC_EXTRACT_REF)"
-  print_export_summary "$AGENTS_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_AGENTS_STATUS"
-  print_export_summary "$GEMINI_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_GEMINI_STATUS"
-  print_export_summary "$QWEN_SKILLS_ROOT/doc-extract" "$DOC_EXTRACT_LINK" "$DOC_QWEN_STATUS"
 fi
 echo "Session-хуки Claude Code:"
 case "$HOOKS_STATUS" in
@@ -435,7 +291,7 @@ esac
 if [ "$ANY_SKIPPED" -eq 1 ]; then
   echo ""
   echo "Увага: частину exports пропущено. Summary вище показує фактичний стан кожного шляху —"
-  echo "Codex/Gemini бачитимуть лише ті exports, які реально існують і ведуть на canonical."
+  echo "Codex/agy/Qwen бачитимуть лише ті exports, які реально існують і ведуть на canonical."
 fi
 if [ "$DOC_EXTRACT_INSTALLED" -eq 1 ]; then
   echo ""
@@ -447,7 +303,7 @@ else
   echo "Для роботи з PDF/DOCX (ingest-binary) повторіть інсталяцію після виправлення doc-extract доступу."
 fi
 echo ""
-echo "Відкрийте проєкт у Claude Code, Codex або Gemini CLI і скажіть: створи вікі"
+echo "Відкрийте проєкт у Claude Code, Codex, agy CLI або Qwen Code і скажіть: створи вікі"
 
 # Partial hook updates must be visible to callers/CI, not only in scrollback.
 [ "$HOOKS_STATUS" != "failed" ] || exit 3

@@ -69,3 +69,28 @@ relative to the instruction file; a trailing `index.md` or `schema.md` means
 the containing directory. Validate candidates, continue past stale pointers,
 and never create a second wiki during discovery. The adapter defines tie
 ordering and boundary validation.
+
+## Release A: deterministic selection and write safety
+
+Use the normative [discovery cases](discovery-cases.md); their exact fixture
+inputs are in [discovery-cases.json](discovery-cases.json). CI tests the local
+parser; GitHub-agent parity requires its own recorded connector run.
+
+An explicit validated target wins for its operation. Otherwise inspect all
+candidates at the nearest valid directory in the cwd-to-repository-root walk.
+Within that directory the order is `AGENTS.md` → `CLAUDE.md` → `GEMINI.md` →
+`QWEN.md`, regardless of harness. Use exact-case directory/tree entries. A stale
+pointer does not hide another valid one. Two paths to the same resolved wiki
+are not a conflict. Legacy names remain read sources, not new write targets.
+
+Different valid wikis **on the selected level** are a same-level conflict:
+read-only analysis names the selected wiki and the conflict; unaddressed writes
+(including AUTO-lint and hook metadata) stop. An explicitly validated target can
+resolve that operation, not change other pointers or authorize unrelated hooks.
+Root-X/nested-Y is a normal nearest-scope case. Report an observed cross-level
+mismatch without blocking it; no full native-loading simulation is required.
+
+Local absolute pointers can be read only after boundary validation; they are
+non-portable legacy. GitHub cannot map host paths and reports them rather than
+inventing a repository-relative equivalent. Neither transport follows an
+instruction-file symlink outside its selected repository.
