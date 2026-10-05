@@ -15,8 +15,10 @@ edit the requested repository code, or supply the local command instead.
 2. Use the user-selected ref, or `master` for an explicit latest-version request.
    Use a fresh copy of the installer: an old running `install.sh` does not acquire
    new argument parsing just because its checkout was updated midway through.
-   The verified download location and safe temp-file command are in
-   `README.md` → **Оновлення**. Do not pipe a failed download into a successful shell.
+   The verified download command is in `README.md` → **Оновлення**:
+   `curl -fsSL <raw master install.sh> | bash -s -- <ref> --project <root>`. The
+   installer is one brace group, so a truncated download fails to parse and runs
+   nothing; `curl -f` makes HTTP errors fail instead of piping an error page.
 3. Pass the current Git project with `--project <root>`; repeated `--project`
    arguments select multiple checkouts/worktrees. Never scan every directory in
    HOME. Do not infer other project paths from transcript names. Previously given
