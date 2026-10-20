@@ -3,6 +3,12 @@
 Superseded behavior is history, not current instruction-file policy.
 
 ```markdown
+### 4.13.0 (2026-10-20)
+- No schema migration. SessionStart prints a daily wiki reminder at most once per
+  20 h per session: git facts (last wiki change, commits in 24 h with/without the
+  wiki) and the next step; `init` hint only without a wiki pointer, `doctor` for a
+  broken one. No roles; `WIKI_REMINDER=off` disables it.
+
 ### 4.12.1 (2026-10-05)
 - No schema migration. Installer is pipe-safe (`curl … | bash` cannot run a truncated
   download); README uses the plain one-liner and the «онови wiki-скіл» agent path.

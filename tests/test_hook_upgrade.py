@@ -184,7 +184,8 @@ class SessionHealthTests(unittest.TestCase):
         (self.wiki / "schema.md").write_text('---\nwiki_version: "4.0"\n---\n')
         (self.wiki / "concepts/a.md").write_text("# A\ncontent\n")
         self.usage = self.wiki / ".usage.json"
-        self.env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.project))
+        # The daily reminder has its own tests (tests/hooks/run.sh); here it would add a line.
+        self.env = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.project), WIKI_REMINDER="off")
         self.env.pop("QWEN_PROJECT_DIR", None)
         self.env.pop("WIKI_HOOK_CLIENT", None)
 
