@@ -19,6 +19,9 @@ set -uo pipefail
 # Normalize only the shared fixture root, preserving intentional test symlinks.
 TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
 export TMPDIR
+# The daily wiki reminder is off for the whole harness (its markers would leak
+# into the user's state dir and change hook output); its own block enables it.
+export WIKI_REMINDER=off
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DISCOVER_LIB="$ROOT/hooks/lib/discover.sh"
@@ -3748,6 +3751,74 @@ if [ "$(id -u)" != "0" ]; then
   assert_eq "t8r: no tmp remnant" "0" "$(find "$home" -name '.settings.json.*' | wc -l | tr -d ' ')"
   rm -rf "$qf.lockdir" 2>/dev/null || true
 fi
+
+echo "=== session-start.sh: daily wiki reminder ===" >&2
+
+_dr_run() {  # $1 project dir, $2 session id, $3 state dir
+  printf '{"hook_event_name":"SessionStart","source":"startup","session_id":"%s","cwd":"%s"}' "$2" "$1" |
+    WIKI_REMINDER=on WIKI_REMINDER_STATE_DIR="$3" CLAUDE_PROJECT_DIR="$1" bash "$SESSION_START_HOOK" 2>/dev/null
+}
+_dr_commit() {  # $1 repo, $2 file
+  ( cd "$1" && git add -A "$2" && git -c user.name=t -c user.email=t@example.invalid commit -q -m "$2" )
+}
+
+# dr1. Wiki present: first start of a session prints the facts once.
+fixture="$(make_fixture)"; state="$(mktemp -d "${TMPDIR:-/tmp}/wiki-dr-state.XXXXXX")"; track_tmp "$state"
+_dr_commit "$fixture" docs/wiki
+printf 'x\n' >"$fixture/code.txt"; _dr_commit "$fixture" code.txt
+out="$(_dr_run "$fixture" sess-a "$state")"
+assert_contains "daily: discovery notice still first" "$out" "=== WIKI DISCOVERY (hook) ==="
+assert_contains "daily: reminder block printed" "$out" "=== WIKI DAILY (hook) ==="
+assert_contains "daily: counts commits with and without wiki" "$out" "комітів за добу 2, з них із вікі 1"
+assert_contains "daily: names the skill operation" "$out" "ingest-source"
+[ "${#out}" -lt 2048 ] || fail "daily: notice plus reminder should stay small"
+
+# dr2. Same session again (compact): silent within 20 h.
+out="$(_dr_run "$fixture" sess-a "$state")"
+assert_not_contains "daily: same session not reminded twice" "$out" "WIKI DAILY"
+assert_contains "daily: discovery still printed on repeat" "$out" "=== WIKI DISCOVERY (hook) ==="
+
+# dr3. Another session gets its own reminder.
+out="$(_dr_run "$fixture" sess-b "$state")"
+assert_contains "daily: other session reminded" "$out" "=== WIKI DAILY (hook) ==="
+
+# dr4. Marker older than 20 h -> reminded again.
+for m in "$state"/*; do touch -d '-21 hours' "$m"; done
+out="$(_dr_run "$fixture" sess-a "$state")"
+assert_contains "daily: reminded again after 20 h" "$out" "=== WIKI DAILY (hook) ==="
+
+# dr5. WIKI_REMINDER=off -> silent, no marker written.
+state2="$(mktemp -d "${TMPDIR:-/tmp}/wiki-dr-state.XXXXXX")"; track_tmp "$state2"
+out="$(printf '{"source":"startup","session_id":"sess-c","cwd":"%s"}' "$fixture" |
+  WIKI_REMINDER=off WIKI_REMINDER_STATE_DIR="$state2" CLAUDE_PROJECT_DIR="$fixture" bash "$SESSION_START_HOOK" 2>/dev/null)"
+assert_not_contains "daily: off switch silences reminder" "$out" "WIKI DAILY"
+assert_eq "daily: off switch writes no marker" "0" "$(find "$state2" -type f | wc -l | tr -d ' ')"
+
+# dr6. No wiki, commits today -> suggests init.
+plain="$(mktemp -d "${TMPDIR:-/tmp}/wiki-dr-plain.XXXXXX")"; track_tmp "$plain"
+( cd "$plain" && git init -q ); printf 'x\n' >"$plain/a.txt"; _dr_commit "$plain" a.txt
+out="$(_dr_run "$plain" sess-d "$state")"
+assert_contains "daily: no wiki -> init hint" "$out" "(init)"
+assert_not_contains "daily: no wiki -> no discovery notice" "$out" "WIKI DISCOVERY"
+
+# dr7. No wiki and no commits in 24 h -> silent.
+empty="$(mktemp -d "${TMPDIR:-/tmp}/wiki-dr-empty.XXXXXX")"; track_tmp "$empty"
+( cd "$empty" && git init -q )
+out="$(_dr_run "$empty" sess-e "$state")"
+assert_eq "daily: idle repo without wiki -> silent" "" "$out"
+
+# dr8. Pointer present but wiki missing -> doctor, never init.
+broken="$(mktemp -d "${TMPDIR:-/tmp}/wiki-dr-broken.XXXXXX")"; track_tmp "$broken"
+( cd "$broken" && git init -q ); printf '# P\n\n## Wiki\n\nWiki at `docs/knowledge`.\n' >"$broken/AGENTS.md"
+_dr_commit "$broken" AGENTS.md
+out="$(_dr_run "$broken" sess-f "$state")"
+assert_contains "daily: broken pointer -> doctor" "$out" "(doctor)"
+assert_not_contains "daily: broken pointer -> no init" "$out" "(init)"
+
+# dr9. Outside git -> silent.
+nogit="$(mktemp -d "${TMPDIR:-/tmp}/wiki-dr-nogit.XXXXXX")"; track_tmp "$nogit"
+out="$(_dr_run "$nogit" sess-g "$state")"
+assert_eq "daily: outside git -> silent" "" "$out"
 
 # ---- summary ----
 echo "" >&2
