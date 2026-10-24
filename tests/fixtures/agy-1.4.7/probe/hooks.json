@@ -1,0 +1,9 @@
+{
+  "wiki-watchdog-probe": {
+    "SessionStart": [ {"type": "command", "command": "python3 /probe/logger.py SessionStart", "timeout": 10} ],
+    "PostToolUse": [ {"matcher": "*", "hooks": [ {"type": "command", "command": "python3 /probe/logger.py PostToolUse", "timeout": 10} ] } ],
+    "PreInvocation": [ {"type": "command", "command": "python3 /probe/logger.py PreInvocation", "timeout": 10} ],
+    "PostInvocation": [ {"type": "command", "command": "python3 /probe/logger.py PostInvocation", "timeout": 10} ],
+    "Stop": [ {"type": "command", "command": "python3 /probe/logger.py Stop", "timeout": 10} ]
+  }
+}

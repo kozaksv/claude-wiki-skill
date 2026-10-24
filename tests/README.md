@@ -48,3 +48,7 @@ history extraction and rollback. They do not claim model or GitHub E2E coverage.
 Run `python3 scripts/build_skill.py --check` for canonical/bundled parity.
 The Wiki contracts workflow runs these plus the existing hook/installer suites.
 The root `action.yml` makes catalog check/write available to consuming repos.
+
+`fixtures/agy-1.4.7/` holds sanitized runtime captures of Antigravity CLI hook
+payloads and transcripts for the Wiki Watchdog epic (#21). `test_agy_fixtures.py`
+guards their sanitization and recorded observations; it does not test an adapter.
