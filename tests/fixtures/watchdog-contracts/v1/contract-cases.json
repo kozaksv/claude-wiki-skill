@@ -1,0 +1,2244 @@
+{
+  "fixture_format": 1,
+  "status": "draft_for_review",
+  "evidence_kind": "synthetic_contract_vectors",
+  "runtime_capture": false,
+  "implementation_verified": false,
+  "sources": {
+    "rfc": "https://github.com/kozaksv/claude-wiki-skill/issues/21",
+    "plan": "https://github.com/kozaksv/claude-wiki-skill/issues/23",
+    "review": "https://github.com/kozaksv/claude-wiki-skill/issues/23#issuecomment-6393600114"
+  },
+  "cases": [
+    {
+      "id": "ED-01",
+      "contract": "C01",
+      "owners": [
+        "W1",
+        "W6"
+      ],
+      "acceptance": [
+        "AC01"
+      ],
+      "scenario": "Edition release does not choose wiki schema",
+      "input": {
+        "programs": [
+          "classic/4.x",
+          "watchdog/5.x"
+        ],
+        "wiki_schemas": [
+          "4.0",
+          "4.9"
+        ],
+        "supported_wiki_schema_majors": [
+          4
+        ]
+      },
+      "expected": {
+        "supported": true,
+        "migration_due_to_program_major": false
+      }
+    },
+    {
+      "id": "ED-02",
+      "contract": "C01",
+      "owners": [
+        "W1",
+        "W2"
+      ],
+      "acceptance": [
+        "AC01",
+        "AC04"
+      ],
+      "scenario": "Unsupported or malformed schema is explicit",
+      "input": {
+        "program": "watchdog/5.x",
+        "wiki_schemas": [
+          "5.0",
+          "invalid",
+          null
+        ]
+      },
+      "expected": {
+        "results": [
+          "unsupported",
+          "unknown",
+          "unknown"
+        ],
+        "automatic_migration": false,
+        "arbitrary_write": false
+      }
+    },
+    {
+      "id": "ED-03",
+      "contract": "C01",
+      "owners": [
+        "W1",
+        "W3",
+        "W4",
+        "W5"
+      ],
+      "acceptance": [
+        "AC01",
+        "AC32"
+      ],
+      "scenario": "Watchdog source isolation",
+      "input": {
+        "changed_source": "profiles/watchdog/references/writer-core.md"
+      },
+      "expected": {
+        "classic_output_changed": false,
+        "github_output_changed": false,
+        "watchdog_output_changed": true
+      }
+    },
+    {
+      "id": "ED-04",
+      "contract": "C01",
+      "owners": [
+        "W1"
+      ],
+      "acceptance": [
+        "AC01"
+      ],
+      "scenario": "Required override is missing",
+      "input": {
+        "profile": "watchdog",
+        "missing_source": "profiles/watchdog/references/telemetry.md",
+        "classic_source_present": true
+      },
+      "expected": {
+        "build": "error",
+        "silent_classic_fallback": false
+      }
+    },
+    {
+      "id": "ED-05",
+      "contract": "C01",
+      "owners": [
+        "W1",
+        "W11"
+      ],
+      "acceptance": [
+        "AC01"
+      ],
+      "scenario": "Classic does not require runtime dependencies",
+      "input": {
+        "edition": "classic",
+        "rust_available": false,
+        "watchdog_binary_available": false,
+        "openrouter_key": false,
+        "network": false
+      },
+      "expected": {
+        "instruction_build": "supported",
+        "watchdog_activation": false
+      }
+    },
+    {
+      "id": "ED-06",
+      "contract": "C01",
+      "owners": [
+        "W3",
+        "W4"
+      ],
+      "acceptance": [
+        "AC32"
+      ],
+      "scenario": "Completed Watchdog instruction components have no duplicate mechanical work",
+      "input": {
+        "completed_components": [
+          "W3",
+          "W4"
+        ],
+        "profile": "watchdog"
+      },
+      "expected": {
+        "model_step_counter_required": false,
+        "manual_counter_arithmetic_required": false,
+        "duplicate_daily_reminder": false,
+        "w1_scaffold_alone_proves_completion": false
+      }
+    },
+    {
+      "id": "ED-07",
+      "contract": "C01",
+      "owners": [
+        "W1",
+        "W11"
+      ],
+      "acceptance": [
+        "AC01",
+        "AC32"
+      ],
+      "scenario": "Deterministic regeneration and remote independence",
+      "input": {
+        "same_manifest_and_sources": true,
+        "build_runs": 2,
+        "remote_profile": "wiki-github"
+      },
+      "expected": {
+        "outputs_equal": true,
+        "absolute_machine_paths_in_output": false,
+        "remote_requires_watchdog_binary": false
+      }
+    },
+    {
+      "id": "ED-08",
+      "contract": "C01",
+      "owners": [
+        "W1",
+        "W6"
+      ],
+      "acceptance": [
+        "AC03"
+      ],
+      "scenario": "Legacy pointer is not a runtime registration",
+      "input": {
+        "pointer_source": "QWEN.md",
+        "watchdog_harnesses": [
+          "claude",
+          "codex",
+          "agy"
+        ]
+      },
+      "expected": {
+        "may_parse_legacy_pointer": true,
+        "new_qwen_registration": false,
+        "rewrites_historical_artifacts": false
+      }
+    },
+    {
+      "id": "EV-01",
+      "contract": "C04",
+      "owners": [
+        "W2",
+        "W4"
+      ],
+      "acceptance": [
+        "AC15",
+        "AC20"
+      ],
+      "scenario": "Replay versus two distinct tools in one invocation",
+      "input": {
+        "event_keys": [
+          "tool:7",
+          "tool:7",
+          "tool:8"
+        ],
+        "invocation_key": "invoke:3",
+        "successful_reads": true
+      },
+      "expected": {
+        "accepted_events": 2,
+        "read_count_delta": 2,
+        "invocation_count_delta": 1
+      }
+    },
+    {
+      "id": "EV-02",
+      "contract": "C04",
+      "owners": [
+        "W2",
+        "W3",
+        "W4"
+      ],
+      "acceptance": [
+        "AC07",
+        "AC20"
+      ],
+      "scenario": "Failure and partial read do not prove full READ FIRST",
+      "input": {
+        "tools": [
+          {
+            "event": "read:1",
+            "error": "permission_denied",
+            "path": "docs/wiki/index.md"
+          },
+          {
+            "event": "read:2",
+            "error": null,
+            "path": "docs/wiki/index.md",
+            "coverage": "first_line_only"
+          }
+        ]
+      },
+      "expected": {
+        "full_index_read_confirmed": false,
+        "successful_reads": 1,
+        "read_coverage": "partial",
+        "failed_read_credited": false
+      }
+    },
+    {
+      "id": "EV-03",
+      "contract": "C03",
+      "owners": [
+        "W2",
+        "W3"
+      ],
+      "acceptance": [
+        "AC10",
+        "AC15"
+      ],
+      "scenario": "Child knowledge does not close parent needs",
+      "input": {
+        "parent": "p",
+        "child": "c",
+        "confirmed_parentage": true,
+        "child_complete_index_read": true,
+        "parent_index_read": false
+      },
+      "expected": {
+        "child_consultation": "observed",
+        "parent_consultation": "read_not_observed",
+        "shared_family_budget": true
+      }
+    },
+    {
+      "id": "EV-04",
+      "contract": "C03",
+      "owners": [
+        "W2",
+        "W9"
+      ],
+      "acceptance": [
+        "AC05"
+      ],
+      "scenario": "Ambiguous workspace attribution",
+      "input": {
+        "workspace_paths": [
+          "app",
+          "infra"
+        ],
+        "tool_path": null,
+        "process_cwd": ".agents",
+        "read_semantics": "unknown"
+      },
+      "expected": {
+        "scope": "unattributed",
+        "choose_first_workspace": false,
+        "consultation_credit": 0
+      }
+    },
+    {
+      "id": "EV-05",
+      "contract": "C03",
+      "owners": [
+        "W2",
+        "W6"
+      ],
+      "acceptance": [
+        "AC04"
+      ],
+      "scenario": "Absent versus missing registered index",
+      "input": {
+        "cases": [
+          {
+            "registered": false,
+            "index_present": false
+          },
+          {
+            "registered": true,
+            "worktree_accessible": true,
+            "index_present": false
+          },
+          {
+            "registered": true,
+            "worktree_accessible": false,
+            "index_present": null
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          "no_wiki_silent",
+          "unhealthy_missing_index",
+          "unavailable"
+        ],
+        "automatic_init": false
+      }
+    },
+    {
+      "id": "EV-06",
+      "contract": "C03",
+      "owners": [
+        "W2",
+        "W5",
+        "W6"
+      ],
+      "acceptance": [
+        "AC28"
+      ],
+      "scenario": "Corrupt protection is not unprotected",
+      "input": {
+        "policy_json": "corrupt",
+        "legacy_protection": "unavailable",
+        "operation": "destructive"
+      },
+      "expected": {
+        "protection": "unknown_blocked",
+        "destructive_operation_allowed": false,
+        "ordinary_read_available": true
+      }
+    },
+    {
+      "id": "ST-01",
+      "contract": "C05",
+      "owners": [
+        "W3"
+      ],
+      "acceptance": [
+        "AC07"
+      ],
+      "scenario": "Early consultation has no step or evaluator gate",
+      "input": {
+        "role": "verified_root",
+        "wiki": "known_initialized",
+        "index_read": "not_observed",
+        "boundary": "eligible",
+        "budget": "available",
+        "jev": "disabled",
+        "previous_tool": "unclassified_git_status"
+      },
+      "expected": {
+        "early_consult": "eligible",
+        "wait_for_steps": false,
+        "wait_for_jev": false,
+        "erase_prior_read_facts": false
+      }
+    },
+    {
+      "id": "ST-02",
+      "contract": "C06",
+      "owners": [
+        "W3",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08"
+      ],
+      "scenario": "Service-only activity",
+      "input": {
+        "repetitions": 40,
+        "material_kind": "owned_feedback_or_bookkeeping",
+        "new_substantive_material": false
+      },
+      "expected": {
+        "new_remote_jobs": 0,
+        "new_stop_waits": 0,
+        "new_knowledge_checkpoint": false
+      }
+    },
+    {
+      "id": "ST-03",
+      "contract": "C06",
+      "owners": [
+        "W3"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11"
+      ],
+      "scenario": "Short final-only decision",
+      "input": {
+        "current_final_text": "Використовуємо WAL.",
+        "known_material": false,
+        "previous_read_count": 4
+      },
+      "expected": {
+        "local_candidate": true,
+        "minimum_length_rejection": false,
+        "wiki_absence_proved": false
+      }
+    },
+    {
+      "id": "ST-04",
+      "contract": "C07",
+      "owners": [
+        "W2",
+        "W3",
+        "W10"
+      ],
+      "acceptance": [
+        "AC11",
+        "AC12"
+      ],
+      "scenario": "Stop joins one job, then times out",
+      "input": {
+        "job_id": "j1",
+        "job_leased": true,
+        "normal_stop": true,
+        "new_material": true,
+        "guards_and_budgets": "available",
+        "result_by_deadline": false,
+        "late_result": true
+      },
+      "expected": {
+        "api_job_id": "j1",
+        "second_api_request": false,
+        "stop_wait_seconds_max": 2,
+        "timeout_alone_continues_agent": false,
+        "late_result_wakes_idle": false,
+        "pending_preserved": true
+      }
+    },
+    {
+      "id": "ST-05",
+      "contract": "C07",
+      "owners": [
+        "W2",
+        "W3"
+      ],
+      "acceptance": [
+        "AC09",
+        "AC10"
+      ],
+      "scenario": "Protected root slots remain inside family caps",
+      "input": {
+        "family_shared_delivery_spent": 3,
+        "family_shared_wait_spent": 2,
+        "protected_root_delivery_spent": 0,
+        "protected_root_wait_spent": 0,
+        "user_budget": "available",
+        "root_stop_candidate": true
+      },
+      "expected": {
+        "child_or_early_can_use_protected": false,
+        "root_stop_may_reserve": true,
+        "family_delivery_total_max": 4,
+        "family_wait_total_max": 3,
+        "user_caps_still_apply": true
+      }
+    },
+    {
+      "id": "ST-06",
+      "contract": "C06",
+      "owners": [
+        "W2",
+        "W3"
+      ],
+      "acceptance": [
+        "AC12",
+        "AC14"
+      ],
+      "scenario": "Compact and late worker use same material",
+      "input": {
+        "confirmed_compact_marker": "m1",
+        "marker_seen_twice": true,
+        "material_id": "material-A",
+        "material_changed": false,
+        "worker_finishes_during_transition": true,
+        "stop_guard_used": true
+      },
+      "expected": {
+        "epochs_created": 1,
+        "unhandled_need_preserved": true,
+        "late_result_may_reconcile": true,
+        "stop_guard_reset": false,
+        "delivery_budget_reset": false
+      }
+    },
+    {
+      "id": "ST-07",
+      "contract": "C06",
+      "owners": [
+        "W3"
+      ],
+      "acceptance": [
+        "AC14"
+      ],
+      "scenario": "Unknown context window has no step-count substitute",
+      "input": {
+        "ordinary_invocations": 8,
+        "effective_window": "unknown",
+        "valid_incremental_token_estimator": false,
+        "retained_snippet_scalars": 4096
+      },
+      "expected": {
+        "aging": "limited",
+        "freshness_due_to_steps": false,
+        "freshness_due_to_snippet_size": false,
+        "new_epoch": false
+      }
+    },
+    {
+      "id": "ST-08",
+      "contract": "C05",
+      "owners": [
+        "W3"
+      ],
+      "acceptance": [
+        "AC15",
+        "AC16"
+      ],
+      "scenario": "Unknown or replayed boundary does not advance retry",
+      "input": {
+        "boundary_identity": "unknown",
+        "raw_invocation_num": 0,
+        "possible_replay": true
+      },
+      "expected": {
+        "retry_progress": 0,
+        "root_privilege": false,
+        "generated_new_identity_as_proof": false
+      }
+    },
+    {
+      "id": "ST-09",
+      "contract": "C07",
+      "owners": [
+        "W2",
+        "W3",
+        "W10"
+      ],
+      "acceptance": [
+        "AC19",
+        "AC31"
+      ],
+      "scenario": "Disable fences late work without dropping incurred costs",
+      "input": {
+        "job_generation": 5,
+        "active_generation": 6,
+        "monitoring_enabled": false,
+        "request_already_sent": true,
+        "usage_cost": null,
+        "valid_log_baseline": true
+      },
+      "expected": {
+        "deliver": false,
+        "new_api_attempt": false,
+        "cost_state": "unknown",
+        "refund_assumed": false,
+        "explicit_offline_log_allowed": true,
+        "offline_helper_reactivates_hooks": false
+      }
+    },
+    {
+      "id": "EX-01",
+      "contract": "C11",
+      "owners": [
+        "W4"
+      ],
+      "acceptance": [
+        "AC22"
+      ],
+      "scenario": "Exclusive Classic contribution uses full totals",
+      "input": {
+        "initial_total": 100,
+        "watchdog_delta": 10,
+        "exported_total": 110,
+        "classic_interval_exclusive": true,
+        "current_total": 115
+      },
+      "expected": {
+        "classic_contribution": 5,
+        "result_total": 115,
+        "reimport_watchdog_delta": false
+      }
+    },
+    {
+      "id": "EX-02",
+      "contract": "C11",
+      "owners": [
+        "W2",
+        "W4"
+      ],
+      "acceptance": [
+        "AC22"
+      ],
+      "scenario": "Export crash after file receipt",
+      "input": {
+        "export_id": "e1",
+        "sqlite_state": "prepared",
+        "sidecar_receipt_matches": true,
+        "sidecar_totals": 110
+      },
+      "expected": {
+        "action": "commit_same_export",
+        "counter_addition": 0,
+        "new_export_id": false
+      }
+    },
+    {
+      "id": "EX-03",
+      "contract": "C11",
+      "owners": [
+        "W4",
+        "W6"
+      ],
+      "acceptance": [
+        "AC21",
+        "AC22"
+      ],
+      "scenario": "Overlap is unknown in both directions",
+      "input": {
+        "initial_total": 100,
+        "watchdog_delta": 10,
+        "sidecar_total": 110,
+        "exclusive_owner_interval": false
+      },
+      "expected": {
+        "classic_import": "unknown",
+        "blind_additive_export": false,
+        "export_total_120": false,
+        "repair_restores_past_attribution": false
+      }
+    },
+    {
+      "id": "LOG-01",
+      "contract": "C11",
+      "owners": [
+        "W5"
+      ],
+      "acceptance": [
+        "AC23"
+      ],
+      "scenario": "Receipt identity includes baseline and change interval",
+      "input": {
+        "confirmed_operations": [
+          [
+            "A",
+            "B"
+          ],
+          [
+            "B",
+            "A"
+          ],
+          [
+            "A",
+            "B"
+          ]
+        ],
+        "same_summary": true,
+        "retry_last_operation": true
+      },
+      "expected": {
+        "distinct_successful_operation_ids": 3,
+        "retry_reuses_last_id": true,
+        "fourth_entry": false
+      }
+    },
+    {
+      "id": "LOG-02",
+      "contract": "C11",
+      "owners": [
+        "W5"
+      ],
+      "acceptance": [
+        "AC25",
+        "AC26"
+      ],
+      "scenario": "Rotation recovery preserves foreign suffix once",
+      "input": {
+        "durable_plan": "B_to_A",
+        "matching_durable_shard": true,
+        "current_live": "B_plus_S",
+        "suffix_complete_entries": 3,
+        "crash_after_target_write_before_db_commit": true
+      },
+      "expected": {
+        "first_target": "A_plus_S",
+        "retry_action": "commit_same_receipt",
+        "foreign_entries_each_count": 1,
+        "new_peel": false,
+        "overwrite_shard": false
+      }
+    },
+    {
+      "id": "LOG-03",
+      "contract": "C11",
+      "owners": [
+        "W5"
+      ],
+      "acceptance": [
+        "AC27"
+      ],
+      "scenario": "Marker alone does not permit success or blind fallback",
+      "input": {
+        "operation_id": "op1",
+        "marker_present": true,
+        "complete_entry": false,
+        "write_result": "unknown"
+      },
+      "expected": {
+        "result": "pending",
+        "manual_blind_append": false,
+        "claimed_written": false,
+        "allowed_wiki_edits_blocked": false
+      }
+    },
+    {
+      "id": "ACT-01",
+      "contract": "C12",
+      "owners": [
+        "W2",
+        "W6"
+      ],
+      "acceptance": [
+        "AC02",
+        "AC31"
+      ],
+      "scenario": "Interrupted activation is not ready",
+      "input": {
+        "transition_state": "registrations_partial",
+        "bundle_symlink_changed": true,
+        "db_compatibility": "not_confirmed"
+      },
+      "expected": {
+        "ready": false,
+        "recovery_or_rollback_required": true,
+        "incompatible_writer_allowed": false
+      }
+    },
+    {
+      "id": "ACT-02",
+      "contract": "C12",
+      "owners": [
+        "W6"
+      ],
+      "acceptance": [
+        "AC04",
+        "AC29"
+      ],
+      "scenario": "Narrow repair result does not start a second review",
+      "input": {
+        "owned_hook_missing": true,
+        "registered_projects": [
+          "known-wiki"
+        ],
+        "unregistered_projects": [
+          "other"
+        ],
+        "repair_write_succeeded": true
+      },
+      "expected": {
+        "automatic_owned_repair": true,
+        "full_disk_scan": false,
+        "postrepair_llm_review": false,
+        "synthetic_probe": false,
+        "record_operation_result": true
+      }
+    },
+    {
+      "id": "API-01",
+      "contract": "C10",
+      "owners": [
+        "W2",
+        "W10"
+      ],
+      "acceptance": [
+        "AC19"
+      ],
+      "scenario": "Unknown charge is preserved across retry",
+      "input": {
+        "first_request_reserved": true,
+        "first_request_timeout": true,
+        "usage_cost": null,
+        "retry_requested": true
+      },
+      "expected": {
+        "first_cost": "unknown",
+        "first_reservation_auto_refund": false,
+        "retry_needs_new_attempt_and_cost_reservation": true,
+        "whole_input_including_criteria_priced": true
+      }
+    },
+    {
+      "id": "ANCHOR-01",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Verified clean pre-change capture supports edit → commit → helper",
+      "input": {
+        "given": {
+          "scope": "worktree-A/wiki-A/session-A",
+          "anchor": {
+            "id": "anchor-A",
+            "head": "A",
+            "boundary": "verified_pre_change",
+            "page": "old"
+          },
+          "receipt": null
+        },
+        "steps": [
+          {
+            "action": "edit",
+            "page": "new"
+          },
+          {
+            "action": "commit",
+            "head": "B",
+            "parent": "A"
+          },
+          {
+            "action": "log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "summary": "change"
+          }
+        ]
+      },
+      "expected": {
+        "baseline": "anchor-A",
+        "before": "old",
+        "after": "new",
+        "result": "written",
+        "new_operations": 1,
+        "anchor_head": "A"
+      }
+    },
+    {
+      "id": "ANCHOR-02",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "First helper after commit cannot invent a historical lower bound",
+      "input": {
+        "given": {
+          "head": "B",
+          "parent": "A",
+          "page": "new",
+          "anchor": null,
+          "receipt": null
+        },
+        "steps": [
+          {
+            "action": "log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "summary": "change"
+          }
+        ]
+      },
+      "expected": {
+        "result": "pending",
+        "reason": "needs_baseline",
+        "automatic_operation_id": "op-pending-1",
+        "new_entries": 0,
+        "no_backfill": true
+      }
+    },
+    {
+      "id": "ANCHOR-03",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Explicit continuation completes the original pending operation",
+      "input": {
+        "given": {
+          "pending_operation": "op-pending-1",
+          "head": "B",
+          "parent": "A",
+          "page_at_A": "old",
+          "page": "new",
+          "anchor": null
+        },
+        "steps": [
+          {
+            "action": "log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "summary": "change",
+            "explicit_commit": "B"
+          }
+        ]
+      },
+      "expected": {
+        "result": "written",
+        "automatic_operation_id": "op-pending-1",
+        "before": "old",
+        "after": "new",
+        "new_entries": 1
+      }
+    },
+    {
+      "id": "ANCHOR-04",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Late clean discovery after commit is not a pre-change anchor",
+      "input": {
+        "given": {
+          "head": "B",
+          "wiki_clean": true,
+          "receipt": null,
+          "anchor": null
+        },
+        "steps": [
+          {
+            "action": "capture_pre_change",
+            "boundary": "post_tool_or_unknown"
+          },
+          {
+            "action": "log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "summary": "change"
+          }
+        ]
+      },
+      "expected": {
+        "capture": "NotCaptured",
+        "capture_reason": "pre_change_boundary_unproven",
+        "result": "pending",
+        "reason": "needs_baseline",
+        "new_entries": 0
+      }
+    },
+    {
+      "id": "ANCHOR-05",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Dirty wiki at initial discovery cannot use HEAD as its before-state",
+      "input": {
+        "given": {
+          "head": "A",
+          "wiki_index_clean": true,
+          "wiki_worktree_clean": false,
+          "anchor": null
+        },
+        "steps": [
+          {
+            "action": "capture_pre_change",
+            "boundary": "session_start_before_tools"
+          }
+        ]
+      },
+      "expected": {
+        "capture": "NotCaptured",
+        "reason": "wiki_scope_dirty",
+        "automatic_anchor": null
+      }
+    },
+    {
+      "id": "ANCHOR-06",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Unrelated dirty paths do not invalidate clean captured wiki scope",
+      "input": {
+        "given": {
+          "head": "A",
+          "wiki_index_clean": true,
+          "wiki_worktree_clean": true,
+          "wiki_untracked": "none",
+          "other_repo_paths_dirty": true
+        },
+        "steps": [
+          {
+            "action": "capture_pre_change",
+            "boundary": "session_start_before_tools",
+            "coverage": "docs/wiki/"
+          }
+        ]
+      },
+      "expected": {
+        "capture": "Captured",
+        "anchor_head": "A",
+        "coverage": "docs/wiki/",
+        "outside_paths_covered": false
+      }
+    },
+    {
+      "id": "ANCHOR-07",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Repeated discovery after commit keeps the original lower bound",
+      "input": {
+        "given": {
+          "anchor": {
+            "id": "anchor-A",
+            "head": "A"
+          },
+          "head": "B",
+          "wiki_clean": true,
+          "receipt": null
+        },
+        "steps": [
+          {
+            "action": "discovery",
+            "head": "B"
+          },
+          {
+            "action": "log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "summary": "change"
+          }
+        ]
+      },
+      "expected": {
+        "capture": "Existing",
+        "anchor_id": "anchor-A",
+        "anchor_head": "A",
+        "baseline": "anchor-A",
+        "result": "written"
+      }
+    },
+    {
+      "id": "ANCHOR-08",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Confirmed compact preserves the original interval",
+      "input": {
+        "given": {
+          "anchor": {
+            "id": "anchor-A",
+            "head": "A",
+            "capture_epoch": 1
+          },
+          "current_epoch": 1,
+          "pending_operation": "op-pending-1"
+        },
+        "steps": [
+          {
+            "action": "native_checkpoint",
+            "continuation": "confirmed_same_session",
+            "new_epoch": 2
+          }
+        ]
+      },
+      "expected": {
+        "anchor_id": "anchor-A",
+        "anchor_head": "A",
+        "capture_epoch": 1,
+        "pending_operation": "op-pending-1",
+        "new_anchor": false
+      }
+    },
+    {
+      "id": "ANCHOR-09",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Receipt → commit → identical append retry does not duplicate",
+      "input": {
+        "given": {
+          "successful_receipt": {
+            "id": "receipt-1",
+            "operation": "op-1",
+            "path": "concepts/p.md",
+            "before": "old",
+            "after": "new"
+          },
+          "page": "new"
+        },
+        "steps": [
+          {
+            "action": "commit",
+            "head": "B"
+          },
+          {
+            "action": "retry_identical_log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "summary": "change"
+          }
+        ]
+      },
+      "expected": {
+        "result": "already_written",
+        "receipt": "receipt-1",
+        "operation": "op-1",
+        "new_operations": 0,
+        "new_entries": 0
+      }
+    },
+    {
+      "id": "ANCHOR-10",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Logging one path does not lose the old basis of another",
+      "input": {
+        "given": {
+          "anchor": {
+            "id": "anchor-A",
+            "head": "A",
+            "pages": {
+              "concepts/p.md": "P0",
+              "concepts/q.md": "Q0"
+            }
+          },
+          "current": {
+            "concepts/p.md": "P1",
+            "concepts/q.md": "Q1"
+          }
+        },
+        "steps": [
+          {
+            "action": "log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "result": "written",
+            "receipt": "receipt-P1"
+          },
+          {
+            "action": "get_log_baseline",
+            "paths": [
+              "concepts/p.md",
+              "concepts/q.md"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "per_path_basis": {
+          "concepts/p.md": "receipt-P1",
+          "concepts/q.md": "anchor-A"
+        },
+        "anchor_head": "A",
+        "global_anchor_advanced": false
+      }
+    },
+    {
+      "id": "ANCHOR-11",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Parallel helper detects a changed receipt version before preparing",
+      "input": {
+        "given": {
+          "two_helpers_read_basis": "anchor-A",
+          "receipt_version": 0,
+          "current_page": "new"
+        },
+        "steps": [
+          {
+            "actor": "helper-1",
+            "action": "prepare_and_write",
+            "new_receipt_version": 1,
+            "operation": "op-1"
+          },
+          {
+            "actor": "helper-2",
+            "action": "prepare_cas",
+            "expected_receipt_version": 0
+          },
+          {
+            "actor": "helper-2",
+            "action": "reread_identical_change_set"
+          }
+        ]
+      },
+      "expected": {
+        "second_prepare": "baseline_conflict",
+        "second_result": "already_written",
+        "operation": "op-1",
+        "new_entries_total": 1
+      }
+    },
+    {
+      "id": "ANCHOR-12",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Failed or partial log append cannot advance its basis",
+      "input": {
+        "given": {
+          "anchor": {
+            "id": "anchor-A",
+            "head": "A"
+          },
+          "prepared_operation": "op-1",
+          "before": "old",
+          "after": "new"
+        },
+        "steps": [
+          {
+            "action": "partial_append_then_crash"
+          },
+          {
+            "action": "recovery"
+          }
+        ]
+      },
+      "expected": {
+        "operation": "op-1",
+        "basis": "anchor-A",
+        "basis_advanced_before_verified_completion": false,
+        "new_operation": false
+      }
+    },
+    {
+      "id": "ANCHOR-13",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Missing Git parent is not a root commit",
+      "input": {
+        "given": {
+          "explicit_commit": "B",
+          "parent_reference_present": true,
+          "parent_object_available": false,
+          "shallow_boundary": true
+        },
+        "steps": [
+          {
+            "action": "resolve_before_state"
+          }
+        ]
+      },
+      "expected": {
+        "result": "pending",
+        "reason": "required_git_object_unavailable",
+        "empty_tree_fallback": false,
+        "new_entries": 0
+      }
+    },
+    {
+      "id": "ANCHOR-14",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "True root commit supports explicit empty-tree basis",
+      "input": {
+        "given": {
+          "explicit_commit": "ROOT",
+          "parent_count": 0,
+          "commit_object_verified": true,
+          "tree_available": true
+        },
+        "steps": [
+          {
+            "action": "resolve_before_state"
+          }
+        ]
+      },
+      "expected": {
+        "basis": "empty_tree",
+        "root_status": "verified",
+        "shallow_guess": false
+      }
+    },
+    {
+      "id": "ANCHOR-15",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Same remote in another worktree cannot borrow an automatic anchor",
+      "input": {
+        "given": {
+          "anchor": {
+            "id": "anchor-A",
+            "worktree": "worktree-A",
+            "wiki": "wiki-A"
+          },
+          "request": {
+            "worktree": "worktree-B",
+            "wiki": "wiki-B"
+          },
+          "same_git_remote": true,
+          "receipt": null
+        },
+        "steps": [
+          {
+            "action": "get_log_baseline"
+          }
+        ]
+      },
+      "expected": {
+        "eligible_anchor": null,
+        "result": "pending",
+        "reason": "needs_baseline"
+      }
+    },
+    {
+      "id": "ANCHOR-16",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "A known lower bound does not resolve detected external overlap",
+      "input": {
+        "given": {
+          "anchor": {
+            "id": "anchor-A",
+            "head": "A"
+          },
+          "target_path": "concepts/p.md",
+          "external_overlap": "observed_unresolved",
+          "head_history": "linear",
+          "receipt": null
+        },
+        "steps": [
+          {
+            "action": "log_append",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "summary": "change"
+          }
+        ]
+      },
+      "expected": {
+        "result": "pending",
+        "reason": "ambiguous_overlap",
+        "new_entries": 0,
+        "guess_agent_ownership": false
+      }
+    },
+    {
+      "id": "ANCHOR-17",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Independent logged A→B→A→B changes keep distinct operation IDs",
+      "input": {
+        "given": {
+          "baseline": "state-A"
+        },
+        "steps": [
+          {
+            "action": "log_change",
+            "from": "state-A",
+            "to": "state-B",
+            "summary": "same"
+          },
+          {
+            "action": "log_change",
+            "from": "state-B",
+            "to": "state-A",
+            "summary": "same"
+          },
+          {
+            "action": "log_change",
+            "from": "state-A",
+            "to": "state-B",
+            "summary": "same"
+          }
+        ]
+      },
+      "expected": {
+        "new_operations": 3,
+        "distinct_automatic_operation_ids": 3,
+        "distinct_receipt_versions": 3,
+        "new_entries": 3
+      }
+    },
+    {
+      "id": "ANCHOR-18",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC23",
+        "AC24"
+      ],
+      "scenario": "Unconfirmed resume does not reuse an unrelated session interval",
+      "input": {
+        "given": {
+          "anchor": {
+            "id": "anchor-A",
+            "session": "session-A"
+          },
+          "request_session": "session-B",
+          "resume_binding": "unknown",
+          "receipt": null
+        },
+        "steps": [
+          {
+            "action": "get_log_baseline"
+          }
+        ]
+      },
+      "expected": {
+        "eligible_anchor": null,
+        "result": "pending",
+        "reason": "needs_baseline",
+        "guess_same_interval": false
+      }
+    },
+    {
+      "id": "CF01-short-ua",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "short-ua",
+      "input": {
+        "text": "Використовуємо WAL.",
+        "source_kind": "model_final",
+        "freshness": "current",
+        "scalar_budget": 4096
+      },
+      "expected": {
+        "text": "Використовуємо WAL.",
+        "truncated": false,
+        "no_minimum_length_rejection": true
+      }
+    },
+    {
+      "id": "CF02-astral-long-tail",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "astral-long-tail",
+      "input": {
+        "source_kind": "model_final",
+        "freshness": "current",
+        "scalar_budget": 4096,
+        "byte_budget": null,
+        "text_recipe": [
+          {
+            "repeat": "😀",
+            "count": 5000
+          },
+          {
+            "literal": " USE_WAL"
+          }
+        ]
+      },
+      "expected": {
+        "source_scalar_length": 5008,
+        "retained_scalar_count": 4096,
+        "segments": [
+          {
+            "part": "head",
+            "start_scalar": 0,
+            "end_scalar": 2048
+          },
+          {
+            "part": "tail",
+            "start_scalar": 2960,
+            "end_scalar": 5008
+          }
+        ],
+        "gap": [
+          2048,
+          2960
+        ],
+        "truncated": true,
+        "tail_suffix": " USE_WAL"
+      }
+    },
+    {
+      "id": "CF03-combining-not-normalized",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "combining-not-normalized",
+      "input": {
+        "text": "A😀е́B",
+        "source_kind": "model_final",
+        "freshness": "current",
+        "scalar_budget": 5
+      },
+      "expected": {
+        "text": "A😀е́B",
+        "retained_scalar_count": 5,
+        "retained_utf8_bytes": 10,
+        "truncated": false,
+        "normalization_applied": false
+      }
+    },
+    {
+      "id": "CF04-multi-source-one-budget",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "multi-source-one-budget",
+      "input": {
+        "scalar_budget": 8,
+        "sources": [
+          {
+            "id": "u1",
+            "text": "ABCD",
+            "allocated_scalars": 4
+          },
+          {
+            "id": "f1",
+            "text": "12345678",
+            "allocated_scalars": 4
+          }
+        ]
+      },
+      "expected": {
+        "retained_scalar_count": 8,
+        "fragments": [
+          {
+            "source": "u1",
+            "text": "ABCD"
+          },
+          {
+            "source": "f1",
+            "head": "12",
+            "tail": "78"
+          }
+        ],
+        "truncated": true
+      }
+    },
+    {
+      "id": "CF05-overlap-no-duplicate",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "overlap-no-duplicate",
+      "input": {
+        "text": "ABCDEFGH",
+        "scalar_budget": 8
+      },
+      "expected": {
+        "segments": [
+          {
+            "part": "whole",
+            "text": "ABCDEFGH"
+          }
+        ],
+        "retained_scalar_count": 8,
+        "truncated": false
+      }
+    },
+    {
+      "id": "CF06-byte-limit",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "byte-limit",
+      "input": {
+        "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "scalar_budget": 20,
+        "output_text_utf8_byte_budget": 32
+      },
+      "expected": {
+        "retained_scalar_count": 8,
+        "retained_text_utf8_bytes": 32,
+        "head_scalar_count": 4,
+        "tail_scalar_count": 4,
+        "truncated": true,
+        "note": "Text-only shared-helper quota; W10 additionally counts complete serialized pack metadata."
+      }
+    },
+    {
+      "id": "CF07-null-final",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "null-final",
+      "input": {
+        "last_assistant_message": null,
+        "current_completion_id": "c2",
+        "previous_final": {
+          "completion_id": "c1",
+          "text": "Use WAL"
+        }
+      },
+      "expected": {
+        "final_text_status": "unavailable",
+        "limitations": [
+          "null_final"
+        ],
+        "reuse_previous_final": false
+      }
+    },
+    {
+      "id": "CF08-stale-final",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "stale-final",
+      "input": {
+        "last_assistant_message": "Use WAL",
+        "observed_completion_id": "c1",
+        "current_completion_id": "c2"
+      },
+      "expected": {
+        "final_text_status": "limited",
+        "limitations": [
+          "stale_final"
+        ],
+        "eligible_current_final": false
+      }
+    },
+    {
+      "id": "CF09-prefix-only-pr22",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "prefix-only-pr22",
+      "input": {
+        "source_original_scalar_count": 657,
+        "retained_source_prefix_scalar_count": 600,
+        "source_end_observed": false,
+        "prefix_text_recipe": [
+          {
+            "repeat": "p",
+            "count": 600
+          }
+        ]
+      },
+      "expected": {
+        "final_text_status": "limited",
+        "truncated": true,
+        "limitations": [
+          "tail_unavailable"
+        ],
+        "may_claim_head_tail": false,
+        "may_reconstruct_missing_tail": false
+      }
+    },
+    {
+      "id": "CF10-typed-offsets-redaction",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "typed-offsets-redaction",
+      "input": {
+        "native_locator": {
+          "kind": "transcript_step",
+          "step_id": "s12",
+          "field": "content"
+        },
+        "sanitized_text": "x [REDACTED] y",
+        "redaction_changes_length": true
+      },
+      "expected": {
+        "scalar_offset_basis": "sanitized_source",
+        "native_cursor_unchanged": true,
+        "raw_byte_offset_inferred": false
+      }
+    },
+    {
+      "id": "CF11-service-material",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "service-material",
+      "input": {
+        "records": [
+          {
+            "source": "SYSTEM_SDK",
+            "type": "EPHEMERAL_MESSAGE",
+            "owned_by_watchdog": true
+          },
+          {
+            "source": "SYSTEM",
+            "type": "SYSTEM_MESSAGE",
+            "owned_stop_feedback": true
+          },
+          {
+            "source": "SYSTEM",
+            "type": "CHECKPOINT",
+            "new_marker": true
+          }
+        ]
+      },
+      "expected": {
+        "new_knowledge_sources": 0,
+        "checkpoint_marker_routed_to": "lifecycle",
+        "new_material_from_service_text": false
+      }
+    },
+    {
+      "id": "CF12-invalid-unicode",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "invalid-unicode",
+      "input": {
+        "wire_utf8_hex": "f08080",
+        "raw_json_string_escape": "\\uD800"
+      },
+      "expected": {
+        "affected_source_status": "limited",
+        "limitations": [
+          "invalid_encoding"
+        ],
+        "silently_repaired_complete": false,
+        "raw_invalid_bytes_persisted": false
+      }
+    },
+    {
+      "id": "CF13-tail-anchored-offset",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "tail-anchored-offset",
+      "input": {
+        "full_scalar_length": null,
+        "end_observed": true,
+        "tail_text": "Use WAL",
+        "native_locator": {
+          "kind": "transcript_step",
+          "step_id": "s14",
+          "field": "content"
+        }
+      },
+      "expected": {
+        "position": {
+          "basis": "sanitized_source",
+          "unit": "unicode_scalar",
+          "origin": "end",
+          "offset": 0,
+          "length": 7
+        },
+        "absolute_start_scalar": null,
+        "invented_length": false
+      }
+    },
+    {
+      "id": "CF14-pack-cap-and-incomplete-evidence",
+      "contract": "C09",
+      "owners": [
+        "W2",
+        "W3",
+        "W7",
+        "W8",
+        "W9",
+        "W10"
+      ],
+      "acceptance": [
+        "AC08",
+        "AC11",
+        "AC17",
+        "AC30"
+      ],
+      "scenario": "pack-cap-and-incomplete-evidence",
+      "input": {
+        "pack_before_limit_utf8_bytes": 17000,
+        "pack_limit_utf8_bytes": 16384,
+        "has_fresh_tail": true,
+        "omitted_wiki_sources": true
+      },
+      "expected": {
+        "pack_final_utf8_bytes_max": 16384,
+        "retain_head_and_tail_when_available": true,
+        "truncated": true,
+        "categorical_wiki_absence_allowed": false
+      }
+    },
+    {
+      "id": "CB01-compaction-execution",
+      "contract": "C05",
+      "owners": [
+        "W3",
+        "W9"
+      ],
+      "acceptance": [
+        "AC13",
+        "AC16"
+      ],
+      "scenario": "compaction-execution",
+      "input": {
+        "verified_execution_kind": "compaction",
+        "native_last_user_input": "/compact",
+        "pending_need": true
+      },
+      "expected": {
+        "delivery_reservations": 0,
+        "retry_progress": 0,
+        "pending_preserved": true
+      }
+    },
+    {
+      "id": "CB02-tool-loop",
+      "contract": "C05",
+      "owners": [
+        "W3",
+        "W9"
+      ],
+      "acceptance": [
+        "AC13",
+        "AC16"
+      ],
+      "scenario": "tool-loop",
+      "input": {
+        "verified_distinct_boundaries": [
+          {
+            "invocation_num": 1
+          },
+          {
+            "invocation_num": 2
+          },
+          {
+            "invocation_num": 3
+          }
+        ],
+        "new_wiki_scope": false
+      },
+      "expected": {
+        "scheduled_delivery": false,
+        "retry_progress": 0
+      }
+    },
+    {
+      "id": "CB03-three-new-turn-boundaries",
+      "contract": "C05",
+      "owners": [
+        "W3",
+        "W9"
+      ],
+      "acceptance": [
+        "AC13",
+        "AC16"
+      ],
+      "scenario": "three-new-turn-boundaries",
+      "input": {
+        "confirmed_new_turn_or_wakeup_boundaries": 3,
+        "replayed": false,
+        "own_feedback": false,
+        "identity_verified": true
+      },
+      "expected": {
+        "retry_threshold_satisfied": true,
+        "delivery_still_requires_budget_outcome_and_relevance": true
+      }
+    },
+    {
+      "id": "CB04-new-wiki-scope-loop",
+      "contract": "C05",
+      "owners": [
+        "W3",
+        "W9"
+      ],
+      "acceptance": [
+        "AC13",
+        "AC16"
+      ],
+      "scenario": "new-wiki-scope-loop",
+      "input": {
+        "invocation_num": 2,
+        "first_verified_entry_to_new_wiki_scope": true
+      },
+      "expected": {
+        "allowed_class": "narrow_new_scope_consult_only",
+        "old_pending_maintenance_allowed": false,
+        "child_guards_and_caps_required": true
+      }
+    },
+    {
+      "id": "CB05-failed-compact-stale-input",
+      "contract": "C05",
+      "owners": [
+        "W3",
+        "W9"
+      ],
+      "acceptance": [
+        "AC13",
+        "AC16"
+      ],
+      "scenario": "failed-compact-stale-input",
+      "input": {
+        "compact_execution_failed": true,
+        "new_verified_normal_execution": true,
+        "last_user_input_still": "/compact",
+        "native_checkpoint_seen": false
+      },
+      "expected": {
+        "new_epoch": false,
+        "permanent_compaction_suppression": false,
+        "eligibility_requires_current_execution_evidence": true
+      }
+    },
+    {
+      "id": "ANCHOR-19",
+      "contract": "C08",
+      "owners": [
+        "W2",
+        "W5"
+      ],
+      "acceptance": [
+        "AC24"
+      ],
+      "scenario": "A new-session future anchor cannot cover a previously completed operation",
+      "input": {
+        "given": {
+          "prior_operation_commit": "B",
+          "new_session_anchor": {
+            "id": "anchor-B",
+            "head": "B",
+            "captured_order": "after_prior_operation"
+          },
+          "successful_receipt": null,
+          "prior_operation_inside_anchor_interval": false
+        },
+        "steps": [
+          {
+            "action": "log_append_for_prior_operation",
+            "paths": [
+              "concepts/p.md"
+            ],
+            "explicit_git_basis": null
+          }
+        ]
+      },
+      "expected": {
+        "eligible_anchor": null,
+        "result": "pending",
+        "reason": "needs_baseline",
+        "reported_unchanged": false,
+        "historical_backfill": false
+      }
+    }
+  ]
+}
